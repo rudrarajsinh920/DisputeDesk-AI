@@ -12,8 +12,13 @@ export async function fetchSandboxDisputes(signal?: AbortSignal): Promise<Disput
   const body = (await response.json().catch(() => null)) as { source?: unknown; disputes?: unknown } | null;
 
   if (!response.ok) throw serverError(response, body);
-  if (body?.source !== "paypal_sandbox" || !Array.isArray(body.disputes)) {
+  // Check every record's label rather than overwrite it, so a mislabeled record is caught instead of hidden.
+  if (
+    body?.source !== "paypal_sandbox" ||
+    !Array.isArray(body.disputes) ||
+    !body.disputes.every((d: Partial<Dispute> | null) => d?.source === "paypal_sandbox")
+  ) {
     throw new Error("The DisputeDesk server sent an unexpected response.");
   }
-  return body.disputes.map((d: Dispute) => ({ ...d, source: "paypal_sandbox" }));
+  return body.disputes as Dispute[];
 }

@@ -1,11 +1,27 @@
 import express from "express";
 import type { NextFunction, Request, Response } from "express";
+import sample from "../../sample-dispute.json" with { type: "json" };
+import type { Dispute } from "../../client/src/types.ts";
 import { analyzeDispute } from "./evidence.ts";
 import { PayPalError } from "./paypal.ts";
 import type { PayPalClient } from "./paypal.ts";
-import { validateDispute } from "./validate.ts";
+import { validateDispute, validateLookup } from "./validate.ts";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+// Synthetic demo records, owned by the server and always labeled "demo".
+// Built from the same file the client lists, so the two never drift; an invalid fixture stops the server at startup.
+export const DEMO_DISPUTES: Dispute[] = [sample].map((record) => {
+  const result = validateDispute({ ...record, source: "demo" });
+  if (!result.ok) throw new Error(`sample-dispute.json is not a valid dispute: ${result.errors.join(" ")}`);
+  return result.dispute;
+});
+
+function notConfigured(res: Response) {
+  res.status(503).json({
+    error: { code: "paypal_not_configured", message: "PayPal sandbox credentials are not set on the server.", upstream_status: null },
+  });
+}
 
 // paypal is null when credentials are missing; the server still runs and says so.
 export function createApp(paypal: PayPalClient | null) {
@@ -28,30 +44,36 @@ export function createApp(paypal: PayPalClient | null) {
 
   app.get("/api/sandbox/disputes", async (_req, res) => {
     res.set("Cache-Control", "no-store");
-    if (!paypal) {
-      res.status(503).json({
+    if (!paypal) return notConfigured(res);
+    res.json({ source: "paypal_sandbox", disputes: await paypal.listDisputes() });
+  });
+
+  // The caller names a record; the server loads it, so the source label and every field come from the server.
+  // Sandbox records come from the same read-only list GET as above. Nothing is ever submitted to PayPal.
+  app.post("/api/analysis", express.json({ limit: "4kb" }), async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const result = validateLookup(req.body);
+    if (!result.ok) {
+      res.status(400).json({
+        error: { code: "invalid_request", message: "The analysis request is not valid.", details: result.errors, upstream_status: null },
+      });
+      return;
+    }
+    const { source, dispute_id } = result.lookup;
+    if (source === "paypal_sandbox" && !paypal) return notConfigured(res);
+    const records = source === "demo" ? DEMO_DISPUTES : await paypal!.listDisputes();
+    const dispute = records.find((d) => d.dispute_id === dispute_id);
+    if (!dispute) {
+      res.status(404).json({
         error: {
-          code: "paypal_not_configured",
-          message: "PayPal sandbox credentials are not set on the server.",
+          code: "dispute_not_found",
+          message: source === "demo" ? "No demo dispute has this ID." : "The PayPal sandbox has no dispute with this ID.",
           upstream_status: null,
         },
       });
       return;
     }
-    res.json({ source: "paypal_sandbox", disputes: await paypal.listDisputes() });
-  });
-
-  // Analyzes only the record it is given; never calls PayPal and never submits anything.
-  app.post("/api/analysis", express.json({ limit: "32kb" }), (req, res) => {
-    res.set("Cache-Control", "no-store");
-    const result = validateDispute(req.body);
-    if (!result.ok) {
-      res.status(400).json({
-        error: { code: "invalid_dispute", message: "The dispute record is not valid.", details: result.errors, upstream_status: null },
-      });
-      return;
-    }
-    res.json(analyzeDispute(result.dispute));
+    res.json(analyzeDispute(dispute));
   });
 
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {

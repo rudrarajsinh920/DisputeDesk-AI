@@ -12,10 +12,17 @@ function respond(status: number, body: string) {
 }
 
 test("returns sandbox disputes tagged with their source", async () => {
-  respond(200, JSON.stringify({ source: "paypal_sandbox", disputes: [{ dispute_id: "PP-1", source: "demo" }] }));
+  respond(200, JSON.stringify({ source: "paypal_sandbox", disputes: [{ dispute_id: "PP-1", source: "paypal_sandbox" }] }));
   const disputes = await fetchSandboxDisputes();
   assert.equal(disputes.length, 1);
   assert.equal(disputes[0].source, "paypal_sandbox");
+});
+
+test("a sandbox list containing a record with another label is rejected, not relabeled", async () => {
+  respond(200, JSON.stringify({ source: "paypal_sandbox", disputes: [{ dispute_id: "PP-1", source: "paypal_sandbox" }, { dispute_id: "DEMO-1001", source: "demo" }] }));
+  await assert.rejects(fetchSandboxDisputes(), /unexpected response/);
+  respond(200, JSON.stringify({ source: "paypal_sandbox", disputes: [{ dispute_id: "PP-2" }] }));
+  await assert.rejects(fetchSandboxDisputes(), /unexpected response/);
 });
 
 test("an empty sandbox is an empty list, not an error", async () => {

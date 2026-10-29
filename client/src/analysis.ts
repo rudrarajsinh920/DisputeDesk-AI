@@ -1,12 +1,12 @@
 import { serverError } from "./sandbox.ts";
 import type { Analysis, Dispute } from "./types.ts";
 
-// Analysis runs on the server, which validates the record first. Nothing here talks to PayPal.
+// Sends only which record to analyze; the server loads the record itself. Nothing here talks to PayPal.
 export async function fetchAnalysis(dispute: Dispute, signal?: AbortSignal): Promise<Analysis> {
   const response = await fetch("/api/analysis", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(dispute),
+    body: JSON.stringify({ source: dispute.source, dispute_id: dispute.dispute_id }),
     signal,
   });
   const body: unknown = await response.json().catch(() => null);

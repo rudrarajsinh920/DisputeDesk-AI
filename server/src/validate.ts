@@ -1,8 +1,22 @@
-import type { Dispute } from "../../client/src/types.ts";
+import type { Dispute, Source } from "../../client/src/types.ts";
 
 export type Validation = { ok: true; dispute: Dispute } | { ok: false; errors: string[] };
+export type Lookup = { source: Source; dispute_id: string };
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+const DISPUTE_ID = /^[A-Za-z0-9-]{1,100}$/;
+
+// An analysis request names a record; it never carries one. Any other field is ignored.
+export function validateLookup(input: unknown): { ok: true; lookup: Lookup } | { ok: false; errors: string[] } {
+  if (!isObject(input)) return { ok: false, errors: ["The body must be an object with source and dispute_id."] };
+  const errors: string[] = [];
+  const { source, dispute_id } = input;
+  if (source !== "demo" && source !== "paypal_sandbox") errors.push('source must be "demo" or "paypal_sandbox".');
+  if (typeof dispute_id !== "string" || !DISPUTE_ID.test(dispute_id)) errors.push("dispute_id must be 1 to 100 letters, digits or hyphens.");
+  if (errors.length > 0) return { ok: false, errors };
+  return { ok: true, lookup: { source: source as Source, dispute_id: dispute_id as string } };
+}
 
 // Checks every field the engine reads and copies only those, so unknown fields never pass through.
 export function validateDispute(input: unknown): Validation {

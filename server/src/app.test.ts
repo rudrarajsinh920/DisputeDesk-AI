@@ -3,7 +3,7 @@ import { once } from "node:events";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
-import { createApp } from "./app.ts";
+import { DEMO_DISPUTES, createApp } from "./app.ts";
 import { createPayPalClient } from "./paypal.ts";
 
 // Placeholder values only; nothing here talks to PayPal.
@@ -186,49 +186,105 @@ test("token is reused, and an expired token is dropped after a 401", async () =>
 });
 
 const postJson = (body: string) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body });
-const demoRecord = {
-  source: "demo",
-  dispute_id: "DEMO-1001",
-  reason: "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
-  status: "OPEN",
-  amount: { currency_code: "USD", value: "49.99" },
-  order: { order_id: "ORDER-1001", item: "Wireless keyboard", shipping_status: "SHIPPED", tracking_number: null },
-  evidence: { proof_of_delivery: false, shipping_tracking: false, order_confirmation: true, customer_communication: true },
-};
+const lookup = (source: string, dispute_id: unknown, extra: object = {}) => postJson(JSON.stringify({ source, dispute_id, ...extra }));
+const sandboxItem = { dispute_id: "PP-D-1", reason: "MERCHANDISE_OR_SERVICE_NOT_RECEIVED", status: "OPEN", dispute_amount: { currency_code: "USD", value: "12.50" } };
 
-test("analysis endpoint analyzes a valid record without calling PayPal", async () => {
+test("demo analysis uses the server's own demo record and labels it demo", async () => {
   const { client, calls } = mockPayPal();
-  const res = await get(createApp(client), "/api/analysis", postJson(JSON.stringify(demoRecord)));
+  const res = await get(createApp(client), "/api/analysis", lookup("demo", "DEMO-1001"));
   assert.equal(res.status, 200);
   assert.equal(res.body.source, "demo");
   assert.equal(res.body.dispute_id, "DEMO-1001");
   assert.ok(res.body.draft.text.startsWith("DRAFT — REQUIRES MERCHANT REVIEW."));
+  assert.ok(res.body.draft.text.includes("DEMO DATA — NOT A REAL PAYPAL DISPUTE."));
   assert.equal(calls.length, 0);
   assertNoSecrets(res.text);
+
+  const unknown = await get(createApp(client), "/api/analysis", lookup("demo", "DEMO-9999"));
+  assert.equal(unknown.status, 404);
+  assert.equal(unknown.body.error.code, "dispute_not_found");
+  assert.equal(unknown.body.draft, undefined);
 });
 
-test("analysis endpoint rejects invalid records, bad JSON and oversized bodies", async () => {
-  const app = createApp(null);
-  const invalid = await get(app, "/api/analysis", postJson(JSON.stringify({ ...demoRecord, source: "live" })));
-  assert.equal(invalid.status, 400);
-  assert.equal(invalid.body.error.code, "invalid_dispute");
-  assert.deepEqual(invalid.body.error.details, ['source must be "demo" or "paypal_sandbox".']);
+test("a demo record cannot be relabeled as a sandbox dispute", async () => {
+  // The attack: demo ID, sandbox label, invented evidence. The sandbox has no such dispute.
+  const { client, calls } = mockPayPal();
+  const forged = {
+    reason: "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    order: { tracking_number: "FAKE-TRK-1", shipping_status: "DELIVERED" },
+    evidence: { shipping_tracking: true, proof_of_delivery: true },
+  };
+  const res = await get(createApp(client), "/api/analysis", lookup("paypal_sandbox", "DEMO-1001", forged));
+  assert.equal(res.status, 404);
+  assert.equal(res.body.error.code, "dispute_not_found");
+  assert.ok(!res.text.includes("FAKE-TRK-1"));
+  assert.ok(calls.every((c) => c.method === "GET" || c.url.endsWith("/v1/oauth2/token")));
+});
 
-  const broken = await get(app, "/api/analysis", postJson("{not json"));
-  assert.equal(broken.status, 400);
-  assert.equal(broken.body.error.code, "invalid_json");
+test("sandbox analysis uses only what PayPal returned, never fields from the request", async () => {
+  const { client, calls } = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }) });
+  const extra = { status: "RESOLVED", order: { tracking_number: "FAKE-TRK-2" }, evidence: { proof_of_delivery: true } };
+  const res = await get(createApp(client), "/api/analysis", lookup("paypal_sandbox", "PP-D-1", extra));
+  assert.equal(res.status, 200);
+  assert.equal(res.body.source, "paypal_sandbox");
+  assert.ok(!res.body.draft.text.includes("DEMO DATA"));
+  assert.ok(!res.text.includes("FAKE-TRK-2"));
+  assert.ok(res.body.draft.text.includes("Amount: USD 12.50"));
+  // No order or evidence data comes from PayPal, so every item is unverified rather than taken from the request.
+  assert.ok(res.body.evidence.every((e: { status: string }) => e.status === "unverified"));
+  assert.ok(calls.some((c) => c.method === "GET" && c.url.includes("/v1/customer/disputes")));
+  assertNoSecrets(res.text);
 
-  const huge = await get(app, "/api/analysis", postJson(JSON.stringify({ ...demoRecord, customer_message: "x".repeat(40_000) })));
+  const missing = await get(createApp(client), "/api/analysis", lookup("paypal_sandbox", "PP-D-404"));
+  assert.equal(missing.status, 404);
+});
+
+test("sandbox analysis without credentials is 503, and PayPal failures are 502 without secrets", async () => {
+  const offline = await get(createApp(null), "/api/analysis", lookup("paypal_sandbox", "PP-D-1"));
+  assert.equal(offline.status, 503);
+  assert.equal(offline.body.error.code, "paypal_not_configured");
+
+  const { client } = mockPayPal({ token: () => json(401, { error: "invalid_client" }) });
+  const failed = await get(createApp(client), "/api/analysis", lookup("paypal_sandbox", "PP-D-1"));
+  assert.equal(failed.status, 502);
+  assert.equal(failed.body.error.code, "paypal_auth_failed");
+  assertNoSecrets(failed.text);
+});
+
+test("analysis endpoint rejects bad lookups, bad JSON and oversized bodies", async () => {
+  const { client, calls } = mockPayPal();
+  const app = createApp(client);
+  const bad = async (init: RequestInit) => {
+    const res = await get(app, "/api/analysis", init);
+    assert.equal(res.status, 400, String(init.body));
+    return res;
+  };
+  assert.deepEqual((await bad(lookup("live", "DEMO-1001"))).body.error.details, ['source must be "demo" or "paypal_sandbox".']);
+  assert.equal((await bad(lookup("demo", 1001))).body.error.code, "invalid_request");
+  await bad(lookup("demo", "../v1/payments"));
+  await bad(lookup("demo", "x".repeat(101)));
+  await bad(postJson("[]"));
+  assert.equal((await bad(postJson("{not json"))).body.error.code, "invalid_json");
+  await bad({ method: "POST", body: "a=b" });
+
+  const huge = await get(app, "/api/analysis", lookup("demo", "DEMO-1001", { pad: "x".repeat(5000) }));
   assert.equal(huge.status, 413);
   assert.equal(huge.body.error.code, "payload_too_large");
+  assert.equal(calls.length, 0);
+});
 
-  const notJson = await get(app, "/api/analysis", { method: "POST", body: "a=b" });
-  assert.equal(notJson.status, 400);
+test("the server's demo set is the validated demo fixture", () => {
+  assert.equal(DEMO_DISPUTES.length, 1);
+  assert.ok(DEMO_DISPUTES.every((d) => d.source === "demo"));
+  assert.equal(DEMO_DISPUTES[0].dispute_id, "DEMO-1001");
 });
 
 test("only the token POST and read-only GETs are ever sent to PayPal", async () => {
   const { client, calls } = mockPayPal();
-  await get(createApp(client), "/api/sandbox/disputes");
+  const app = createApp(client);
+  await get(app, "/api/sandbox/disputes");
+  await get(app, "/api/analysis", lookup("paypal_sandbox", "PP-D-1"));
+  assert.ok(calls.length >= 2);
   for (const call of calls) {
     const allowed = call.url.endsWith("/v1/oauth2/token") ? "POST" : "GET";
     assert.equal(call.method, allowed, `${call.method} ${call.url}`);

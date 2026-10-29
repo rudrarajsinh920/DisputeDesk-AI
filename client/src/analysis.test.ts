@@ -19,6 +19,16 @@ test("returns the analysis for the same dispute and source", async () => {
   assert.equal((await fetchAnalysis(dispute)).draft.text, "x");
 });
 
+test("sends only the source and dispute ID, never the record", async () => {
+  let sent: unknown;
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    sent = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ source: "demo", dispute_id: "DEMO-1", evidence: [], draft: { text: "x" } }), { status: 200 });
+  }) as typeof fetch;
+  await fetchAnalysis({ ...dispute, customer_message: "m", order: { tracking_number: "T" }, evidence: { proof_of_delivery: true } });
+  assert.deepEqual(sent, { source: "demo", dispute_id: "DEMO-1" });
+});
+
 test("rejects an analysis for a different dispute or source", async () => {
   respond(200, { source: "paypal_sandbox", dispute_id: "DEMO-1", evidence: [], draft: { text: "x" } });
   await assert.rejects(fetchAnalysis(dispute), /unexpected analysis/);
