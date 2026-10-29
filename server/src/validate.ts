@@ -62,7 +62,8 @@ export function validateDispute(input: unknown): Validation {
       order = {
         order_id: text("order.order_id", o.order_id, 100),
         item: text("order.item", o.item, 500),
-        shipping_status: text("order.shipping_status", o.shipping_status, 100),
+        // Canonical form (e.g. "delivered" -> "DELIVERED") so status rules don't depend on case.
+        shipping_status: text("order.shipping_status", o.shipping_status, 100)?.trim().toUpperCase().replace(/[\s-]+/g, "_"),
         // An empty tracking number means "not recorded", never a value.
         tracking_number: typeof tracking === "string" && tracking.trim() ? tracking : tracking === undefined ? undefined : null,
       };

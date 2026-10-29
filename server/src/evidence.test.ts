@@ -100,12 +100,47 @@ test("contradictory records are flagged with the records involved", () => {
     ],
   );
   const a = analyzeDispute(d);
-  assert.equal(a.draft.lines.filter((l) => l.kind === "conflict").length, 2);
+  assert.equal(a.draft.lines.filter((l) => l.kind === "conflict" && l.text.startsWith("- [CONFLICT:")).length, 2);
   assert.ok(a.next_steps.some((s) => s.startsWith("Resolve:")));
 
   const numberWithoutFlag = withChanges({ order: { ...demo.order, tracking_number: "TRK-9" } });
   assert.equal(findContradictions(numberWithoutFlag).length, 1);
   assert.deepEqual(findContradictions(demo), []);
+});
+
+test("contested evidence is unverified and never cited as a fact in the response", () => {
+  // Proof of delivery is marked available, but the order is still processing.
+  const d = withChanges({
+    order: { ...demo.order, shipping_status: "PROCESSING", tracking_number: "TRK-7" },
+    evidence: { ...demo.evidence, proof_of_delivery: true, shipping_tracking: true },
+  });
+  const a = analyzeDispute(d);
+  assert.equal(status(a, "proof_of_delivery"), "unverified");
+  assert.match(a.evidence.find((e) => e.id === "proof_of_delivery")!.explanation, /contradict/);
+  assert.ok(!a.draft.lines.some((l) => l.kind === "fact" && l.records.includes("evidence.proof_of_delivery")));
+  assert.ok(a.draft.text.includes("[CONFLICT: do not cite proof of delivery until the conflicting records are resolved.]"));
+  // Uncontested evidence is still used.
+  assert.equal(status(a, "shipping_tracking"), "available");
+  assert.ok(a.draft.text.includes("The shipment has tracking number TRK-7."));
+  assertFactsComeFromRecords(d, a);
+
+  // Delivered status with proof marked not available: the status is not asserted in the response.
+  const delivered = analyzeDispute(withChanges({ order: { ...demo.order, shipping_status: "DELIVERED" } }));
+  assert.equal(delivered.contradictions.length, 1);
+  assert.ok(!delivered.draft.text.includes("Our records show the order status"));
+  assert.ok(delivered.draft.text.includes("[CONFLICT: do not cite the shipping status until the conflicting records are resolved.]"));
+});
+
+test("shipping status is matched regardless of case", () => {
+  const result = validateDispute({ ...demo, order: { ...demo.order, shipping_status: " delivered " }, evidence: { ...demo.evidence, proof_of_delivery: true } });
+  assert.ok(result.ok);
+  assert.equal(result.dispute.order?.shipping_status, "DELIVERED");
+  const a = analyzeDispute(result.dispute);
+  assert.deepEqual(a.contradictions, []);
+  assert.equal(status(a, "proof_of_delivery"), "available");
+  assert.ok(a.draft.text.includes('Our records show the order status as "Delivered".'));
+  const inTransit = validateDispute({ ...demo, order: { ...demo.order, shipping_status: "in transit" } });
+  assert.ok(inTransit.ok && inTransit.dispute.order?.shipping_status === "IN_TRANSIT");
 });
 
 test("incomplete records give gaps, not guesses", () => {

@@ -51,7 +51,10 @@ function ref(dispute: Dispute, path: string): RecordRef {
 
 const trackingNumber = (d: Dispute) => (d.order?.tracking_number?.trim() ? d.order.tracking_number : null);
 
-function assess(dispute: Dispute, key: EvidenceKey): EvidenceFinding {
+// Record paths named in any contradiction. Contested records are never cited as facts in the merchant response.
+const contestedPaths = (contradictions: Contradiction[]) => new Set(contradictions.flatMap((c) => c.records.map((r) => r.path)));
+
+function assess(dispute: Dispute, key: EvidenceKey, contested: Set<string>): EvidenceFinding {
   const flag = ref(dispute, `evidence.${key}`);
   const records = [flag];
   let status: EvidenceFinding["status"];
@@ -92,6 +95,10 @@ function assess(dispute: Dispute, key: EvidenceKey): EvidenceFinding {
     explanation = `The supplied records do not say whether ${LABELS[key].toLowerCase()} is available.`;
   }
   if (status === "missing") explanation += ` ${NOT_PROOF}`;
+  if (status === "available" && contested.has(flag.path)) {
+    status = "unverified";
+    explanation += " Other supplied records contradict this, so it cannot be relied on until that is resolved.";
+  }
 
   const isKey = (KEY_EVIDENCE[dispute.reason] ?? []).includes(key);
   const reason = labelFor(REASON_LABELS, dispute.reason);
@@ -138,6 +145,9 @@ function buildDraft(dispute: Dispute, evidence: EvidenceFinding[], contradiction
   const field = (label: string, path: string, value: string | null | undefined, display = value) =>
     value ? add("fact", `- ${label}: ${display}`, path) : add("missing", `- ${label}: [MISSING: not on record]`, path);
   const found = (key: EvidenceKey) => evidence.find((e) => e.id === key)!;
+  const contested = contestedPaths(contradictions);
+  const conflict = (what: string, ...records: string[]) =>
+    add("conflict", `[CONFLICT: do not cite ${what} until the conflicting records are resolved.]`, ...records);
 
   add("notice", "DRAFT — REQUIRES MERCHANT REVIEW. NOT SUBMITTED TO PAYPAL.");
   if (dispute.source === "demo") add("notice", "DEMO DATA — NOT A REAL PAYPAL DISPUTE.");
@@ -174,18 +184,24 @@ function buildDraft(dispute: Dispute, evidence: EvidenceFinding[], contradiction
 
   add("notice", "Merchant response:");
   if (dispute.reason === NOT_RECEIVED) {
-    if (shipping && SHIPPED_STATES.includes(shipping)) {
+    if (contested.has("order.shipping_status")) {
+      conflict("the shipping status", "order.shipping_status");
+    } else if (shipping && SHIPPED_STATES.includes(shipping)) {
       add("fact", `Our records show the order status as "${humanize(shipping)}".`, "order.shipping_status");
     } else {
       add("input", "[NEEDS MERCHANT INPUT: state whether and when the order was shipped, from your records.]");
     }
     if (found("shipping_tracking").status === "available") {
       add("fact", `The shipment has tracking number ${number}.`, "order.tracking_number", "evidence.shipping_tracking");
+    } else if (contested.has("evidence.shipping_tracking")) {
+      conflict("tracking", "evidence.shipping_tracking", "order.tracking_number");
     } else {
       add("unsupported", "[UNSUPPORTED: do not cite tracking until a valid tracking number is on record.]");
     }
     if (found("proof_of_delivery").status === "available") {
       add("fact", "Proof of delivery is on record.", "evidence.proof_of_delivery");
+    } else if (contested.has("evidence.proof_of_delivery")) {
+      conflict("proof of delivery", "evidence.proof_of_delivery", "order.shipping_status");
     } else {
       add("unsupported", "[UNSUPPORTED: do not state that the order was delivered. No proof of delivery is on record, which does not show it was not delivered.]");
     }
@@ -213,8 +229,9 @@ function buildDraft(dispute: Dispute, evidence: EvidenceFinding[], contradiction
 }
 
 export function analyzeDispute(dispute: Dispute): Analysis {
-  const evidence = EVIDENCE_KEYS.map((key) => assess(dispute, key));
   const contradictions = findContradictions(dispute);
+  const contested = contestedPaths(contradictions);
+  const evidence = EVIDENCE_KEYS.map((key) => assess(dispute, key, contested));
   const next_steps = [
     ...evidence
       .filter((e) => e.priority === "key" && e.status !== "available")
