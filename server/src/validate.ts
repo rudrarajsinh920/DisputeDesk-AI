@@ -41,7 +41,8 @@ export function validateDispute(input: unknown): Validation {
       typeof a.currency_code === "string" &&
       /^[A-Z]{3}$/.test(a.currency_code) &&
       typeof a.value === "string" &&
-      /^\d{1,12}(\.\d{1,2})?$/.test(a.value)
+      // Up to 3 decimals: ISO 4217 currencies use 0, 2 or 3 minor digits (e.g. KWD).
+      /^\d{1,12}(\.\d{1,3})?$/.test(a.value)
     ) {
       amount = { currency_code: a.currency_code, value: a.value };
     } else {

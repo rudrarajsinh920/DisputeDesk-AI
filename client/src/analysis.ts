@@ -27,4 +27,10 @@ export async function fetchAnalysis(dispute: Dispute, signal?: AbortSignal): Pro
 const MARKER = /\[(MISSING|UNVERIFIED|UNSUPPORTED|NEEDS MERCHANT INPUT|CONFLICT):/g;
 
 // Gaps the merchant still has to fill or remove before the draft can be used.
-export const countMarkers = (text: string) => text.match(MARKER)?.length ?? 0;
+// Lines starting with ">" are quoted buyer text, so brackets typed by the buyer are not counted.
+export const countMarkers = (text: string) =>
+  text
+    .split(/\r?\n/)
+    .filter((line) => !line.startsWith(">"))
+    .join("\n")
+    .match(MARKER)?.length ?? 0;

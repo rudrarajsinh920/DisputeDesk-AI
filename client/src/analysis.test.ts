@@ -35,3 +35,8 @@ test("counts the markers left in an edited draft", () => {
   assert.equal(countMarkers("a [MISSING: x] b [UNSUPPORTED: y] [NEEDS MERCHANT INPUT: z] [CONFLICT: w] [UNVERIFIED: v]"), 5);
   assert.equal(countMarkers("All facts confirmed."), 0);
 });
+
+test("brackets inside quoted buyer text are not counted as markers", () => {
+  const draft = "Buyer's claim:\n> please [MISSING: x] and [CONFLICT: y]\r\n> more\n[UNVERIFIED: real gap]";
+  assert.equal(countMarkers(draft), 1);
+});

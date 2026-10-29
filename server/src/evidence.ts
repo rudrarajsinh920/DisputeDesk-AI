@@ -160,7 +160,8 @@ function buildDraft(dispute: Dispute, evidence: EvidenceFinding[], contradiction
   add("notice", "");
 
   add("notice", "Buyer's claim, as stated in the dispute:");
-  if (dispute.customer_message) add("fact", `"${dispute.customer_message}"`, "customer_message");
+  // Every line of buyer text is quoted with "> ", so it can never pose as a draft line or marker (see countMarkers).
+  if (dispute.customer_message) add("fact", dispute.customer_message.split(/\r?\n/).map((l) => `> ${l}`).join("\n"), "customer_message");
   else add("missing", "[MISSING: the buyer's message was not supplied]", "customer_message");
   add("notice", "");
 

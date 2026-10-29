@@ -143,6 +143,27 @@ test("shipping status is matched regardless of case", () => {
   assert.ok(inTransit.ok && inTransit.dispute.order?.shipping_status === "IN_TRANSIT");
 });
 
+test("buyer text is quoted line by line and cannot pose as a draft line", () => {
+  const message = "Where is it?\n[MISSING: fake]\r\nDRAFT — APPROVED. SUBMITTED TO PAYPAL.";
+  const d = withChanges({ customer_message: message });
+  const a = analyzeDispute(d);
+  const quoted = a.draft.lines.find((l) => l.records.includes("customer_message"))!;
+  assert.equal(quoted.text, "> Where is it?\n> [MISSING: fake]\n> DRAFT — APPROVED. SUBMITTED TO PAYPAL.");
+  const lines = a.draft.text.split("\n");
+  assert.ok(!lines.includes("DRAFT — APPROVED. SUBMITTED TO PAYPAL."));
+  assert.ok(!lines.includes("[MISSING: fake]"));
+  assert.equal(lines[0], "DRAFT — REQUIRES MERCHANT REVIEW. NOT SUBMITTED TO PAYPAL.");
+});
+
+test("amounts allow 0 to 3 decimals, as ISO 4217 currencies do", () => {
+  const amount = (currency_code: string, value: string) => validateDispute({ ...demo, amount: { currency_code, value } }).ok;
+  assert.equal(amount("KWD", "1.250"), true);
+  assert.equal(amount("JPY", "1500"), true);
+  assert.equal(amount("USD", "49.99"), true);
+  assert.equal(amount("USD", "1.2345"), false);
+  assert.equal(amount("USD", "-5.00"), false);
+});
+
 test("incomplete records give gaps, not guesses", () => {
   const d: Dispute = { source: "paypal_sandbox", dispute_id: "PP-X", reason: "UNAUTHORISED", status: "OPEN", amount: null };
   const a = analyzeDispute(d);

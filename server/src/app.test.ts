@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import { createApp } from "./app.ts";
@@ -35,6 +36,26 @@ async function get(app: ReturnType<typeof createApp>, path: string, init?: Reque
     const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, init);
     const text = await res.text();
     return { status: res.status, text, body: JSON.parse(text) };
+  } finally {
+    server.close();
+  }
+}
+
+// fetch can't set Host, so this sends a raw request the way a DNS-rebinding page would.
+async function getWithHost(app: ReturnType<typeof createApp>, path: string, host: string) {
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const port = (server.address() as AddressInfo).port;
+    return await new Promise<{ status: number; text: string }>((resolve, reject) => {
+      http
+        .get({ host: "127.0.0.1", port, path, headers: { Host: host } }, (res) => {
+          let text = "";
+          res.on("data", (chunk) => (text += chunk));
+          res.on("end", () => resolve({ status: res.statusCode ?? 0, text }));
+        })
+        .on("error", reject);
+    });
   } finally {
     server.close();
   }
@@ -212,5 +233,20 @@ test("only the token POST and read-only GETs are ever sent to PayPal", async () 
     const allowed = call.url.endsWith("/v1/oauth2/token") ? "POST" : "GET";
     assert.equal(call.method, allowed, `${call.method} ${call.url}`);
     assert.ok(call.url.startsWith("https://api-m.sandbox.paypal.com/"), call.url);
+  }
+});
+
+test("requests addressed to another host are refused before any route runs", async () => {
+  const { client, calls } = mockPayPal({ disputes: () => json(200, { items: [{ dispute_id: "PP-D-1" }] }) });
+  const app = createApp(client);
+  for (const host of ["evil.example:3001", "evil.example", "127.0.0.1.evil.example"]) {
+    const res = await getWithHost(app, "/api/sandbox/disputes", host);
+    assert.equal(res.status, 403, host);
+    assert.equal(JSON.parse(res.text).error.code, "forbidden_host");
+    assert.ok(!res.text.includes("PP-D-1"));
+  }
+  assert.equal(calls.length, 0);
+  for (const host of ["localhost:5173", "127.0.0.1:3001", "[::1]:3001", "LOCALHOST"]) {
+    assert.equal((await getWithHost(app, "/api/health", host)).status, 200, host);
   }
 });

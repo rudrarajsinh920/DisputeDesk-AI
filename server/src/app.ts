@@ -5,10 +5,22 @@ import { PayPalError } from "./paypal.ts";
 import type { PayPalClient } from "./paypal.ts";
 import { validateDispute } from "./validate.ts";
 
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
 // paypal is null when credentials are missing; the server still runs and says so.
 export function createApp(paypal: PayPalClient | null) {
   const app = express();
   app.disable("x-powered-by");
+
+  // DNS-rebinding guard: another site pointed at 127.0.0.1 still sends its own Host, so only local names pass.
+  // Vite's proxy forwards the browser's Host (localhost:5173), which is allowed.
+  app.use((req, res, next) => {
+    const hostname = (req.headers.host ?? "").replace(/:\d+$/, "").toLowerCase();
+    if (LOCAL_HOSTS.has(hostname)) return next();
+    res.status(403).json({
+      error: { code: "forbidden_host", message: "DisputeDesk only answers requests addressed to this machine.", upstream_status: null },
+    });
+  });
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", paypal: { environment: "sandbox", configured: paypal !== null } });
