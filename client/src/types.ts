@@ -10,7 +10,9 @@ export interface Dispute {
   dispute_id: string;
   reason: string;
   status: string;
-  amount: Money;
+  // null when PayPal sends no amount; never filled in.
+  amount: Money | null;
+  create_time?: string;
   customer_message?: string;
   order?: {
     order_id: string;

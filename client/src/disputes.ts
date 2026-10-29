@@ -82,12 +82,19 @@ export function evidenceChecklist(dispute: Dispute): EvidenceItem[] | null {
   ];
 }
 
-export function formatMoney({ currency_code, value }: Money): string {
+export function formatMoney(money: Money | null): string {
+  if (!money) return "—";
+  const { currency_code, value } = money;
   try {
     return new Intl.NumberFormat("en-US", { style: "currency", currency: currency_code }).format(Number(value));
   } catch {
     return `${currency_code} ${value}`;
   }
+}
+
+export function formatDate(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("en-US", { dateStyle: "medium" });
 }
 
 export interface Summary {
@@ -102,8 +109,8 @@ export function summarize(disputes: Dispute[]): Summary {
   const cents = new Map<string, number>();
   let missingEvidence = 0;
   for (const d of disputes) {
-    const value = Math.round(Number(d.amount.value) * 100);
-    if (Number.isFinite(value)) {
+    const value = d.amount ? Math.round(Number(d.amount.value) * 100) : NaN;
+    if (d.amount && Number.isFinite(value)) {
       cents.set(d.amount.currency_code, (cents.get(d.amount.currency_code) ?? 0) + value);
     }
     missingEvidence += evidenceChecklist(d)?.filter((e) => !e.present).length ?? 0;

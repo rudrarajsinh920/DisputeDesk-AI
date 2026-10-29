@@ -1,4 +1,4 @@
-import { REASON_LABELS, evidenceChecklist, formatMoney, humanize, labelFor } from "./disputes.ts";
+import { REASON_LABELS, evidenceChecklist, formatDate, formatMoney, humanize, labelFor } from "./disputes.ts";
 import type { Dispute } from "./types.ts";
 import { StatusBadge } from "./ui.tsx";
 
@@ -28,6 +28,12 @@ export function DisputeDetail({ dispute }: { dispute: Dispute }) {
             <span className="code">{dispute.reason}</span>
           </dd>
         </div>
+        {dispute.create_time && (
+          <div>
+            <dt>Opened</dt>
+            <dd>{formatDate(dispute.create_time)}</dd>
+          </div>
+        )}
       </dl>
 
       {dispute.customer_message && (

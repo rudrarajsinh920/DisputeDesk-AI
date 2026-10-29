@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { DisputeDetail } from "./DisputeDetail.tsx";
 import { DisputeList } from "./DisputeList.tsx";
-import { demoDisputes, fetchSandboxDisputes } from "./data.ts";
+import { demoDisputes } from "./data.ts";
 import { STATUS_FILTERS, STATUS_LABELS, countByStatus, filterByStatus, formatMoney, labelFor, summarize } from "./disputes.ts";
+import { fetchSandboxDisputes } from "./sandbox.ts";
 import type { Dispute, Source } from "./types.ts";
 import { StatePanel } from "./ui.tsx";
 
@@ -80,10 +81,8 @@ export default function App() {
         {disputes === null ? (
           sandbox.status === "error" ? (
             <StatePanel title="Couldn't load PayPal sandbox disputes" tone="error">
-              <p>The sandbox is reached through the DisputeDesk server. Check that it is running, then try again.</p>
-              <p className="muted">
-                Details: <code>{sandbox.message}</code>
-              </p>
+              <p>{sandbox.message}</p>
+              <p className="muted">The sandbox is reached through the DisputeDesk server, which holds the PayPal credentials.</p>
               <button type="button" className="button" onClick={() => setAttempt((n) => n + 1)}>
                 Try again
               </button>
