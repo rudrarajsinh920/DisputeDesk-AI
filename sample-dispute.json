@@ -1,0 +1,23 @@
+
+{
+  "dispute_id": "DEMO-1001",
+  "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+  "status": "OPEN",
+  "amount": {
+    "currency_code": "USD",
+    "value": "49.99"
+  },
+  "customer_message": "I paid for my order but never received it.",
+  "order": {
+    "order_id": "ORDER-1001",
+    "item": "Wireless keyboard",
+    "shipping_status": "SHIPPED",
+    "tracking_number": null
+  },
+  "evidence": {
+    "proof_of_delivery": false,
+    "shipping_tracking": false,
+    "order_confirmation": true,
+    "customer_communication": true
+  }
+}
