@@ -41,6 +41,14 @@ const KEY_EVIDENCE: Record<string, EvidenceKey[]> = {
 
 const NOT_PROOF = "Missing from the supplied records does not show that it did not happen.";
 
+// Written only by the server, in every draft (rule-based and AI-assisted).
+export const DRAFT_HEADER = "DRAFT — REQUIRES MERCHANT REVIEW. NOT SUBMITTED TO PAYPAL.";
+export const DEMO_LABEL = "DEMO DATA — NOT A REAL PAYPAL DISPUTE.";
+export const DRAFT_FOOTER = [
+  "This draft uses only the records supplied to DisputeDesk and does not establish any fact on its own.",
+  "Confirm every fact and the applicable evidence requirements before responding in PayPal.",
+];
+
 function ref(dispute: Dispute, path: string): RecordRef {
   let value: unknown = dispute;
   for (const key of path.split(".")) {
@@ -149,8 +157,8 @@ function buildDraft(dispute: Dispute, evidence: EvidenceFinding[], contradiction
   const conflict = (what: string, ...records: string[]) =>
     add("conflict", `[CONFLICT: do not cite ${what} until the conflicting records are resolved.]`, ...records);
 
-  add("notice", "DRAFT — REQUIRES MERCHANT REVIEW. NOT SUBMITTED TO PAYPAL.");
-  if (dispute.source === "demo") add("notice", "DEMO DATA — NOT A REAL PAYPAL DISPUTE.");
+  add("notice", DRAFT_HEADER);
+  if (dispute.source === "demo") add("notice", DEMO_LABEL);
   add("notice", "");
 
   add("fact", `Dispute ID: ${dispute.dispute_id}`, "dispute_id");
@@ -224,8 +232,7 @@ function buildDraft(dispute: Dispute, evidence: EvidenceFinding[], contradiction
   }
 
   add("notice", "");
-  add("notice", "This draft uses only the records supplied to DisputeDesk and does not establish any fact on its own.");
-  add("notice", "Confirm every fact and the applicable evidence requirements before responding in PayPal.");
+  for (const line of DRAFT_FOOTER) add("notice", line);
   return lines;
 }
 

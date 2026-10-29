@@ -54,7 +54,8 @@ export interface Contradiction {
   records: RecordRef[];
 }
 
-export type DraftLineKind = "notice" | "fact" | "missing" | "unverified" | "unsupported" | "input" | "conflict";
+// "ai" lines are model-written text that passed the server's checks; they are never facts.
+export type DraftLineKind = "notice" | "fact" | "missing" | "unverified" | "unsupported" | "input" | "conflict" | "ai";
 
 export interface DraftLine {
   kind: DraftLineKind;
@@ -69,5 +70,44 @@ export interface Analysis {
   evidence: EvidenceFinding[];
   contradictions: Contradiction[];
   next_steps: string[];
+  draft: { lines: DraftLine[]; text: string };
+}
+
+// AI-assisted explanations and draft (server/src/assist.ts). The rule-based Analysis stays authoritative.
+// A supplied record value the model may cite by id (R1, R2…).
+export interface AiFact {
+  id: string;
+  path: string;
+  label: string;
+  value: string;
+  // Named in a contradiction found by the rules.
+  contested: boolean;
+}
+
+export interface AiExplanation {
+  evidence_id: EvidenceKey;
+  // Always the rules' status, whatever the model said.
+  status: EvidenceStatus;
+  text: string;
+  cites: string[];
+  // "rules" when the model's text was missing or failed the checks.
+  source: "ai" | "rules";
+}
+
+export interface AiFlag {
+  where: string;
+  reason: string;
+  // Model text that was not used, shown so the merchant can see what was dropped.
+  removed_text: string | null;
+}
+
+export interface AiAssist {
+  source: Source;
+  dispute_id: string;
+  model: string;
+  status: "ok" | "flagged";
+  facts: AiFact[];
+  explanations: AiExplanation[];
+  flags: AiFlag[];
   draft: { lines: DraftLine[]; text: string };
 }

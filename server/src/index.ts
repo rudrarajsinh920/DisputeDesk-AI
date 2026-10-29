@@ -1,9 +1,10 @@
 import { createApp } from "./app.ts";
 import { ENV_PATH, loadConfig } from "./config.ts";
+import { createGeminiClient } from "./gemini.ts";
 import { createPayPalClient } from "./paypal.ts";
 
 const config = loadConfig();
-const app = createApp(config.paypal ? createPayPalClient(config.paypal) : null);
+const app = createApp(config.paypal ? createPayPalClient(config.paypal) : null, config.ai ? createGeminiClient(config.ai) : null);
 
 // Localhost only: this server holds PayPal credentials and has no login yet.
 app.listen(config.port, "127.0.0.1", (error?: Error) => {
@@ -13,5 +14,6 @@ app.listen(config.port, "127.0.0.1", (error?: Error) => {
     return;
   }
   const paypal = config.paypal ? "configured" : `not configured (add credentials to ${ENV_PATH})`;
-  console.log(`DisputeDesk server on http://127.0.0.1:${config.port}. PayPal sandbox: ${paypal}.`);
+  const ai = config.ai ? `on (${config.ai.model})` : "off (set GEMINI_API_KEY to turn it on)";
+  console.log(`DisputeDesk server on http://127.0.0.1:${config.port}. PayPal sandbox: ${paypal}. AI drafting: ${ai}.`);
 });

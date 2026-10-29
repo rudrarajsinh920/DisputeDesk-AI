@@ -4,6 +4,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import { DEMO_DISPUTES, createApp } from "./app.ts";
+import { createGeminiClient } from "./gemini.ts";
 import { createPayPalClient } from "./paypal.ts";
 
 // Placeholder values only; nothing here talks to PayPal.
@@ -35,7 +36,7 @@ async function get(app: ReturnType<typeof createApp>, path: string, init?: Reque
   try {
     const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, init);
     const text = await res.text();
-    return { status: res.status, text, body: JSON.parse(text) };
+    return { status: res.status, headers: res.headers, text, body: JSON.parse(text) };
   } finally {
     server.close();
   }
@@ -304,5 +305,145 @@ test("requests addressed to another host are refused before any route runs", asy
   assert.equal(calls.length, 0);
   for (const host of ["localhost:5173", "127.0.0.1:3001", "[::1]:3001", "LOCALHOST"]) {
     assert.equal((await getWithHost(app, "/api/health", host)).status, 200, host);
+  }
+});
+
+// ---- AI-assisted draft (/api/analysis/ai). Gemini is always mocked here. ----
+const GEMINI_KEY = "test-gemini-key";
+const aiAnswer = (value: unknown) =>
+  json(200, { candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify(value) }] } }] });
+// Statuses match the rules' findings for the demo record, so a clean answer has no flags.
+const demoExplanations = [
+  { evidence_id: "order_confirmation", status: "available", text: "An order confirmation is on record.", cites: ["R5"] },
+  { evidence_id: "shipping_tracking", status: "missing", text: "No tracking evidence is on record yet.", cites: ["R6"] },
+  { evidence_id: "proof_of_delivery", status: "missing", text: "Proof of delivery is not on record.", cites: ["R7"] },
+  { evidence_id: "customer_communication", status: "available", text: "Messages with the buyer are on record.", cites: ["R8"] },
+];
+const cleanAnswer = { explanations: demoExplanations, draft_sections: [{ text: "Add the carrier record from your shipping system.", cites: [], needs_merchant_input: true }] };
+
+function mockAi(respond: () => Response | Promise<Response> = () => aiAnswer(cleanAnswer)) {
+  const calls: { url: string; body: string; headers: Record<string, string> }[] = [];
+  const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(input), body: String(init?.body), headers: init?.headers as Record<string, string> });
+    return respond();
+  }) as typeof fetch;
+  return { client: createGeminiClient({ apiKey: GEMINI_KEY, model: "gemini-test-model" }, fetchImpl), calls };
+}
+const assertNoAiKey = (text: string) => assert.ok(!text.includes(GEMINI_KEY), "response leaked the Gemini key");
+
+test("AI drafting without a key is 503 and calls nothing", async () => {
+  const paypal = mockPayPal();
+  const res = await get(createApp(paypal.client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"));
+  assert.equal(res.status, 503);
+  assert.equal(res.body.error.code, "ai_not_configured");
+  assert.equal(paypal.calls.length, 0);
+});
+
+test("a demo AI draft is built from the server's record, keeps the demo label, and sends only allowlisted facts", async () => {
+  const ai = mockAi();
+  const res = await get(createApp(null, ai.client), "/api/analysis/ai", lookup("demo", "DEMO-1001", { order: { tracking_number: "FAKE-TRK-3" } }));
+  assert.equal(res.status, 200);
+  assert.equal(res.body.source, "demo");
+  assert.equal(res.body.dispute_id, "DEMO-1001");
+  assert.equal(res.body.model, "gemini-test-model");
+  assert.equal(res.body.status, "ok");
+  assert.ok(res.body.draft.text.startsWith("DRAFT — REQUIRES MERCHANT REVIEW. NOT SUBMITTED TO PAYPAL.\nDEMO DATA — NOT A REAL PAYPAL DISPUTE."));
+  assert.equal(ai.calls.length, 1);
+  const sent = ai.calls[0].body;
+  for (const absent of ["DEMO-1001", "ORDER-1001", DEMO_DISPUTES[0].customer_message!, "FAKE-TRK-3", GEMINI_KEY, CREDENTIALS.clientSecret]) {
+    assert.ok(!sent.includes(absent), `Gemini request includes ${absent}`);
+  }
+  assertNoAiKey(res.text);
+  assertNoSecrets(res.text);
+});
+
+test("an AI draft for a sandbox dispute uses only what PayPal returned and has no demo label", async () => {
+  const paypal = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }) });
+  const ai = mockAi();
+  const res = await get(createApp(paypal.client, ai.client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"));
+  assert.equal(res.status, 200);
+  assert.equal(res.body.source, "paypal_sandbox");
+  assert.ok(!res.body.draft.text.includes("DEMO DATA"));
+  assert.deepEqual(res.body.facts.map((f: { path: string }) => f.path), ["reason", "amount"]);
+  assert.ok(paypal.calls.every((c) => c.method === "GET" || c.url.endsWith("/v1/oauth2/token")));
+  assertNoSecrets(res.text);
+});
+
+test("unknown disputes and bad lookups never reach Gemini", async () => {
+  const ai = mockAi();
+  const app = createApp(mockPayPal().client, ai.client);
+  assert.equal((await get(app, "/api/analysis/ai", lookup("demo", "DEMO-9999"))).status, 404);
+  assert.equal((await get(app, "/api/analysis/ai", lookup("paypal_sandbox", "DEMO-1001"))).status, 404);
+  assert.equal((await get(app, "/api/analysis/ai", lookup("demo", "../x"))).status, 400);
+  assert.equal((await get(createApp(null, ai.client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"))).status, 503);
+  assert.equal(ai.calls.length, 0);
+});
+
+test("an invented tracking number from Gemini is flagged and kept out of the draft", async () => {
+  const invented = { explanations: [], draft_sections: [{ text: "It shipped with tracking 1Z999AA10123456784.", cites: ["R4"], needs_merchant_input: false }] };
+  const res = await get(createApp(null, mockAi(() => aiAnswer(invented)).client), "/api/analysis/ai", lookup("demo", "DEMO-1001"));
+  assert.equal(res.status, 200);
+  assert.equal(res.body.status, "flagged");
+  assert.ok(!res.body.draft.text.includes("1Z999AA10123456784"));
+  assert.ok(res.body.draft.text.includes("[UNSUPPORTED: AI paragraph 1 was removed"));
+});
+
+test("Gemini failures become clear errors without secrets, and the rule-based analysis still works", async () => {
+  const cases: [() => Response | Promise<Response>, number, string][] = [
+    [() => json(429, {}, ) as Response, 429, "ai_rate_limited"],
+    [() => { throw new DOMException("timed out", "TimeoutError"); }, 504, "ai_timeout"],
+    [() => { throw new TypeError("fetch failed"); }, 502, "ai_unavailable"],
+    [() => json(404, { error: { message: "no model" } }), 502, "ai_unavailable"],
+    [() => json(403, {}), 502, "ai_auth_failed"],
+    [() => aiAnswer({ explanations: "nope" }), 502, "ai_bad_response"],
+    [() => new Response("not json", { status: 200 }), 502, "ai_bad_response"],
+  ];
+  for (const [respond, status, code] of cases) {
+    const app = createApp(null, mockAi(respond).client);
+    const res = await get(app, "/api/analysis/ai", lookup("demo", "DEMO-1001"));
+    assert.equal(res.status, status, code);
+    assert.equal(res.body.error.code, code);
+    assertNoAiKey(res.text);
+    // The deterministic analysis does not depend on Gemini.
+    assert.equal((await get(app, "/api/analysis", lookup("demo", "DEMO-1001"))).status, 200);
+  }
+
+  const limited = mockAi(() => new Response("{}", { status: 429, headers: { "Retry-After": "30" } }));
+  const res = await get(createApp(null, limited.client), "/api/analysis/ai", lookup("demo", "DEMO-1001"));
+  assert.equal(res.headers.get("retry-after"), "30");
+});
+
+test("only one AI draft per dispute runs at a time", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const ai = mockAi(async () => {
+    await gate;
+    return aiAnswer(cleanAnswer);
+  });
+  const app = createApp(null, ai.client);
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/analysis/ai`;
+    const first = fetch(url, lookup("demo", "DEMO-1001"));
+    while (ai.calls.length === 0) await new Promise((r) => setTimeout(r, 5));
+    const second = await fetch(url, lookup("demo", "DEMO-1001"));
+    assert.equal(second.status, 409);
+    assert.equal((await second.json()).error.code, "ai_in_progress");
+    release();
+    assert.equal((await first).status, 200);
+    assert.equal((await fetch(url, lookup("demo", "DEMO-1001"))).status, 200, "the lock is released afterwards");
+  } finally {
+    release();
+    server.close();
+  }
+});
+
+test("the AI route sends PayPal only the token POST and read-only GETs", async () => {
+  const paypal = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }) });
+  await get(createApp(paypal.client, mockAi().client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"));
+  assert.ok(paypal.calls.length >= 2);
+  for (const call of paypal.calls) {
+    assert.equal(call.method, call.url.endsWith("/v1/oauth2/token") ? "POST" : "GET", `${call.method} ${call.url}`);
   }
 });

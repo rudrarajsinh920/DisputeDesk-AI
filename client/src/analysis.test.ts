@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { countMarkers, fetchAnalysis } from "./analysis.ts";
+import { countMarkers, fetchAiAssist, fetchAnalysis } from "./analysis.ts";
 import type { Dispute } from "./types.ts";
 
 const realFetch = globalThis.fetch;
@@ -49,4 +49,27 @@ test("counts the markers left in an edited draft", () => {
 test("brackets inside quoted buyer text are not counted as markers", () => {
   const draft = "Buyer's claim:\n> please [MISSING: x] and [CONFLICT: y]\r\n> more\n[UNVERIFIED: real gap]";
   assert.equal(countMarkers(draft), 1);
+});
+
+const aiReply = { source: "demo", dispute_id: "DEMO-1", model: "m", status: "flagged", facts: [], explanations: [], flags: [], draft: { lines: [], text: "x" } };
+
+test("AI draft requests name only the record and go to the AI route", async () => {
+  let call: { url: string; body: unknown } | undefined;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    call = { url, body: JSON.parse(String(init?.body)) };
+    return new Response(JSON.stringify(aiReply), { status: 200 });
+  }) as typeof fetch;
+  assert.equal((await fetchAiAssist({ ...dispute, order: { tracking_number: "T" } })).status, "flagged");
+  assert.deepEqual(call, { url: "/api/analysis/ai", body: { source: "demo", dispute_id: "DEMO-1" } });
+});
+
+test("AI drafts for another dispute or with a bad shape are rejected; server errors keep their message", async () => {
+  respond(200, { ...aiReply, source: "paypal_sandbox" });
+  await assert.rejects(fetchAiAssist(dispute), /unexpected AI draft/);
+  respond(200, { ...aiReply, status: "great" });
+  await assert.rejects(fetchAiAssist(dispute), /unexpected AI draft/);
+  respond(200, { ...aiReply, flags: undefined });
+  await assert.rejects(fetchAiAssist(dispute), /unexpected AI draft/);
+  respond(503, { error: { code: "ai_not_configured", message: "AI drafting is off: GEMINI_API_KEY is not set on the server." } });
+  await assert.rejects(fetchAiAssist(dispute), /AI drafting is off.*\(HTTP 503\)/);
 });
