@@ -1,11 +1,12 @@
-import { REASON_LABELS, evidenceChecklist, formatDate, formatMoney, humanize, labelFor } from "./disputes.ts";
+import type { ReactNode } from "react";
+import { AnalysisPanel } from "./AnalysisPanel.tsx";
+import { REASON_LABELS, formatDate, formatMoney, humanize, labelFor } from "./disputes.ts";
 import type { Dispute } from "./types.ts";
 import { StatusBadge } from "./ui.tsx";
 
-export function DisputeDetail({ dispute }: { dispute: Dispute }) {
-  const checklist = evidenceChecklist(dispute);
-  const missing = checklist?.filter((e) => !e.present) ?? [];
+const orNotRecorded = (value: ReactNode) => value || <span className="muted">Not recorded</span>;
 
+export function DisputeDetail({ dispute }: { dispute: Dispute }) {
   return (
     <article className="detail">
       <header className="detail-head">
@@ -48,53 +49,18 @@ export function DisputeDetail({ dispute }: { dispute: Dispute }) {
           <h3>Order</h3>
           <dl className="kv">
             <dt>Order ID</dt>
-            <dd className="mono">{dispute.order.order_id}</dd>
+            <dd className="mono">{orNotRecorded(dispute.order.order_id)}</dd>
             <dt>Item</dt>
-            <dd>{dispute.order.item}</dd>
+            <dd>{orNotRecorded(dispute.order.item)}</dd>
             <dt>Shipping status</dt>
-            <dd>{humanize(dispute.order.shipping_status)}</dd>
+            <dd>{orNotRecorded(dispute.order.shipping_status && humanize(dispute.order.shipping_status))}</dd>
             <dt>Tracking number</dt>
-            <dd>{dispute.order.tracking_number ?? <span className="muted">Not recorded</span>}</dd>
+            <dd>{orNotRecorded(dispute.order.tracking_number)}</dd>
           </dl>
         </section>
       )}
 
-      <section className="detail-section">
-        <h3>Evidence checklist</h3>
-        {checklist ? (
-          <>
-            <p className="muted">
-              {checklist.length - missing.length} of {checklist.length} available
-            </p>
-            <ul className="checklist">
-              {checklist.map((e) => (
-                <li key={e.item} className={e.present ? "is-present" : "is-missing"}>
-                  <span className="check-icon" aria-hidden="true">
-                    {e.present ? "✓" : "!"}
-                  </span>
-                  <span>
-                    <span className="check-item">{e.item}</span>
-                    <span className="check-state">{e.present ? "Available" : "Missing"}</span>
-                    {!e.present && <span className="check-reason">{e.reason}</span>}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : (
-          <p className="muted">This source does not include evidence details.</p>
-        )}
-      </section>
-
-      <section className="detail-section">
-        <h3>Suggested next steps</h3>
-        <ol className="steps">
-          {missing.map((e) => (
-            <li key={e.item}>Find or confirm the {e.item.toLowerCase()} record.</li>
-          ))}
-          <li>Review all evidence and confirm every fact before preparing a response.</li>
-        </ol>
-      </section>
+      <AnalysisPanel dispute={dispute} />
 
       <p className="footnote">DisputeDesk never submits responses to PayPal automatically.</p>
     </article>

@@ -48,40 +48,6 @@ export function countByStatus(disputes: Dispute[]): Record<string, number> {
   return counts;
 }
 
-export interface EvidenceItem {
-  item: string;
-  present: boolean;
-  reason: string;
-}
-
-// Same rules as evidence-checklist.js. Returns null when the source has no evidence data.
-export function evidenceChecklist(dispute: Dispute): EvidenceItem[] | null {
-  const evidence = dispute.evidence;
-  if (!evidence) return null;
-  return [
-    {
-      item: "Order confirmation",
-      present: evidence.order_confirmation,
-      reason: "No order confirmation is marked as available.",
-    },
-    {
-      item: "Shipping tracking",
-      present: evidence.shipping_tracking && Boolean(dispute.order?.tracking_number),
-      reason: "Tracking evidence is missing or no tracking number is recorded.",
-    },
-    {
-      item: "Proof of delivery",
-      present: evidence.proof_of_delivery,
-      reason: "Proof of delivery is not marked as available.",
-    },
-    {
-      item: "Customer communication",
-      present: evidence.customer_communication,
-      reason: "Relevant customer communication is not marked as available.",
-    },
-  ];
-}
-
 export function formatMoney(money: Money | null): string {
   if (!money) return "—";
   const { currency_code, value } = money;
@@ -101,24 +67,20 @@ export interface Summary {
   total: number;
   unresolved: number;
   amounts: Money[];
-  missingEvidence: number;
 }
 
 export function summarize(disputes: Dispute[]): Summary {
   // Sum in cents so 0.1 + 0.2 stays exact.
   const cents = new Map<string, number>();
-  let missingEvidence = 0;
   for (const d of disputes) {
     const value = d.amount ? Math.round(Number(d.amount.value) * 100) : NaN;
     if (d.amount && Number.isFinite(value)) {
       cents.set(d.amount.currency_code, (cents.get(d.amount.currency_code) ?? 0) + value);
     }
-    missingEvidence += evidenceChecklist(d)?.filter((e) => !e.present).length ?? 0;
   }
   return {
     total: disputes.length,
     unresolved: disputes.filter((d) => d.status !== "RESOLVED").length,
     amounts: [...cents].map(([currency_code, c]) => ({ currency_code, value: (c / 100).toFixed(2) })),
-    missingEvidence,
   };
 }

@@ -464,55 +464,105 @@ blockquote {
   overflow-wrap: anywhere;
 }
 
-.checklist {
+.findings {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
-.checklist li {
-  display: flex;
-  gap: 10px;
-  padding: 10px 12px;
+.finding {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
+  font-size: 0.92rem;
 }
 
-.check-icon {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  font-size: 0.8rem;
-  font-weight: 700;
+.finding-conflict {
+  background: var(--warn-bg);
+  border-color: transparent;
+  color: var(--warn-text);
 }
 
-.is-present .check-icon { background: var(--ok-bg); color: var(--ok-text); }
-.is-missing .check-icon { background: var(--warn-bg); color: var(--warn-text); }
+.finding-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.finding-head .badge {
+  margin-left: auto;
+}
 
 .check-item {
-  font-weight: 550;
-}
-
-.check-state {
-  margin-left: 8px;
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
-.is-missing .check-state {
-  color: var(--warn-text);
   font-weight: 600;
 }
 
-.check-reason {
-  display: block;
+.key-tag {
+  font-size: 0.75rem;
+  font-weight: 600;
   color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.records {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.finding-conflict .records {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.draft-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.draft {
+  width: 100%;
+  min-height: 320px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font-mono);
   font-size: 0.85rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.draft-actions .button {
+  margin-top: 0;
+}
+
+.button-secondary {
+  background: transparent;
+  color: var(--accent);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .steps {

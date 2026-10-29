@@ -28,11 +28,11 @@ function mockPayPal(handlers: { token?: Handler; disputes?: Handler } = {}) {
   return { client: createPayPalClient(CREDENTIALS, fetchImpl), calls };
 }
 
-async function get(app: ReturnType<typeof createApp>, path: string) {
+async function get(app: ReturnType<typeof createApp>, path: string, init?: RequestInit) {
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   try {
-    const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`);
+    const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, init);
     const text = await res.text();
     return { status: res.status, text, body: JSON.parse(text) };
   } finally {
@@ -162,6 +162,47 @@ test("token is reused, and an expired token is dropped after a 401", async () =>
 
   const tokenCalls = calls.filter((c) => c.url.endsWith("/v1/oauth2/token")).length;
   assert.equal(tokenCalls, 2, "one token for the first two calls, a fresh one after the 401");
+});
+
+const postJson = (body: string) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body });
+const demoRecord = {
+  source: "demo",
+  dispute_id: "DEMO-1001",
+  reason: "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+  status: "OPEN",
+  amount: { currency_code: "USD", value: "49.99" },
+  order: { order_id: "ORDER-1001", item: "Wireless keyboard", shipping_status: "SHIPPED", tracking_number: null },
+  evidence: { proof_of_delivery: false, shipping_tracking: false, order_confirmation: true, customer_communication: true },
+};
+
+test("analysis endpoint analyzes a valid record without calling PayPal", async () => {
+  const { client, calls } = mockPayPal();
+  const res = await get(createApp(client), "/api/analysis", postJson(JSON.stringify(demoRecord)));
+  assert.equal(res.status, 200);
+  assert.equal(res.body.source, "demo");
+  assert.equal(res.body.dispute_id, "DEMO-1001");
+  assert.ok(res.body.draft.text.startsWith("DRAFT — REQUIRES MERCHANT REVIEW."));
+  assert.equal(calls.length, 0);
+  assertNoSecrets(res.text);
+});
+
+test("analysis endpoint rejects invalid records, bad JSON and oversized bodies", async () => {
+  const app = createApp(null);
+  const invalid = await get(app, "/api/analysis", postJson(JSON.stringify({ ...demoRecord, source: "live" })));
+  assert.equal(invalid.status, 400);
+  assert.equal(invalid.body.error.code, "invalid_dispute");
+  assert.deepEqual(invalid.body.error.details, ['source must be "demo" or "paypal_sandbox".']);
+
+  const broken = await get(app, "/api/analysis", postJson("{not json"));
+  assert.equal(broken.status, 400);
+  assert.equal(broken.body.error.code, "invalid_json");
+
+  const huge = await get(app, "/api/analysis", postJson(JSON.stringify({ ...demoRecord, customer_message: "x".repeat(40_000) })));
+  assert.equal(huge.status, 413);
+  assert.equal(huge.body.error.code, "payload_too_large");
+
+  const notJson = await get(app, "/api/analysis", { method: "POST", body: "a=b" });
+  assert.equal(notJson.status, 400);
 });
 
 test("only the token POST and read-only GETs are ever sent to PayPal", async () => {

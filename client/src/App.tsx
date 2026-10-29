@@ -134,9 +134,7 @@ function Workspace({
       <section className="summary" aria-label="Summary">
         <Stat label="Total disputes" value={summary.total} />
         <Stat label="Unresolved" value={summary.unresolved} />
-        <Stat label="Amount in dispute" value={summary.amounts.map(formatMoney).join(" · ") || "—"} />
-        <Stat label="Missing evidence items" value={summary.missingEvidence} />
-      </section>
+        <Stat label="Amount in dispute" value={summary.amounts.map(formatMoney).join(" · ") || "—"} />      </section>
 
       <div className="workspace">
         <section className="panel" aria-labelledby="list-heading">
