@@ -8,11 +8,17 @@ export const ENV_PATH = fileURLToPath(new URL("../../.env", import.meta.url));
 // Google's model list (checked 2026-10-29) suggests "3.5 Flash-Lite or 3.8 Flash" for new projects.
 export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 
+// Why AI drafting is off. Safe to show and log: they never include a configured value.
+export const AI_OFF_NO_KEY = "GEMINI_API_KEY is not set on the server.";
+export const AI_OFF_BAD_MODEL = "GEMINI_MODEL is not a valid model code, such as gemini-3.5-flash-lite.";
+
 export interface Config {
   port: number;
   paypal: { clientId: string; clientSecret: string } | null;
-  // null when GEMINI_API_KEY is not set; AI drafting is then off and everything else still works.
+  // null when Gemini is not usable; AI drafting is then off and everything else still works.
   ai: { apiKey: string; model: string } | null;
+  // The reason when ai is null.
+  aiOff: string | null;
 }
 
 // Reads .env without copying secrets into process.env. Shell variables win, as with dotenv.
@@ -35,13 +41,13 @@ export function loadConfig(envPath: string = ENV_PATH, env: NodeJS.ProcessEnv = 
   const apiKey = get("GEMINI_API_KEY");
   const model = get("GEMINI_MODEL") ?? DEFAULT_GEMINI_MODEL;
   // The model code goes into the request URL, so only plain model codes are accepted.
-  if (!/^[a-z0-9][a-z0-9.-]{0,63}$/.test(model)) {
-    throw new Error("GEMINI_MODEL must be a model code such as gemini-3.5-flash-lite.");
-  }
+  // An invalid one turns AI drafting off instead of stopping the server; no other model is picked in its place.
+  const aiOff = !apiKey ? AI_OFF_NO_KEY : !/^[a-z0-9][a-z0-9.-]{0,63}$/.test(model) ? AI_OFF_BAD_MODEL : null;
 
   return {
     port,
     paypal: clientId && clientSecret ? { clientId, clientSecret } : null,
-    ai: apiKey ? { apiKey, model } : null,
+    ai: apiKey && !aiOff ? { apiKey, model } : null,
+    aiOff,
   };
 }

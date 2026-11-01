@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import sample from "../../sample-dispute.json" with { type: "json" };
 import type { Dispute } from "../../client/src/types.ts";
 import { buildAiRequest, composeAiAssist } from "./assist.ts";
+import { AI_OFF_NO_KEY } from "./config.ts";
 import { analyzeDispute } from "./evidence.ts";
 import { AiError } from "./gemini.ts";
 import type { GeminiClient } from "./gemini.ts";
@@ -29,8 +30,9 @@ function notConfigured(res: Response) {
 // AI errors become: 429 for rate limits (with Retry-After), 504 for timeouts, 502 for everything else.
 const AI_STATUS: Partial<Record<AiError["code"], number>> = { ai_rate_limited: 429, ai_timeout: 504 };
 
-// paypal and ai are null when their keys are missing; the server still runs and says so.
-export function createApp(paypal: PayPalClient | null, ai: GeminiClient | null = null) {
+// paypal and ai are null when they are not configured; the server still runs and says so.
+// aiOff is the safe reason shown when ai is null.
+export function createApp(paypal: PayPalClient | null, ai: GeminiClient | null = null, aiOff: string = AI_OFF_NO_KEY) {
   const app = express();
   app.disable("x-powered-by");
   // shortcut: in-memory, one server process; one AI request per dispute at a time to avoid double cost.
@@ -99,7 +101,7 @@ export function createApp(paypal: PayPalClient | null, ai: GeminiClient | null =
     res.set("Cache-Control", "no-store");
     if (!ai) {
       res.status(503).json({
-        error: { code: "ai_not_configured", message: "AI drafting is off: GEMINI_API_KEY is not set on the server.", upstream_status: null },
+        error: { code: "ai_not_configured", message: `AI drafting is off: ${aiOff}`, upstream_status: null },
       });
       return;
     }
