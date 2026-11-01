@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DisputeDetail } from "./DisputeDetail.tsx";
 import { DisputeList } from "./DisputeList.tsx";
 import { demoDisputes } from "./data.ts";
@@ -7,7 +7,7 @@ import { fetchSandboxDisputes } from "./sandbox.ts";
 import type { Dispute, Source } from "./types.ts";
 import { StatePanel } from "./ui.tsx";
 
-type SandboxLoad =
+export type SandboxLoad =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; disputes: Dispute[] };
@@ -78,40 +78,60 @@ export default function App() {
       )}
 
       <main className="main">
-        {disputes === null ? (
-          sandbox.status === "error" ? (
-            <StatePanel title="Couldn't load PayPal sandbox disputes" tone="error">
-              <p>{sandbox.message}</p>
-              <p className="muted">The sandbox is reached through the DisputeDesk server, which holds the PayPal credentials.</p>
-              <button type="button" className="button" onClick={() => setAttempt((n) => n + 1)}>
-                Try again
-              </button>
-            </StatePanel>
-          ) : (
-            <StatePanel title="Loading PayPal sandbox disputes…" busy />
-          )
-        ) : disputes.length === 0 ? (
-          <StatePanel title="No disputes in the PayPal sandbox">
-            <p>Sandbox disputes appear here after a sandbox buyer account opens one.</p>
-            <button type="button" className="button" onClick={() => setAttempt((n) => n + 1)}>
-              Refresh
-            </button>
-          </StatePanel>
-        ) : (
-          <Workspace
-            disputes={disputes}
-            filter={filter}
-            onFilter={setFilter}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-          />
-        )}
+        <DisputesView
+          disputes={disputes}
+          sandbox={sandbox}
+          onRetry={() => setAttempt((n) => n + 1)}
+          filter={filter}
+          onFilter={setFilter}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+        />
       </main>
     </div>
   );
 }
 
-function Workspace({
+// Loading, error and empty states for the sandbox, else the list and the selected dispute.
+export function DisputesView({
+  disputes,
+  sandbox,
+  onRetry,
+  ...workspace
+}: {
+  disputes: Dispute[] | null;
+  sandbox: SandboxLoad;
+  onRetry: () => void;
+  filter: string;
+  onFilter: (status: string) => void;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  return disputes === null ? (
+    sandbox.status === "error" ? (
+      <StatePanel title="Couldn't load PayPal sandbox disputes" tone="error">
+        <p>{sandbox.message}</p>
+        <p className="muted">The sandbox is reached through the DisputeDesk server, which holds the PayPal credentials.</p>
+        <button type="button" className="button" onClick={onRetry}>
+          Try again
+        </button>
+      </StatePanel>
+    ) : (
+      <StatePanel title="Loading PayPal sandbox disputes…" busy />
+    )
+  ) : disputes.length === 0 ? (
+    <StatePanel title="No disputes in the PayPal sandbox">
+      <p>Sandbox disputes appear here after a sandbox buyer account opens one.</p>
+      <button type="button" className="button" onClick={onRetry}>
+        Refresh
+      </button>
+    </StatePanel>
+  ) : (
+    <Workspace disputes={disputes} {...workspace} />
+  );
+}
+
+export function Workspace({
   disputes,
   filter,
   onFilter,
@@ -128,6 +148,13 @@ function Workspace({
   const counts = countByStatus(disputes);
   const visible = filterByStatus(disputes, filter);
   const selected = visible.find((d) => d.dispute_id === selectedId) ?? visible[0];
+  const detail = useRef<HTMLElement>(null);
+
+  function select(id: string) {
+    onSelect(id);
+    // On one-column layouts the details sit below the list; take the merchant there.
+    if (window.matchMedia("(max-width: 899px)").matches) detail.current?.focus();
+  }
 
   return (
     <>
@@ -151,13 +178,13 @@ function Workspace({
             ))}
           </div>
           {visible.length > 0 ? (
-            <DisputeList disputes={visible} selectedId={selected?.dispute_id} onSelect={onSelect} />
+            <DisputeList disputes={visible} selectedId={selected?.dispute_id} onSelect={select} />
           ) : (
             <p className="empty-inline">No disputes with this status.</p>
           )}
         </section>
 
-        <section className="panel detail-panel" aria-label="Dispute details">
+        <section className="panel detail-panel" aria-label="Dispute details" ref={detail} tabIndex={-1}>
           {selected ? (
             <DisputeDetail key={selected.dispute_id} dispute={selected} />
           ) : (

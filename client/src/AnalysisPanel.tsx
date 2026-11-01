@@ -5,7 +5,9 @@ import type { AiAssist, Analysis, Dispute, EvidenceStatus, RecordRef } from "./t
 import { StatePanel } from "./ui.tsx";
 
 type Load = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; analysis: Analysis };
-type AiLoad = { status: "idle" } | { status: "loading" } | { status: "error"; message: string } | { status: "ready"; assist: AiAssist };
+// The last good AI result stays on screen while a new one is written and if that fails.
+// run changes with each new result, so its draft editor starts fresh.
+export type AiState = { run: number; assist: AiAssist | null; pending: boolean; error: string | null };
 
 const STATUS: Record<EvidenceStatus, { label: string; tone: string }> = {
   available: { label: "Available", tone: "ok" },
@@ -44,7 +46,10 @@ export function AnalysisPanel({ dispute }: { dispute: Dispute }) {
     );
   }
 
-  const { analysis } = load;
+  return <AnalysisView dispute={dispute} analysis={load.analysis} />;
+}
+
+export function AnalysisView({ dispute, analysis }: { dispute: Dispute; analysis: Analysis }) {
   return (
     <>
       <section className="detail-section">
@@ -108,7 +113,7 @@ export function AnalysisPanel({ dispute }: { dispute: Dispute }) {
 
 // Optional AI-assisted wording. Runs only when the merchant asks, and only through the DisputeDesk server.
 function AiSection({ dispute }: { dispute: Dispute }) {
-  const [ai, setAi] = useState<AiLoad>({ status: "idle" });
+  const [ai, setAi] = useState<AiState>({ run: 0, assist: null, pending: false, error: null });
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
 
@@ -116,15 +121,23 @@ function AiSection({ dispute }: { dispute: Dispute }) {
     controller.current?.abort();
     const current = new AbortController();
     controller.current = current;
-    setAi({ status: "loading" });
+    setAi((s) => ({ ...s, pending: true, error: null }));
     fetchAiAssist(dispute, current.signal)
-      .then((assist) => setAi({ status: "ready", assist }))
+      .then((assist) => setAi((s) => ({ run: s.run + 1, assist, pending: false, error: null })))
       .catch((error: unknown) => {
         if (current.signal.aborted) return;
-        setAi({ status: "error", message: error instanceof Error ? error.message : String(error) });
+        setAi((s) => ({ ...s, pending: false, error: error instanceof Error ? error.message : String(error) }));
       });
   }
 
+  return <AiSectionView dispute={dispute} ai={ai} onGenerate={generate} />;
+}
+
+export function AiSectionView({ dispute, ai, onGenerate }: { dispute: Dispute; ai: AiState; onGenerate: () => void }) {
+  // aria-disabled, not disabled, so keyboard focus stays on the button while Gemini writes.
+  const generate = () => {
+    if (!ai.pending) onGenerate();
+  };
   return (
     <section className="detail-section">
       <h3>AI-assisted draft</h3>
@@ -133,31 +146,59 @@ function AiSection({ dispute }: { dispute: Dispute }) {
         removes anything it can't trace to those records. The evidence statuses above stay authoritative.
       </p>
 
-      {ai.status !== "ready" && (
+      {!ai.assist && (
         <div className="draft-actions">
-          <button type="button" className="button" onClick={generate} disabled={ai.status === "loading"}>
-            {ai.status === "loading" ? "Writing AI draft…" : ai.status === "error" ? "Try again" : "Generate AI draft"}
+          <button type="button" className="button" onClick={generate} aria-disabled={ai.pending}>
+            {ai.pending ? "Writing AI draft…" : ai.error ? "Try again" : "Generate AI draft"}
           </button>
-          {ai.status === "error" && (
-            <span className="muted" role="alert">
-              {ai.message}
-            </span>
-          )}
         </div>
       )}
+      {ai.error && (
+        <p className="error-text" role="alert">
+          {ai.assist ? `Couldn't write a new AI draft: ${ai.error} The previous AI draft is still shown.` : ai.error}
+        </p>
+      )}
+      <p className="sr-only" role="status">
+        {ai.pending ? "Writing AI draft…" : ai.assist ? `AI draft ready. ${flagSummary(ai.assist)}.` : ""}
+      </p>
 
-      {ai.status === "ready" && <AiResult assist={ai.assist} id={`ai-draft-${dispute.dispute_id}`} onRegenerate={generate} />}
+      {ai.assist && (
+        <AiResult
+          key={ai.run}
+          assist={ai.assist}
+          id={`ai-draft-${dispute.dispute_id}`}
+          pending={ai.pending}
+          onRegenerate={generate}
+        />
+      )}
     </section>
   );
 }
 
-function AiResult({ assist, id, onRegenerate }: { assist: AiAssist; id: string; onRegenerate: () => void }) {
+const flagSummary = (assist: AiAssist) => {
+  const n = assist.flags.length;
+  return n > 0 ? `${n} issue${n === 1 ? "" : "s"} flagged` : "Checked, no issues found";
+};
+
+export const DISCARD_EDITS = "Discard your edits to the AI-assisted draft and generate a new one?";
+
+export function AiResult({
+  assist,
+  id,
+  pending = false,
+  onRegenerate,
+}: {
+  assist: AiAssist;
+  id: string;
+  pending?: boolean;
+  onRegenerate: () => void;
+}) {
   const flagged = assist.flags.length;
   return (
     <>
       <p>
         <span className={`badge badge-${flagged > 0 ? "warn" : "ok"}`}>
-          {flagged > 0 ? `${flagged} issue${flagged === 1 ? "" : "s"} flagged` : "Checked, no issues found"}
+          {flagSummary(assist)}
         </span>{" "}
         <span className="muted">Written by {assist.model}.</span>
       </p>
@@ -199,11 +240,18 @@ function AiResult({ assist, id, onRegenerate }: { assist: AiAssist; id: string; 
         title="AI-assisted response draft"
         note="AI-assisted draft. Check every statement against your records. It is never sent to PayPal, and edits are not saved."
         generated={assist.draft.text}
-        extraAction={
-          <button type="button" className="button button-secondary" onClick={onRegenerate}>
-            Generate again
+        extraAction={(edited) => (
+          <button
+            type="button"
+            className="button button-secondary"
+            aria-disabled={pending}
+            onClick={() => {
+              if (!pending && (!edited || window.confirm(DISCARD_EDITS))) onRegenerate();
+            }}
+          >
+            {pending ? "Writing AI draft…" : "Generate again"}
           </button>
-        }
+        )}
       />
     </>
   );
@@ -223,7 +271,7 @@ function factText(assist: AiAssist, id: string) {
 }
 
 // Editable draft with a live count of markers left, Copy and Reset. Edits are local and never saved or sent.
-function DraftEditor({
+export function DraftEditor({
   id,
   title,
   note,
@@ -234,7 +282,8 @@ function DraftEditor({
   title: string;
   note: string;
   generated: string;
-  extraAction?: ReactNode;
+  // Gets whether the merchant has edited the draft, so an action can warn before discarding edits.
+  extraAction?: (edited: boolean) => ReactNode;
 }) {
   const [draft, setDraft] = useState(generated);
   const [copyStatus, setCopyStatus] = useState("");
@@ -284,7 +333,7 @@ function DraftEditor({
         >
           Reset to generated draft
         </button>
-        {extraAction}
+        {extraAction?.(draft !== generated)}
         <span className="muted" role="status">
           {copyStatus}
         </span>
