@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { countMarkers, fetchAiAssist, fetchAnalysis } from "./analysis.ts";
+import { countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis } from "./analysis.ts";
 import type { Dispute } from "./types.ts";
 
 const realFetch = globalThis.fetch;
@@ -72,4 +72,22 @@ test("AI drafts for another dispute or with a bad shape are rejected; server err
   await assert.rejects(fetchAiAssist(dispute), /unexpected AI draft/);
   respond(503, { error: { code: "ai_not_configured", message: "AI drafting is off: GEMINI_API_KEY is not set on the server." } });
   await assert.rejects(fetchAiAssist(dispute), /AI drafting is off.*\(HTTP 503\)/);
+});
+
+test("AI status comes from the health check: on with its model, or off with the reason", async () => {
+  respond(200, { status: "ok", ai: { configured: true, model: "gemini-3.5-flash-lite", reason: null } });
+  assert.deepEqual(await fetchAiStatus(), { on: true, model: "gemini-3.5-flash-lite" });
+  respond(200, { status: "ok", ai: { configured: false, model: null, reason: "GEMINI_API_KEY is not set on the server." } });
+  assert.deepEqual(await fetchAiStatus(), { on: false, reason: "GEMINI_API_KEY is not set on the server." });
+  respond(200, { status: "ok" });
+  await assert.rejects(fetchAiStatus(), /unexpected status/);
+});
+
+test("server errors keep the server's error code, so the page can tell AI-off from a failure", async () => {
+  respond(503, { error: { code: "ai_not_configured", message: "AI drafting is off: GEMINI_API_KEY is not set on the server." } });
+  await assert.rejects(fetchAiAssist(dispute), (error: Error & { code?: string }) => {
+    assert.equal(error.code, "ai_not_configured");
+    assert.equal(error.message, "AI drafting is off: GEMINI_API_KEY is not set on the server. (HTTP 503)");
+    return true;
+  });
 });

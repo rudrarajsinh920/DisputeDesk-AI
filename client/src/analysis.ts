@@ -1,5 +1,5 @@
 import { serverError } from "./sandbox.ts";
-import type { AiAssist, Analysis, Dispute } from "./types.ts";
+import type { AiAssist, AiStatus, Analysis, Dispute } from "./types.ts";
 
 // Sends only which record to analyze; the server loads the record itself. Nothing here talks to PayPal.
 export async function fetchAnalysis(dispute: Dispute, signal?: AbortSignal): Promise<Analysis> {
@@ -26,8 +26,9 @@ export async function fetchAnalysis(dispute: Dispute, signal?: AbortSignal): Pro
 
 // On demand only: asks the server for an AI-assisted draft. The server holds the Gemini key, loads the record,
 // and checks every line the model writes; this only names the record.
-export async function fetchAiAssist(dispute: Dispute, signal?: AbortSignal): Promise<AiAssist> {
-  const response = await fetch("/api/analysis/ai", {
+// example asks instead for the validation example: fixed wrong text through the same checks, never Gemini.
+export async function fetchAiAssist(dispute: Dispute, signal?: AbortSignal, example = false): Promise<AiAssist> {
+  const response = await fetch(example ? "/api/analysis/ai/example" : "/api/analysis/ai", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source: dispute.source, dispute_id: dispute.dispute_id }),
@@ -60,3 +61,14 @@ export const countMarkers = (text: string) =>
     .filter((line) => !line.startsWith(">"))
     .join("\n")
     .match(MARKER)?.length ?? 0;
+
+// Whether the server has AI drafting on, so the page can say so before anyone clicks. Never calls Gemini.
+export async function fetchAiStatus(signal?: AbortSignal): Promise<AiStatus> {
+  const response = await fetch("/api/health", { signal });
+  const body = (await response.json().catch(() => null)) as { ai?: { configured?: unknown; model?: unknown; reason?: unknown } } | null;
+  if (!response.ok) throw serverError(response, body);
+  const ai = body?.ai;
+  if (ai?.configured === true && typeof ai.model === "string") return { on: true, model: ai.model };
+  if (ai?.configured === false && typeof ai.reason === "string") return { on: false, reason: ai.reason };
+  throw new Error("The DisputeDesk server sent an unexpected status.");
+}

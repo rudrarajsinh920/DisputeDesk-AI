@@ -101,6 +101,9 @@ export interface AiFlag {
   removed_text: string | null;
 }
 
+// From /api/health: whether the server can write AI drafts, and why not.
+export type AiStatus = { on: true; model: string } | { on: false; reason: string };
+
 export interface AiAssist {
   source: Source;
   dispute_id: string;

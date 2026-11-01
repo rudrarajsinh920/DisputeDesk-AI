@@ -8,8 +8,10 @@ import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { buildAiRequest, composeAiAssist } from "../../server/src/assist.ts";
 import { analyzeDispute } from "../../server/src/evidence.ts";
-import { AiResult, AiSectionView, AnalysisView, DISCARD_EDITS, DraftEditor } from "./AnalysisPanel.tsx";
-import type { AiState } from "./AnalysisPanel.tsx";
+import { VALIDATION_EXAMPLE_MODEL, validationExampleAnswer } from "../../server/src/assist.ts";
+import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
+import { AiResult, AiSectionView, AnalysisView, DISCARD_EDITS, DraftEditor, ValidationExampleView } from "./AnalysisPanel.tsx";
+import type { AiState, ExampleState } from "./AnalysisPanel.tsx";
 import App, { DisputesView } from "./App.tsx";
 import type { SandboxLoad } from "./App.tsx";
 import { DisputeDetail } from "./DisputeDetail.tsx";
@@ -160,7 +162,7 @@ test("the rule-based draft shows the merchant-review warning and its review head
 // ---- AI-assisted draft ----
 
 const aiView = (ai: AiState) => html(createElement(AiSectionView, { dispute: demo, ai, onGenerate: noop }));
-const idle: AiState = { run: 0, assist: null, pending: false, error: null };
+const idle: AiState = { run: 0, assist: null, pending: false, error: null, status: null };
 
 test("AI drafting starts idle and keeps keyboard focus on its button while writing", () => {
   assert.match(text(aiView(idle)), /Generate AI draft/);
@@ -173,7 +175,7 @@ test("AI drafting starts idle and keeps keyboard focus on its button while writi
 test("a successful AI response shows AI wording, rule statuses, citations and the AI warning", () => {
   const assist = assistFor(demo, demoAnswer);
   assert.equal(assist.status, "ok");
-  const markup = aiView({ run: 1, assist, pending: false, error: null });
+  const markup = aiView({ ...idle, run: 1, assist });
   const out = text(markup);
   assert.match(out, /Checked, no issues found/);
   assert.match(out, /Written by mock-model\./);
@@ -194,7 +196,7 @@ test("unsupported AI claims are flagged, shown as unused text, and kept out of t
   };
   const assist = assistFor(demo, answer);
   assert.equal(assist.status, "flagged");
-  const markup = aiView({ run: 1, assist, pending: false, error: null });
+  const markup = aiView({ ...idle, run: 1, assist });
   const out = text(markup);
   assert.match(out, /2 issues flagged/);
   assert.match(out, /names a carrier/);
@@ -225,7 +227,7 @@ test("Gemini unavailable: the AI section says why, and the rules' analysis and d
 });
 
 test("a failed regeneration keeps the previous AI draft and says so", () => {
-  const out = aiView({ run: 1, assist: assistFor(demo, demoAnswer), pending: false, error: "The configured Gemini model is not available. (HTTP 502)" });
+  const out = aiView({ ...idle, run: 1, assist: assistFor(demo, demoAnswer), error: "The configured Gemini model is not available. (HTTP 502)" });
   assert.match(
     text(out),
     /Couldn't write a new AI draft: The configured Gemini model is not available\. \(HTTP 502\) The previous AI draft is still shown\./,
@@ -280,9 +282,9 @@ test("no control in the workspace can submit, send or publish to PayPal", () => 
   const markup =
     html(createElement(DisputeDetail, { dispute: demo })) +
     html(createElement(AnalysisView, { dispute: demo, analysis: analyzeDispute(demo) })) +
-    aiView({ run: 1, assist: assistFor(demo, demoAnswer), pending: false, error: null });
+    aiView({ ...idle, run: 1, assist: assistFor(demo, demoAnswer) });
   const buttons = new Set([...markup.matchAll(/<button[^>]*>([^]*?)<\/button>/g)].map((m) => text(m[1]).trim()));
-  assert.deepEqual([...buttons].sort(), ["Copy draft", "Generate AI draft", "Generate again", "Reset to generated draft"]);
+  assert.deepEqual([...buttons].sort(), ["Copy draft", "Generate AI draft", "Generate again", "Reset to generated draft", "Show a validation example"]);
   assert.doesNotMatch(markup, /<form|action="/);
   assert.match(text(markup), /DisputeDesk never submits responses to PayPal automatically\./);
 });
@@ -293,7 +295,62 @@ test("the client calls only DisputeDesk's own read and analysis endpoints", () =
     .filter((f) => /\.tsx?$/.test(f) && !f.endsWith(".test.ts"))
     .map((f) => readFileSync(new URL(f, dir), "utf8"))
     .join("\n");
-  const urls = [...sources.matchAll(/fetch\(\s*"([^"]+)"/g)].map((m) => m[1]).sort();
-  assert.deepEqual(urls, ["/api/analysis", "/api/analysis/ai", "/api/sandbox/disputes"]);
+  const urls = [...new Set([...sources.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]))].sort();
+  assert.deepEqual(urls, ["/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/health", "/api/sandbox/disputes"]);
+  assert.equal((sources.match(/fetch\(/g) ?? []).length, 4, "each fetch call uses one of the endpoints above");
   assert.doesNotMatch(sources, /paypal\.com|generativelanguage|method:\s*"(PUT|PATCH|DELETE)"/i);
+});
+
+// ---- Demo set ----
+
+test("the demo set shows a gaps case, a contradiction case and a complete case, all labeled demo", async () => {
+  const { DEMO_DISPUTES } = await import("../../server/src/app.ts");
+  assert.deepEqual(demoDisputes.map((d) => d.dispute_id), DEMO_DISPUTES.map((d) => d.dispute_id), "client and server list the same demo records");
+  assert.ok(demoDisputes.every((d) => d.source === "demo"));
+
+  const byId = Object.fromEntries(demoDisputes.map((d) => [d.dispute_id, analyzeDispute(d)]));
+  assert.ok(byId["DEMO-1001"].evidence.some((e) => e.status === "missing"));
+  assert.equal(byId["DEMO-1001"].contradictions.length, 0);
+  assert.deepEqual(byId["DEMO-1002"].contradictions.map((c) => c.message), ['The shipping status is "Delivered", but proof of delivery is marked not available.']);
+  assert.ok(byId["DEMO-1003"].evidence.every((e) => e.status === "available"));
+  assert.equal(byId["DEMO-1003"].contradictions.length, 0);
+
+  const list = text(view(demoDisputes, { status: "loading" }));
+  assert.match(list, /Total disputes 3/);
+  assert.match(list, /DEMO-1001 .*DEMO-1002 .*DEMO-1003/);
+});
+
+// ---- AI status and validation example ----
+
+test("with AI drafting off, the AI section says why up front and offers no button that can't work", () => {
+  const out = aiView({ ...idle, status: { on: false, reason: AI_OFF_BAD_MODEL } });
+  assert.match(text(out), /AI drafting is off on this server\. GEMINI_MODEL is not a valid model code/);
+  assert.match(text(out), /The rule-based analysis and draft above work without it\./);
+  assert.doesNotMatch(out, /Generate AI draft|Try again/);
+});
+
+test("with AI drafting on, the AI section names the model before anyone clicks", () => {
+  const out = text(aiView({ ...idle, status: { on: true, model: "gemini-3.5-flash-lite" } }));
+  assert.match(out, /Model: gemini-3\.5-flash-lite\./);
+  assert.match(out, /Generate AI draft/);
+});
+
+test("the validation example is labeled as not Gemini and shows every planted mistake as flagged", () => {
+  const exampleView = (example: ExampleState) => html(createElement(ValidationExampleView, { example, onShow: noop, onHide: noop }));
+  assert.match(text(exampleView({ assist: null, pending: false, error: null })), /Show a validation example/);
+  assert.match(exampleView({ assist: null, pending: true, error: null }), /aria-disabled="true"[^>]*>Checking example…/);
+
+  const analysis = analyzeDispute(demo);
+  const { facts } = buildAiRequest(demo, analysis);
+  const assist = composeAiAssist(demo, analysis, facts, validationExampleAnswer(analysis, facts), VALIDATION_EXAMPLE_MODEL);
+  const markup = exampleView({ assist, pending: false, error: null });
+  const out = text(markup);
+  assert.match(out, /VALIDATION EXAMPLE — NOT WRITTEN BY GEMINI\./);
+  assert.match(out, /Written by validation example \(fixed test text, not Gemini\)\./);
+  assert.match(out, /4 issues flagged/);
+  assert.match(out, /Example wording/);
+  assert.doesNotMatch(out, /AI wording/, "fixed example text is never called AI wording");
+  assert.match(markup, /<details open="">/, "the unused text shows without an extra click");
+  assert.doesNotMatch(markup, /<textarea/, "the example never becomes a draft");
+  assert.match(out, /Hide validation example/);
 });

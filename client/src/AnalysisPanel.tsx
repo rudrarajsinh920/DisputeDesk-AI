@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { countMarkers, fetchAiAssist, fetchAnalysis } from "./analysis.ts";
-import type { AiAssist, Analysis, Dispute, EvidenceStatus, RecordRef } from "./types.ts";
+import { countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis } from "./analysis.ts";
+import type { AiAssist, AiStatus, Analysis, Dispute, EvidenceStatus, RecordRef } from "./types.ts";
 import { StatePanel } from "./ui.tsx";
 
 type Load = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; analysis: Analysis };
 // The last good AI result stays on screen while a new one is written and if that fails.
-// run changes with each new result, so its draft editor starts fresh.
-export type AiState = { run: number; assist: AiAssist | null; pending: boolean; error: string | null };
+// run changes with each new result, so its draft editor starts fresh. status is null until the server says.
+export type AiState = { run: number; assist: AiAssist | null; pending: boolean; error: string | null; status: AiStatus | null };
 
 const STATUS: Record<EvidenceStatus, { label: string; tone: string }> = {
   available: { label: "Available", tone: "ok" },
@@ -107,15 +107,24 @@ export function AnalysisView({ dispute, analysis }: { dispute: Dispute; analysis
       />
 
       <AiSection dispute={dispute} />
+      <ValidationExample dispute={dispute} />
     </>
   );
 }
 
 // Optional AI-assisted wording. Runs only when the merchant asks, and only through the DisputeDesk server.
 function AiSection({ dispute }: { dispute: Dispute }) {
-  const [ai, setAi] = useState<AiState>({ run: 0, assist: null, pending: false, error: null });
+  const [ai, setAi] = useState<AiState>({ run: 0, assist: null, pending: false, error: null, status: null });
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => {
+    const status = new AbortController();
+    // If the status can't be read, the button stays and any error shows when it is pressed.
+    fetchAiStatus(status.signal)
+      .then((result) => setAi((s) => ({ ...s, status: result })))
+      .catch(() => {});
+    return () => status.abort();
+  }, []);
 
   function generate() {
     controller.current?.abort();
@@ -123,10 +132,17 @@ function AiSection({ dispute }: { dispute: Dispute }) {
     controller.current = current;
     setAi((s) => ({ ...s, pending: true, error: null }));
     fetchAiAssist(dispute, current.signal)
-      .then((assist) => setAi((s) => ({ run: s.run + 1, assist, pending: false, error: null })))
+      .then((assist) => setAi((s) => ({ ...s, run: s.run + 1, assist, pending: false, error: null })))
       .catch((error: unknown) => {
         if (current.signal.aborted) return;
-        setAi((s) => ({ ...s, pending: false, error: error instanceof Error ? error.message : String(error) }));
+        const message = error instanceof Error ? error.message : String(error);
+        // Retrying can't help when the server has AI drafting off, so show that state instead of an error.
+        if ((error as { code?: string }).code === "ai_not_configured") {
+          const reason = message.replace(/^AI drafting is off: /, "").replace(/ \(HTTP \d+\)$/, "");
+          setAi((s) => ({ ...s, pending: false, status: { on: false, reason } }));
+          return;
+        }
+        setAi((s) => ({ ...s, pending: false, error: message }));
       });
   }
 
@@ -144,9 +160,17 @@ export function AiSectionView({ dispute, ai, onGenerate }: { dispute: Dispute; a
       <p className="muted">
         Optional. Gemini words the findings above using only the listed record values; DisputeDesk checks every line and
         removes anything it can't trace to those records. The evidence statuses above stay authoritative.
+        {ai.status?.on && ` Model: ${ai.status.model}.`}
       </p>
 
-      {!ai.assist && (
+      {ai.status?.on === false && (
+        <p className="notice" role="note">
+          <strong>AI drafting is off on this server.</strong> {ai.status.reason} The rule-based analysis and draft above work
+          without it.
+        </p>
+      )}
+
+      {!ai.assist && ai.status?.on !== false && (
         <div className="draft-actions">
           <button type="button" className="button" onClick={generate} aria-disabled={ai.pending}>
             {ai.pending ? "Writing AI draft…" : ai.error ? "Try again" : "Generate AI draft"}
@@ -193,47 +217,9 @@ export function AiResult({
   pending?: boolean;
   onRegenerate: () => void;
 }) {
-  const flagged = assist.flags.length;
   return (
     <>
-      <p>
-        <span className={`badge badge-${flagged > 0 ? "warn" : "ok"}`}>
-          {flagSummary(assist)}
-        </span>{" "}
-        <span className="muted">Written by {assist.model}.</span>
-      </p>
-
-      {flagged > 0 && (
-        <ul className="findings">
-          {assist.flags.map((f, i) => (
-            <li key={i} className="finding finding-conflict">
-              <p>
-                <strong>{f.where}:</strong> {f.reason}
-              </p>
-              {f.removed_text && (
-                <details>
-                  <summary className="muted">Text that was not used</summary>
-                  <p className="records">{f.removed_text}</p>
-                </details>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <ul className="findings">
-        {assist.explanations.map((e) => (
-          <li key={e.evidence_id} className="finding">
-            <div className="finding-head">
-              <span className="check-item">{labelOf(e.evidence_id)}</span>
-              <span className="key-tag">{e.source === "ai" ? "AI wording" : "Rules' wording"}</span>
-              <span className={`badge badge-${STATUS[e.status].tone}`}>{STATUS[e.status].label}</span>
-            </div>
-            <p>{e.text}</p>
-            {e.cites.length > 0 && <p className="records">Cites: {e.cites.map((c) => factText(assist, c)).join("; ")}</p>}
-          </li>
-        ))}
-      </ul>
+      <AiFindings assist={assist} wording="AI wording" />
 
       <DraftEditor
         id={id}
@@ -254,6 +240,114 @@ export function AiResult({
         )}
       />
     </>
+  );
+}
+
+// Check result, flags (with the text that was not used) and explanations with their citations.
+function AiFindings({ assist, wording, openUnused = false }: { assist: AiAssist; wording: string; openUnused?: boolean }) {
+  const flagged = assist.flags.length;
+  return (
+    <>
+      <p>
+        <span className={`badge badge-${flagged > 0 ? "warn" : "ok"}`}>{flagSummary(assist)}</span>{" "}
+        <span className="muted">Written by {assist.model}.</span>
+      </p>
+
+      {flagged > 0 && (
+        <ul className="findings">
+          {assist.flags.map((f, i) => (
+            <li key={i} className="finding finding-conflict">
+              <p>
+                <strong>{f.where}:</strong> {f.reason}
+              </p>
+              {f.removed_text && (
+                <details open={openUnused}>
+                  <summary className="muted">Text that was not used</summary>
+                  <p className="records">{f.removed_text}</p>
+                </details>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <ul className="findings">
+        {assist.explanations.map((e) => (
+          <li key={e.evidence_id} className="finding">
+            <div className="finding-head">
+              <span className="check-item">{labelOf(e.evidence_id)}</span>
+              <span className="key-tag">{e.source === "ai" ? wording : "Rules' wording"}</span>
+              <span className={`badge badge-${STATUS[e.status].tone}`}>{STATUS[e.status].label}</span>
+            </div>
+            <p>{e.text}</p>
+            {e.cites.length > 0 && <p className="records">Cites: {e.cites.map((c) => factText(assist, c)).join("; ")}</p>}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+// A fixed, deliberately wrong answer (never Gemini) run through the server's checks, to show what they catch.
+// Read-only and on demand; nothing from it reaches any draft.
+function ValidationExample({ dispute }: { dispute: Dispute }) {
+  const [example, setExample] = useState<ExampleState>({ assist: null, pending: false, error: null });
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => () => controller.current?.abort(), []);
+
+  function show() {
+    controller.current?.abort();
+    const current = new AbortController();
+    controller.current = current;
+    setExample({ assist: null, pending: true, error: null });
+    fetchAiAssist(dispute, current.signal, true)
+      .then((assist) => setExample({ assist, pending: false, error: null }))
+      .catch((error: unknown) => {
+        if (current.signal.aborted) return;
+        setExample({ assist: null, pending: false, error: error instanceof Error ? error.message : String(error) });
+      });
+  }
+
+  return <ValidationExampleView example={example} onShow={show} onHide={() => setExample({ assist: null, pending: false, error: null })} />;
+}
+
+export type ExampleState = { assist: AiAssist | null; pending: boolean; error: string | null };
+
+export function ValidationExampleView({ example, onShow, onHide }: { example: ExampleState; onShow: () => void; onHide: () => void }) {
+  return (
+    <section className="detail-section">
+      <h3>How the AI checks work</h3>
+      <p className="muted">
+        Runs a fixed answer with deliberate mistakes, written in advance and not by Gemini, through the same checks as a real
+        AI answer. Nothing from it is used in any draft.
+      </p>
+      <div className="draft-actions">
+        <button
+          type="button"
+          className="button button-secondary"
+          aria-disabled={example.pending}
+          aria-expanded={example.assist !== null}
+          onClick={() => (example.pending ? undefined : example.assist ? onHide() : onShow())}
+        >
+          {example.pending ? "Checking example…" : example.assist ? "Hide validation example" : "Show a validation example"}
+        </button>
+      </div>
+      {example.error && (
+        <p className="error-text" role="alert">
+          {example.error}
+        </p>
+      )}
+      {example.assist && (
+        <>
+          <p className="example-note" role="note">
+            <strong>VALIDATION EXAMPLE — NOT WRITTEN BY GEMINI.</strong> Fixed test text with planted mistakes: an invented
+            carrier, tracking number, date and person, a signature story, proof of delivery claimed as Available, and an
+            instruction.
+          </p>
+          <AiFindings assist={example.assist} wording="Example wording" openUnused />
+        </>
+      )}
+    </section>
   );
 }
 

@@ -1,9 +1,10 @@
 import type { Dispute } from "./types.ts";
 
-// Turns a non-2xx server reply into an error carrying the server's own message.
-export function serverError(response: Response, body: unknown): Error {
-  const message = (body as { error?: { message?: unknown } } | null)?.error?.message;
-  return new Error(`${typeof message === "string" ? message : "The DisputeDesk server is not responding."} (HTTP ${response.status})`);
+// Turns a non-2xx server reply into an error carrying the server's own message and error code.
+export function serverError(response: Response, body: unknown): Error & { code?: string } {
+  const error = (body as { error?: { message?: unknown; code?: unknown } } | null)?.error;
+  const message = typeof error?.message === "string" ? error.message : "The DisputeDesk server is not responding.";
+  return Object.assign(new Error(`${message} (HTTP ${response.status})`), { code: typeof error?.code === "string" ? error.code : undefined });
 }
 
 // The server owns PayPal credentials; the browser only sees normalized disputes or an error message.

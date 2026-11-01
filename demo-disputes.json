@@ -1,0 +1,48 @@
+[
+  {
+    "dispute_id": "DEMO-1002",
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    "status": "WAITING_FOR_SELLER_RESPONSE",
+    "amount": {
+      "currency_code": "USD",
+      "value": "129.00"
+    },
+    "create_time": "2026-10-18T09:30:00Z",
+    "customer_message": "The tracking page says delivered, but nothing arrived at my door.",
+    "order": {
+      "order_id": "ORDER-1002",
+      "item": "Bluetooth speaker",
+      "shipping_status": "DELIVERED",
+      "tracking_number": "DEMO-TRK-1002"
+    },
+    "evidence": {
+      "proof_of_delivery": false,
+      "shipping_tracking": true,
+      "order_confirmation": true,
+      "customer_communication": true
+    }
+  },
+  {
+    "dispute_id": "DEMO-1003",
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+    "status": "UNDER_REVIEW",
+    "amount": {
+      "currency_code": "EUR",
+      "value": "75.50"
+    },
+    "create_time": "2026-10-22T14:05:00Z",
+    "customer_message": "The jacket is a different color from the listing photos.",
+    "order": {
+      "order_id": "ORDER-1003",
+      "item": "Rain jacket",
+      "shipping_status": "DELIVERED",
+      "tracking_number": "DEMO-TRK-1003"
+    },
+    "evidence": {
+      "proof_of_delivery": true,
+      "shipping_tracking": true,
+      "order_confirmation": true,
+      "customer_communication": true
+    }
+  }
+]

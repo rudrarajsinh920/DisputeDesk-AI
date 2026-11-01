@@ -68,7 +68,7 @@ export default function App() {
       {source === "demo" ? (
         <div className="banner banner-demo" role="note">
           <strong>DEMO DATA — NOT A REAL PAYPAL DISPUTE</strong>
-          <span>Synthetic example loaded from sample-dispute.json. Nothing here is connected to PayPal.</span>
+          <span>Synthetic examples loaded from sample-dispute.json and demo-disputes.json. Nothing here is connected to PayPal.</span>
         </div>
       ) : (
         <div className="banner banner-sandbox" role="note">

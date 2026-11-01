@@ -1,8 +1,9 @@
 import express from "express";
 import type { NextFunction, Request, Response } from "express";
+import extraDemos from "../../demo-disputes.json" with { type: "json" };
 import sample from "../../sample-dispute.json" with { type: "json" };
 import type { Dispute } from "../../client/src/types.ts";
-import { buildAiRequest, composeAiAssist } from "./assist.ts";
+import { VALIDATION_EXAMPLE_MODEL, buildAiRequest, composeAiAssist, validationExampleAnswer } from "./assist.ts";
 import { AI_OFF_NO_KEY } from "./config.ts";
 import { analyzeDispute } from "./evidence.ts";
 import { AiError } from "./gemini.ts";
@@ -15,9 +16,9 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 // Synthetic demo records, owned by the server and always labeled "demo".
 // Built from the same file the client lists, so the two never drift; an invalid fixture stops the server at startup.
-export const DEMO_DISPUTES: Dispute[] = [sample].map((record) => {
+export const DEMO_DISPUTES: Dispute[] = [sample, ...extraDemos].map((record) => {
   const result = validateDispute({ ...record, source: "demo" });
-  if (!result.ok) throw new Error(`sample-dispute.json is not a valid dispute: ${result.errors.join(" ")}`);
+  if (!result.ok) throw new Error(`Demo record ${String(record.dispute_id)} is not a valid dispute: ${result.errors.join(" ")}`);
   return result.dispute;
 });
 
@@ -79,7 +80,11 @@ export function createApp(paypal: PayPalClient | null, ai: GeminiClient | null =
   });
 
   app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", paypal: { environment: "sandbox", configured: paypal !== null } });
+    res.json({
+      status: "ok",
+      paypal: { environment: "sandbox", configured: paypal !== null },
+      ai: ai ? { configured: true, model: ai.model, reason: null } : { configured: false, model: null, reason: aiOff },
+    });
   });
 
   app.get("/api/sandbox/disputes", async (_req, res) => {
@@ -124,6 +129,17 @@ export function createApp(paypal: PayPalClient | null, ai: GeminiClient | null =
     } finally {
       aiInFlight.delete(key);
     }
+  });
+
+  // Shows what the checks catch: a fixed, deliberately wrong answer goes through the same checks as Gemini's.
+  // Never calls Gemini, so it works with AI drafting off; the result's model label says it is not Gemini.
+  app.post("/api/analysis/ai/example", express.json({ limit: "4kb" }), async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    const dispute = await findDispute(req, res);
+    if (!dispute) return;
+    const analysis = analyzeDispute(dispute);
+    const { facts } = buildAiRequest(dispute, analysis);
+    res.json(composeAiAssist(dispute, analysis, facts, validationExampleAnswer(analysis, facts), VALIDATION_EXAMPLE_MODEL));
   });
 
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {

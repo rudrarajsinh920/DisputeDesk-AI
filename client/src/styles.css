@@ -30,6 +30,7 @@
   --sandbox-border: #7d97e8;
   --sandbox-text: #1f2f80;
 
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --radius: 10px;
   --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 1px 3px rgb(16 24 40 / 6%);
 }
@@ -166,7 +167,7 @@ code,
   padding: 6px 14px;
   color: var(--muted);
   font-weight: 550;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease, transform 120ms var(--ease-out);
 }
 
 .segmented button[aria-pressed="true"] {
@@ -288,11 +289,7 @@ code,
   border-radius: 999px;
   background: var(--surface);
   font-size: 0.85rem;
-  transition: background-color 120ms ease, border-color 120ms ease;
-}
-
-.chip:hover {
-  background: var(--surface-2);
+  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms var(--ease-out);
 }
 
 .chip[aria-pressed="true"] {
@@ -323,11 +320,27 @@ code,
   border-radius: 8px;
   background: var(--surface);
   text-align: left;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms var(--ease-out);
 }
 
-.dispute-row:hover {
-  background: var(--surface-2);
+/* Touch screens fire :hover on tap and leave it stuck. */
+@media (hover: hover) and (pointer: fine) {
+  .chip:hover,
+  .dispute-row:hover {
+    background: var(--surface-2);
+  }
+}
+
+/* Press feedback; disabled and busy buttons stay still. */
+.segmented button:active,
+.chip:active,
+.button:not(:disabled, [aria-disabled="true"]):active {
+  transform: scale(0.97);
+}
+
+/* Large rows: a smaller scale reads the same. */
+.dispute-row:active {
+  transform: scale(0.99);
 }
 
 .dispute-row[aria-current="true"] {
@@ -376,7 +389,7 @@ code,
 .detail {
   display: grid;
   gap: 22px;
-  animation: fade-in 160ms ease-out;
+  animation: fade-in 160ms var(--ease-out);
 }
 
 .detail-head {
@@ -570,6 +583,23 @@ blockquote {
   cursor: progress;
 }
 
+.notice {
+  margin: 8px 0 0;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--neutral-bg);
+  color: var(--neutral-text);
+}
+
+.example-note {
+  margin: 8px 0;
+  padding: 10px 14px;
+  border: 1px dashed var(--demo-border);
+  border-radius: var(--radius);
+  background: var(--demo-bg);
+  color: var(--demo-text);
+}
+
 .error-text {
   margin: 8px 0 0;
   color: var(--error-text);
@@ -632,6 +662,7 @@ blockquote {
   background: var(--accent);
   color: var(--accent-text);
   font-weight: 600;
+  transition: transform 120ms var(--ease-out);
 }
 
 .spinner {
@@ -659,5 +690,18 @@ blockquote {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
+  }
+
+  /* A stopped spinner looks frozen; keep it turning, slower. */
+  .spinner {
+    animation-duration: 1600ms !important;
+    animation-iteration-count: infinite !important;
+  }
+
+  .button:active,
+  .chip:active,
+  .segmented button:active,
+  .dispute-row:active {
+    transform: none;
   }
 }

@@ -4,6 +4,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import { DEMO_DISPUTES, createApp } from "./app.ts";
+import { VALIDATION_EXAMPLE_MODEL } from "./assist.ts";
 import { AI_OFF_BAD_MODEL, AI_OFF_NO_KEY } from "./config.ts";
 import { createGeminiClient } from "./gemini.ts";
 import { createPayPalClient } from "./paypal.ts";
@@ -71,11 +72,26 @@ function assertNoSecrets(text: string) {
 
 test("health reports configured state without secrets", async () => {
   const configured = await get(createApp(mockPayPal().client), "/api/health");
-  assert.deepEqual(configured.body, { status: "ok", paypal: { environment: "sandbox", configured: true } });
+  assert.deepEqual(configured.body, {
+    status: "ok",
+    paypal: { environment: "sandbox", configured: true },
+    ai: { configured: false, model: null, reason: AI_OFF_NO_KEY },
+  });
   assertNoSecrets(configured.text);
 
   const missing = await get(createApp(null), "/api/health");
   assert.equal(missing.body.paypal.configured, false);
+});
+
+test("health says whether AI drafting is on, without the key", async () => {
+  const ai = mockAi();
+  const on = await get(createApp(null, ai.client), "/api/health");
+  assert.deepEqual(on.body.ai, { configured: true, model: "gemini-test-model", reason: null });
+  assertNoAiKey(on.text);
+  assert.equal(ai.calls.length, 0, "health never calls Gemini");
+
+  const off = await get(createApp(null, null, AI_OFF_BAD_MODEL), "/api/health");
+  assert.deepEqual(off.body.ai, { configured: false, model: null, reason: AI_OFF_BAD_MODEL });
 });
 
 test("lists sandbox disputes with only whitelisted fields", async () => {
@@ -276,9 +292,10 @@ test("analysis endpoint rejects bad lookups, bad JSON and oversized bodies", asy
 });
 
 test("the server's demo set is the validated demo fixture", () => {
-  assert.equal(DEMO_DISPUTES.length, 1);
+  assert.deepEqual(DEMO_DISPUTES.map((d) => d.dispute_id), ["DEMO-1001", "DEMO-1002", "DEMO-1003"]);
   assert.ok(DEMO_DISPUTES.every((d) => d.source === "demo"));
-  assert.equal(DEMO_DISPUTES[0].dispute_id, "DEMO-1001");
+  // Demo IDs and tracking numbers are marked synthetic so they can't pass for real PayPal or carrier data.
+  assert.ok(DEMO_DISPUTES.every((d) => /^DEMO-/.test(d.dispute_id) && (!d.order?.tracking_number || /^DEMO-TRK-/.test(d.order.tracking_number))));
 });
 
 test("only the token POST and read-only GETs are ever sent to PayPal", async () => {
@@ -489,4 +506,40 @@ test("instructions hidden in a PayPal record never reach Gemini, and the draft f
   assert.ok(paypal.calls.every((c) => c.method === "GET" || c.url.endsWith("/v1/oauth2/token")));
   assertNoAiKey(res.text);
   assertNoSecrets(res.text);
+});
+
+// ---- Validation example (/api/analysis/ai/example) ----
+
+test("the validation example runs a fixed wrong answer through the real checks, without Gemini", async () => {
+  const ai = mockAi();
+  const paypal = mockPayPal();
+  for (const app of [createApp(paypal.client), createApp(paypal.client, ai.client)]) {
+    for (const id of ["DEMO-1001", "DEMO-1002", "DEMO-1003"]) {
+      const res = await get(app, "/api/analysis/ai/example", lookup("demo", id));
+      assert.equal(res.status, 200, id);
+      assert.equal(res.body.model, VALIDATION_EXAMPLE_MODEL);
+      assert.match(res.body.model, /not Gemini/);
+      assert.equal(res.body.status, "flagged", id);
+      assert.equal(res.body.source, "demo");
+      const reasons = res.body.flags.map((f: { reason: string }) => f.reason).join(" ");
+      for (const caught of [/1Z999AA10123456784/, /"UPS"/, /signature, pickup or handoff/, /2026-10-02/, /"Jane", "Smith"/, /instructions/]) {
+        assert.match(reasons, caught, `${id}: ${caught}`);
+      }
+      // Statuses stay the rules', and none of the planted claims reaches the draft.
+      const rules = await get(app, "/api/analysis", lookup("demo", id));
+      for (const e of res.body.explanations) {
+        assert.equal(e.status, rules.body.evidence.find((r: { id: string }) => r.id === e.evidence_id).status);
+      }
+      assert.doesNotMatch(res.body.draft.text, /UPS|1Z999|Jane|signed|2026-10-02|Ignore all|won/);
+    }
+  }
+  assert.equal(ai.calls.length, 0, "the example never calls Gemini");
+  assert.equal(paypal.calls.length, 0, "demo records never call PayPal");
+});
+
+test("the validation example rejects bad lookups like the other analysis routes", async () => {
+  const app = createApp(null);
+  assert.equal((await get(app, "/api/analysis/ai/example", lookup("demo", "DEMO-9999"))).status, 404);
+  assert.equal((await get(app, "/api/analysis/ai/example", lookup("paypal_sandbox", "PP-D-1"))).status, 503);
+  assert.equal((await get(app, "/api/analysis/ai/example", lookup("live", "DEMO-1001"))).status, 400);
 });
