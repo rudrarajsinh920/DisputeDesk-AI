@@ -201,3 +201,48 @@ test("numbers must match a whole supplied value, not part of one", () => {
     assert.match(result.flags[0].reason, /which is not in the supplied records/, text);
   }
 });
+
+test("the caution exemption covers only the warning itself, not a claim after it", () => {
+  for (const text of [
+    "Records do not prove it but the item was not delivered.",
+    "This does not show anything and the order was never shipped.",
+    "The records do not establish delivery, but the order has not been delivered.",
+  ]) {
+    const result = assist(demo, answer([section(text, ["R7"])]));
+    assert.equal(result.status, "flagged", text);
+    assert.match(result.flags[0].reason, /missing evidence does not show that/, text);
+    assert.ok(!result.draft.text.includes(text), text);
+  }
+});
+
+test("invented email addresses are flagged and kept out of the draft", () => {
+  for (const text of ["Contact support@example.com for the receipt.", "The buyer's address is jane.doe@mail.test.", "Write to <help@shop.example>."]) {
+    const result = assist(demo, answer([section(text, ["R4"])]));
+    assert.equal(result.status, "flagged", text);
+    assert.match(result.flags[0].reason, /@.*which is not in the supplied records/, text);
+    assert.ok(!result.draft.text.includes("@"), text);
+  }
+});
+
+test("the rules' [CONFLICT:] warnings are carried into the AI draft, flagged or not", () => {
+  const conflicting = checked({ ...sample, source: "demo", evidence: { ...sample.evidence, shipping_tracking: true } });
+  const ruleConflicts = analyzeDispute(conflicting).draft.lines.filter((l) => l.kind === "conflict");
+  assert.ok(ruleConflicts.length > 0, "the fixture must produce a contradiction");
+  const clean = assist(conflicting, answer([section("Add the carrier record from your shipping system.", [], true)], []));
+  const flagged = assist(conflicting, answer([section("Tracking shows the parcel moving.", ["R6"])], []));
+  for (const result of [clean, flagged]) {
+    for (const line of ruleConflicts) {
+      assert.ok(result.draft.lines.some((l) => l.kind === "conflict" && l.text === line.text), line.text);
+    }
+  }
+});
+
+test("an explanation must cite a supplied fact; otherwise the rules' wording is used", () => {
+  const uncited = goodExplanations.map((e) => (e.evidence_id === "order_confirmation" ? { ...e, cites: [] } : e));
+  const result = assist(demo, answer([], uncited));
+  const oc = result.explanations.find((e) => e.evidence_id === "order_confirmation")!;
+  assert.equal(oc.source, "rules");
+  assert.equal(oc.status, "available");
+  assert.match(result.flags.find((f) => f.where === "explanation: Order confirmation")!.reason, /cites no supplied record/);
+  assert.ok(result.explanations.filter((e) => e.evidence_id !== "order_confirmation").every((e) => e.source === "ai"));
+});

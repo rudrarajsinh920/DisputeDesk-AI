@@ -130,8 +130,10 @@ const SHIPPING_CLAIM = /\b(was|were|is|has been|have been)\s+(shipped|dispatched
 // A negation up to three words before the verb, in any wording: "hasn't been delivered", "did not arrive", "never shipped".
 const NOT_DELIVERED = /(\bnot\b|\bnever\b|n't\b)(\W+\w+){0,3}?\W+(deliver(ed)?|receive(d)?|arrive(d)?)\b/i;
 const NOT_SHIPPED = /(\bnot\b|\bnever\b|n't\b)(\W+\w+){0,3}?\W+(ship(ped)?|dispatch(ed)?|post(ed)?|mail(ed)?)\b/i;
-// The rules' own caution ("does not show it was not delivered") is allowed; only that clause is skipped.
-const CAUTION = /\b(does|do|did)(\s+not|n't)\s+(show|mean|prove|establish)\b[^.,;]*/gi;
+// The rules' own caution ("does not show it was not delivered", "does not show that it did not happen") is allowed.
+// Only that exact phrase is skipped, so a claim later in the sentence is still checked.
+const CAUTION =
+  /\b(does|do|did)(\s+not|n't)\s+(show|mean|prove|establish)\s+(that\s+)?(it|this|the\s+\w+)\s+(was\s+not|wasn't|was\s+never|did\s+not|didn't|has\s+not\s+been|hasn't\s+been|never)\s+(happen|occur|deliver|delivered|receive|received|arrive|arrived|ship|shipped)\b/gi;
 // Tokens are compared without surrounding punctuation or a leading currency symbol.
 const bare = (t: string) => t.replace(/^[("'[{<]+|[)"'\]}>.,;:!?]+$/g, "").replace(/^[$€£¥]/, "");
 const TRACKING_CLAIM = /\btracking\s+(shows|showed|confirms|confirmed|indicates|proves|proved)\b/i;
@@ -213,6 +215,7 @@ export function composeAiAssist(dispute: Dispute, analysis: Analysis, facts: AiF
       continue;
     }
     const issues = problems(e.text, e.cites, ctx);
+    if (e.cites.length === 0) issues.push("cites no supplied record");
     if (e.status !== finding.status) issues.unshift(`gave the status "${e.status}", but the rules say "${finding.status}"`);
     if (issues.length > 0) {
       flags.push({ where, reason: issues.join("; "), removed_text: e.text });
