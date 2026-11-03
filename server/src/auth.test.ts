@@ -4,6 +4,7 @@ import {
   ABSOLUTE_MS,
   IDLE_MS,
   LOGIN_MAX_FAILURES,
+  LOGIN_MAX_FAILURES_PER_ADDRESS,
   LOGIN_WINDOW_MS,
   SESSION_COOKIE,
   canAccess,
@@ -106,6 +107,22 @@ test("login attempts are limited per key, and the limit lifts after the window",
   limiter.fail(keys);
   limiter.reset("email:a@demo.test");
   assert.equal(limiter.blocked(["email:a@demo.test"]), false);
+});
+
+test("a key can have its own, higher limit, and expired failures are dropped from memory", () => {
+  const c = clock();
+  const limiter = createLoginLimiter(c.now);
+  for (let i = 0; i < LOGIN_MAX_FAILURES; i++) limiter.fail(["ip:127.0.0.1"]);
+  assert.equal(limiter.blocked(["ip:127.0.0.1"]), true, "the default limit");
+  assert.equal(limiter.blocked(["ip:127.0.0.1"], LOGIN_MAX_FAILURES_PER_ADDRESS), false, "under the address limit");
+  for (let i = LOGIN_MAX_FAILURES; i < LOGIN_MAX_FAILURES_PER_ADDRESS; i++) limiter.fail(["ip:127.0.0.1"]);
+  assert.equal(limiter.blocked(["ip:127.0.0.1"], LOGIN_MAX_FAILURES_PER_ADDRESS), true);
+
+  for (let i = 0; i < 50; i++) limiter.fail([`email:guess-${i}@demo.test`]);
+  assert.equal(limiter.size(), 51);
+  c.advance(LOGIN_WINDOW_MS + 1);
+  limiter.fail(["email:late@demo.test"]);
+  assert.equal(limiter.size(), 1, "only the new failure is kept");
 });
 
 const account = (over: Partial<Account>): Account => ({

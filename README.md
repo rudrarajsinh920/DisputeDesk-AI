@@ -75,8 +75,16 @@ password here.
 - **Admin** reads every demo dispute, the sandbox and the account list, and changes nothing. Admin cannot generate AI drafts.
 
 Sessions end after 30 minutes without activity, 8 hours after sign-in, on sign-out, or when the server restarts. After
-10 failed sign-ins for one email or address, sign-in is locked for 15 minutes. The session cookie is `HttpOnly`,
-`Secure` and `SameSite=Strict`; browsers accept `Secure` cookies on `http://localhost`, which Chrome, Edge and Firefox do.
+10 failed sign-ins for one email, that email is locked for 15 minutes; after 100 failed sign-ins from one address, all
+sign-in from it is locked for 15 minutes. Locally every request comes from 127.0.0.1, so the second limit is a cap on
+all guessing. The session cookie is `HttpOnly`, `Secure` and `SameSite=Strict`; this needs a browser that accepts
+`Secure` cookies on `http://localhost`, which Chrome, Edge and Firefox do.
+
+Write requests from any other site are refused (Origin and `Sec-Fetch-Site` checks). The API sends
+`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy` and a CSP that allows
+nothing to run. The production build (`cd client && npm run build && npm run preview`, then http://localhost:4173) has
+a strict CSP: only the app's own scripts and styles. The dev server keeps a looser page CSP because Vite's live reload
+needs inline code. Both refuse to start on another port, so the address never changes.
 
 ## Test
 

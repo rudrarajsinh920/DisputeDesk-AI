@@ -96,6 +96,9 @@ export function readCookie(header: string | undefined, name: string): string | n
 // ---- Login attempt limit ----
 
 export const LOGIN_MAX_FAILURES = 10;
+// Per address. Locally every request arrives from 127.0.0.1 (the Vite proxy), so this is a cap on all guessing,
+// set high enough that one account's typos don't lock everyone else out.
+export const LOGIN_MAX_FAILURES_PER_ADDRESS = 100;
 export const LOGIN_WINDOW_MS = 15 * 60_000;
 
 // shortcut: in-memory, one server process; keys are only added on failed logins. Use a shared store with more processes.
@@ -108,13 +111,16 @@ export function createLoginLimiter(now: () => number = Date.now) {
     return list;
   };
   return {
-    blocked: (keys: string[]) => keys.some((k) => recent(k).length >= LOGIN_MAX_FAILURES),
+    blocked: (keys: string[], max = LOGIN_MAX_FAILURES) => keys.some((k) => recent(k).length >= max),
     fail: (keys: string[]) => {
+      // Drop expired keys too, so one-off guessed emails don't pile up in memory.
+      for (const k of failures.keys()) recent(k);
       for (const k of keys) failures.set(k, [...recent(k), now()]);
     },
     reset: (key: string) => {
       failures.delete(key);
     },
+    size: () => failures.size,
   };
 }
 

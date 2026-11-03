@@ -30,6 +30,9 @@ Dispute Prevention & Resolution Intelligence.
 - Buyer and merchant data must be protected by access controls; one account never sees another's data.
   Another account's dispute answers 404, exactly like a missing one. Admin is read-only.
 - Never trust a role or account ID sent by the browser. Demo disputes reach the browser only through the server.
+- Every route needs a session except sign-in and sign-out; a test fails if a new route is not in its role table.
+- Keep the security headers (API in `app.ts`, page in `client/src/security-headers.ts`) and the strict production CSP.
+  Write requests from another site are refused (Origin and Sec-Fetch-Site).
 - Never return access tokens or credentials to the frontend.
 
 ## Working rules

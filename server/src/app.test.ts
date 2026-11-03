@@ -350,8 +350,11 @@ test("requests addressed to another host are refused before any route runs", asy
     assert.ok(!res.text.includes("PP-D-1"));
   }
   assert.equal(calls.length, 0);
+  // Local hosts get past the host guard to the session check (health needs a session since Phase 2.1).
   for (const host of ["localhost:5173", "127.0.0.1:3001", "[::1]:3001", "LOCALHOST"]) {
-    assert.equal((await getWithHost(app, "/api/health", host)).status, 200, host);
+    const res = await getWithHost(app, "/api/health", host);
+    assert.equal(res.status, 401, host);
+    assert.equal(JSON.parse(res.text).error.code, "not_signed_in", host);
   }
 });
 
@@ -698,7 +701,12 @@ const PROTECTED: [string, string][] = [
   ["POST", "/api/analysis"],
   ["POST", "/api/analysis/ai"],
   ["POST", "/api/analysis/ai/example"],
+  ["GET", "/api/health"],
 ];
+// Sign-in and sign-out are the only routes without a session check.
+const PUBLIC_ROUTES = ["POST /api/auth/login", "POST /api/auth/logout"];
+// Admin is read-only: the only write-method routes admin may call compute an answer and change nothing.
+const ADMIN_READ_ONLY_POSTS = ["/api/analysis", "/api/analysis/ai/example"];
 
 test("every protected route refuses missing, forged and expired sessions, and calls nothing", async () => {
   let t = 1_000_000;
@@ -747,7 +755,12 @@ test("each route allows exactly the intended roles", async () => {
     ["AI draft of DEMO-1001 (admin is read-only)", "/api/analysis/ai", body("DEMO-1001"), [403, 200, 404, 403, 403]],
     ["validation example of DEMO-1003", "/api/analysis/ai/example", body("DEMO-1003"), [200, 404, 200, 403, 403]],
     ["sandbox analysis", "/api/analysis", lookup("paypal_sandbox", "PP-D-1"), [200, 200, 403, 403, 403]],
+    ["health", "/api/health", undefined, [200, 200, 200, 403, 403]],
   ];
+  assert.deepEqual([...new Set(matrix.map((m) => m[1]))].sort(), PROTECTED.map((p) => p[1]).sort(), "every protected route is in the matrix");
+  for (const [label, path, init, expected] of matrix) {
+    if (init?.method && init.method !== "GET" && expected[0] === 200) assert.ok(ADMIN_READ_ONLY_POSTS.includes(path), `admin may not call ${label}`);
+  }
   for (const [label, path, init, expected] of matrix) {
     for (const [i, id] of ALL.entries()) {
       const res = await get(app, path, init, id);
@@ -833,4 +846,122 @@ test("the demo account file is synthetic, hashed, and matches the demo disputes"
     assert.ok(a.dispute_ids.every((id) => ids.includes(id)));
   }
   assert.deepEqual(DEMO_ACCOUNTS.map((a) => a.id), ALL);
+});
+
+// ---- Phase 2.1 regression tests ----
+
+test("every API response carries the security headers, errors included", async () => {
+  const paypal = mockPayPal({ disputes: () => json(500, {}) });
+  const app = makeApp(paypal.client);
+  const responses = [
+    await get(app, "/api/disputes"),
+    await get(app, "/api/disputes", {}, null),
+    await get(app, "/api/no-such-route"),
+    await get(app, "/api/analysis", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{nope" }),
+    await get(app, "/api/sandbox/disputes"),
+  ];
+  assert.deepEqual(responses.map((r) => r.status), [200, 401, 404, 400, 502]);
+  for (const res of responses) {
+    assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(res.headers.get("x-frame-options"), "DENY");
+    assert.equal(res.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(res.headers.get("cross-origin-resource-policy"), "same-origin");
+    assert.equal(res.headers.get("content-security-policy"), "default-src 'none'; frame-ancestors 'none'");
+    assert.equal(res.headers.get("x-powered-by"), null);
+  }
+  await withServer(app, async (base) => {
+    const res = await login(base, creds("admin"));
+    assert.equal(res.headers.get("x-frame-options"), "DENY", "sign-in too");
+  });
+});
+
+test("failed sign-ins on one account don't lock the other accounts that share the local address", async () => {
+  await withServer(makeApp(null), async (base) => {
+    for (let i = 0; i < 10; i++) assert.equal((await login(base, { ...creds("merchant-a"), password: "wrong" })).status, 401);
+    assert.equal((await login(base, creds("merchant-a"))).status, 429, "the email itself is locked");
+    assert.equal((await login(base, creds("merchant-b"))).status, 200, "another account still signs in");
+  });
+});
+
+test("100 failed sign-ins from one address lock sign-in from it for 15 minutes", async () => {
+  let t = 1_000_000;
+  await withServer(makeApp(null, null, undefined, () => t), async (base) => {
+    // Never more than 9 per email, so only the address limit can trigger.
+    for (let i = 0; i < 100; i++) {
+      assert.equal((await login(base, { email: `guess-${i % 12}@demo.disputedesk.test`, password: `wrong-${i}` })).status, 401, `attempt ${i + 1}`);
+    }
+    const locked = await login(base, creds("admin"));
+    assert.equal(locked.status, 429);
+    assert.equal(locked.headers.get("retry-after"), "900");
+    t += 15 * 60_000 + 1;
+    assert.equal((await login(base, creds("admin"))).status, 200);
+  });
+});
+
+test("a signed-out cookie is refused on every protected route", async () => {
+  const paypal = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }) });
+  await withServer(makeApp(paypal.client, mockAi().client), async (base) => {
+    for (const id of ["admin", "merchant-a", "buyer-b"]) {
+      const cookie = (await login(base, creds(id))).headers.get("set-cookie")!.split(";")[0];
+      assert.equal((await fetch(`${base}/api/auth/logout`, { method: "POST", headers: { Cookie: cookie } })).status, 204);
+      for (const [method, path] of PROTECTED) {
+        const res = await fetch(`${base}${path}`, {
+          method,
+          headers: { Cookie: cookie, "Content-Type": "application/json" },
+          body: method === "POST" ? JSON.stringify({ source: "demo", dispute_id: "DEMO-1001" }) : undefined,
+        });
+        assert.equal(res.status, 401, `${id}: ${method} ${path}`);
+      }
+    }
+  });
+  assert.equal(paypal.calls.length, 0);
+});
+
+test("a write request the browser marks cross-site or same-site is refused even without an Origin", async () => {
+  const app = makeApp(null);
+  await withServer(app, async (base) => {
+    const cookie = await signIn(app, base, "merchant-a");
+    const send = (site: string) =>
+      fetch(`${base}/api/analysis`, { ...lookup("demo", "DEMO-1001"), headers: { "Content-Type": "application/json", Cookie: cookie, "Sec-Fetch-Site": site } });
+    for (const site of ["cross-site", "same-site"]) {
+      const res = await send(site);
+      assert.equal(res.status, 403, site);
+      assert.equal((await res.json()).error.code, "forbidden_origin");
+    }
+    for (const site of ["same-origin", "none"]) assert.equal((await send(site)).status, 200, site);
+    const logout = await fetch(`${base}/api/auth/logout`, { method: "POST", headers: { Cookie: cookie, "Sec-Fetch-Site": "cross-site" } });
+    assert.equal(logout.status, 403, "another site can't sign the user out");
+    assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } })).status, 200, "the session survived");
+  });
+});
+
+test("the page must use one hostname: localhost and 127.0.0.1 are different origins", async () => {
+  const app = makeApp(null);
+  await withServer(app, async (base) => {
+    const cookie = await signIn(app, base, "merchant-a");
+    const port = new URL(base).port;
+    for (const origin of [`http://localhost:${port}`, `http://[::1]:${port}`, "http://127.0.0.1:5174"]) {
+      const res = await fetch(`${base}/api/analysis`, { ...lookup("demo", "DEMO-1001"), headers: { "Content-Type": "application/json", Cookie: cookie, Origin: origin } });
+      assert.equal(res.status, 403, origin);
+    }
+  });
+});
+
+test("health needs a merchant or admin session", async () => {
+  const app = makeApp(mockPayPal().client);
+  const signedOut = await get(app, "/api/health", {}, null);
+  assert.equal(signedOut.status, 401);
+  assert.ok(!signedOut.text.includes("sandbox") && !signedOut.text.includes("model"), "nothing about the setup leaks");
+  assert.equal((await get(app, "/api/health", {}, "buyer-a")).status, 403);
+  assert.equal((await get(app, "/api/health", {}, "admin")).status, 200);
+  assert.equal((await get(app, "/api/health", {}, "merchant-b")).status, 200);
+});
+
+test("every registered route is either public sign-in/out or in the protected list", () => {
+  const app = makeApp(null);
+  const registered = (app.router.stack as { route?: { path: string; methods: Record<string, boolean> } }[])
+    .flatMap((layer) => (layer.route ? Object.keys(layer.route.methods).map((m) => `${m.toUpperCase()} ${layer.route!.path}`) : []))
+    .sort();
+  const expected = [...PUBLIC_ROUTES, ...PROTECTED.map(([m, p]) => `${m} ${p}`)].sort();
+  assert.deepEqual(registered, expected, "a new route must be added to PROTECTED (and the role matrix) or PUBLIC_ROUTES");
 });

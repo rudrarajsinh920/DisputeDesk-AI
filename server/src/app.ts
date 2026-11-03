@@ -7,6 +7,7 @@ import sample from "../../sample-dispute.json" with { type: "json" };
 import type { Dispute, Role } from "../../shared/types.ts";
 import { VALIDATION_EXAMPLE_MODEL, buildAiRequest, composeAiAssist, validationExampleAnswer } from "./assist.ts";
 import {
+  LOGIN_MAX_FAILURES_PER_ADDRESS,
   LOGIN_WINDOW_MS,
   SESSION_COOKIE,
   canAccess,
@@ -144,6 +145,18 @@ export function createApp(
     return dispute;
   }
 
+  // The API only returns JSON: nothing in it may run, be framed or be read by another site.
+  app.use((_req, res, next) => {
+    res.set({
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      "Referrer-Policy": "no-referrer",
+      "Cross-Origin-Resource-Policy": "same-origin",
+      "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+    });
+    next();
+  });
+
   // DNS-rebinding guard: another site pointed at 127.0.0.1 still sends its own Host, so only local names pass.
   // Vite's proxy forwards the browser's Host (localhost:5173, changeOrigin: false in vite.config.ts), which is allowed.
   app.use((req, res, next) => {
@@ -155,9 +168,16 @@ export function createApp(
   });
 
   // Cross-site guard on top of SameSite=Strict: browsers send Origin on every POST, and it must match the Host
-  // the page was loaded from. Clients that send no Origin (tests, curl) carry no browser cookies to abuse.
+  // the page was loaded from. Browsers also label every request with Sec-Fetch-Site; anything not from this exact
+  // origin is refused even if Origin is missing. Clients that send neither (tests, curl) carry no browser cookies to abuse.
   app.use((req, res, next) => {
-    if (req.method === "GET" || req.method === "HEAD" || req.headers.origin === undefined) return next();
+    if (req.method === "GET" || req.method === "HEAD") return next();
+    const site = req.headers["sec-fetch-site"];
+    if (site === "cross-site" || site === "same-site") {
+      sendError(res, 403, "forbidden_origin", "Requests must come from the DisputeDesk page itself.");
+      return;
+    }
+    if (req.headers.origin === undefined) return next();
     let host = "";
     try {
       host = new URL(req.headers.origin).host.toLowerCase();
@@ -178,7 +198,7 @@ export function createApp(
       return;
     }
     const keys = [`email:${result.email}`, `ip:${req.ip}`];
-    if (limiter.blocked(keys)) {
+    if (limiter.blocked([keys[0]]) || limiter.blocked([keys[1]], LOGIN_MAX_FAILURES_PER_ADDRESS)) {
       res.set("Retry-After", String(LOGIN_WINDOW_MS / 1000));
       sendError(res, 429, "too_many_attempts", "Too many failed sign-in attempts. Try again in 15 minutes.");
       return;
@@ -227,7 +247,8 @@ export function createApp(
     res.json({ accounts: accounts.map((a) => ({ ...toAccountInfo(a), dispute_ids: a.dispute_ids })) });
   });
 
-  app.get("/api/health", (_req, res) => {
+  // Signed in only: it names the AI model and says why AI or PayPal is off. Buyers never need it.
+  app.get("/api/health", requireRole("merchant", "admin"), (_req, res) => {
     res.json({
       status: "ok",
       paypal: { environment: "sandbox", configured: paypal !== null },
