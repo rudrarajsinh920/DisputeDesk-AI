@@ -343,6 +343,76 @@ code,
   transform: scale(0.99);
 }
 
+/* Buyer rows are not buttons: no press or hover feedback. */
+.buyer-row,
+.buyer-row:hover,
+.buyer-row:active {
+  background: var(--surface);
+  transform: none;
+}
+
+/* Account and sign-in */
+
+.topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+
+.account-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.account-bar .button {
+  margin-top: 0;
+  padding: 6px 12px;
+}
+
+.account-name {
+  font-weight: 600;
+}
+
+.login {
+  display: grid;
+  gap: 14px;
+  max-width: 440px;
+  margin: 40px auto;
+  padding: 24px;
+}
+
+.login h1 {
+  font-size: 1.25rem;
+}
+
+.login-form {
+  display: grid;
+  gap: 6px;
+}
+
+.login-form label {
+  margin-top: 8px;
+  font-weight: 550;
+  font-size: 0.9rem;
+}
+
+.login-form input {
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.login-form .button {
+  margin-top: 12px;
+  justify-self: start;
+}
+
 .dispute-row[aria-current="true"] {
   border-color: var(--accent);
   background: var(--surface-2);

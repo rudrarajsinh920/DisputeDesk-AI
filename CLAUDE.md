@@ -12,6 +12,10 @@ Dispute Prevention & Resolution Intelligence.
 - Root `disputes.js`, `test.js`, `draft-response.js`, `evidence-checklist.js`: original PayPal sandbox scripts. Keep them.
   `draft-response.js` and `evidence-checklist.js` read `sample-dispute.json` as a single object; keep it one object.
 - `sample-dispute.json`, `demo-disputes.json`: synthetic demo records.
+- `demo-accounts.json`: synthetic demo accounts (scrypt hashes only) and which disputes each can reach. The demo
+  passwords are in README.md. Tests use their own test-only passwords.
+- `server/src/auth.ts`: password hashing, sessions, cookie, sign-in limit, `canAccess`. Every protected route uses
+  `requireRole` in `app.ts`; the account comes from the server's session store, never from the request.
 
 ## Guarantees (do not weaken)
 
@@ -24,6 +28,8 @@ Dispute Prevention & Resolution Intelligence.
 - No automatic dispute submissions. Every draft requires human review and says so.
 - Synthetic demo data is always labelled and kept separate from PayPal sandbox data.
 - Buyer and merchant data must be protected by access controls; one account never sees another's data.
+  Another account's dispute answers 404, exactly like a missing one. Admin is read-only.
+- Never trust a role or account ID sent by the browser. Demo disputes reach the browser only through the server.
 - Never return access tokens or credentials to the frontend.
 
 ## Working rules

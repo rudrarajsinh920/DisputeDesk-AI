@@ -17,7 +17,8 @@ const STATUS: Record<EvidenceStatus, { label: string; tone: string }> = {
 
 const recordText = (r: RecordRef) => `${r.path} = ${r.value === null ? "not on record" : String(r.value)}`;
 
-export function AnalysisPanel({ dispute }: { dispute: Dispute }) {
+// canDraft is false for the read-only admin view: no AI draft button, since the server would refuse it.
+export function AnalysisPanel({ dispute, canDraft = true }: { dispute: Dispute; canDraft?: boolean }) {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -46,10 +47,10 @@ export function AnalysisPanel({ dispute }: { dispute: Dispute }) {
     );
   }
 
-  return <AnalysisView dispute={dispute} analysis={load.analysis} />;
+  return <AnalysisView dispute={dispute} analysis={load.analysis} canDraft={canDraft} />;
 }
 
-export function AnalysisView({ dispute, analysis }: { dispute: Dispute; analysis: Analysis }) {
+export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: Dispute; analysis: Analysis; canDraft?: boolean }) {
   return (
     <>
       <section className="detail-section">
@@ -106,7 +107,16 @@ export function AnalysisView({ dispute, analysis }: { dispute: Dispute; analysis
         generated={analysis.draft.text}
       />
 
-      <AiSection dispute={dispute} />
+      {canDraft ? (
+        <AiSection dispute={dispute} />
+      ) : (
+        <section className="detail-section">
+          <h3>AI-assisted draft</h3>
+          <p className="notice" role="note">
+            Admin view is read-only. AI drafts are written by the merchant who owns the dispute.
+          </p>
+        </section>
+      )}
       <ValidationExample dispute={dispute} />
     </>
   );

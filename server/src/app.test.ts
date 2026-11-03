@@ -3,8 +3,9 @@ import { once } from "node:events";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
-import { DEMO_DISPUTES, createApp } from "./app.ts";
+import { DEMO_ACCOUNTS, DEMO_DISPUTES, createApp } from "./app.ts";
 import { VALIDATION_EXAMPLE_MODEL } from "./assist.ts";
+import { hashPassword } from "./auth.ts";
 import { AI_OFF_BAD_MODEL, AI_OFF_NO_KEY } from "./config.ts";
 import { createGeminiClient } from "./gemini.ts";
 import { createPayPalClient } from "./paypal.ts";
@@ -32,20 +33,48 @@ function mockPayPal(handlers: { token?: Handler; disputes?: Handler } = {}) {
   return { client: createPayPalClient(CREDENTIALS, fetchImpl), calls };
 }
 
-async function get(app: ReturnType<typeof createApp>, path: string, init?: RequestInit) {
+// The demo accounts' ownership, with test-only passwords; the demo passwords are never used in tests.
+const TEST_PASSWORD = (id: string) => `test-password-${id}`;
+const TEST_ACCOUNTS = await Promise.all(DEMO_ACCOUNTS.map(async (a) => ({ ...a, password_hash: await hashPassword(TEST_PASSWORD(a.id)) })));
+const makeApp = (paypal: Parameters<typeof createApp>[0], ai?: Parameters<typeof createApp>[1], aiOff?: string, now?: () => number) =>
+  createApp(paypal, ai, aiOff, { accounts: TEST_ACCOUNTS, now });
+type App = ReturnType<typeof createApp>;
+
+// One session cookie per app and account, from a real sign-in.
+const cookies = new WeakMap<App, Map<string, string>>();
+async function signIn(app: App, base: string, as: string) {
+  const cache = cookies.get(app) ?? new Map<string, string>();
+  cookies.set(app, cache);
+  if (!cache.has(as)) {
+    const res = await fetch(`${base}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: `${as}@demo.disputedesk.test`, password: TEST_PASSWORD(as) }),
+    });
+    assert.equal(res.status, 200, `sign in as ${as}`);
+    cache.set(as, res.headers.get("set-cookie")!.split(";")[0]);
+  }
+  return cache.get(as)!;
+}
+
+// Signed in as `as` (merchant-a, who owns DEMO-1001, DEMO-1002 and the sandbox, by default); null sends no cookie.
+async function get(app: App, path: string, init: RequestInit = {}, as: string | null = "merchant-a") {
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   try {
-    const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}${path}`, init);
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const headers = new Headers(init.headers);
+    if (as) headers.set("Cookie", await signIn(app, base, as));
+    const res = await fetch(`${base}${path}`, { ...init, headers });
     const text = await res.text();
-    return { status: res.status, headers: res.headers, text, body: JSON.parse(text) };
+    return { status: res.status, headers: res.headers, text, body: text ? JSON.parse(text) : null };
   } finally {
     server.close();
   }
 }
 
 // fetch can't set Host, so this sends a raw request the way a DNS-rebinding page would.
-async function getWithHost(app: ReturnType<typeof createApp>, path: string, host: string) {
+async function getWithHost(app: App, path: string, host: string) {
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   try {
@@ -71,7 +100,7 @@ function assertNoSecrets(text: string) {
 }
 
 test("health reports configured state without secrets", async () => {
-  const configured = await get(createApp(mockPayPal().client), "/api/health");
+  const configured = await get(makeApp(mockPayPal().client), "/api/health");
   assert.deepEqual(configured.body, {
     status: "ok",
     paypal: { environment: "sandbox", configured: true },
@@ -79,18 +108,18 @@ test("health reports configured state without secrets", async () => {
   });
   assertNoSecrets(configured.text);
 
-  const missing = await get(createApp(null), "/api/health");
+  const missing = await get(makeApp(null), "/api/health");
   assert.equal(missing.body.paypal.configured, false);
 });
 
 test("health says whether AI drafting is on, without the key", async () => {
   const ai = mockAi();
-  const on = await get(createApp(null, ai.client), "/api/health");
+  const on = await get(makeApp(null, ai.client), "/api/health");
   assert.deepEqual(on.body.ai, { configured: true, model: "gemini-test-model", reason: null });
   assertNoAiKey(on.text);
   assert.equal(ai.calls.length, 0, "health never calls Gemini");
 
-  const off = await get(createApp(null, null, AI_OFF_BAD_MODEL), "/api/health");
+  const off = await get(makeApp(null, null, AI_OFF_BAD_MODEL), "/api/health");
   assert.deepEqual(off.body.ai, { configured: false, model: null, reason: AI_OFF_BAD_MODEL });
 });
 
@@ -112,7 +141,7 @@ test("lists sandbox disputes with only whitelisted fields", async () => {
         ],
       }),
   });
-  const res = await get(createApp(client), "/api/sandbox/disputes");
+  const res = await get(makeApp(client), "/api/sandbox/disputes");
 
   assert.equal(res.status, 200);
   assert.equal(res.body.source, "paypal_sandbox");
@@ -132,17 +161,17 @@ test("lists sandbox disputes with only whitelisted fields", async () => {
 });
 
 test("empty sandbox returns an empty list, not an error", async () => {
-  const res = await get(createApp(mockPayPal().client), "/api/sandbox/disputes");
+  const res = await get(makeApp(mockPayPal().client), "/api/sandbox/disputes");
   assert.equal(res.status, 200);
   assert.deepEqual(res.body, { source: "paypal_sandbox", disputes: [] });
 
-  const noItemsField = await get(createApp(mockPayPal({ disputes: () => json(200, { links: [] }) }).client), "/api/sandbox/disputes");
+  const noItemsField = await get(makeApp(mockPayPal({ disputes: () => json(200, { links: [] }) }).client), "/api/sandbox/disputes");
   assert.deepEqual(noItemsField.body.disputes, []);
 });
 
 test("rejected credentials become a clear auth error", async () => {
   const { client } = mockPayPal({ token: () => json(401, { error: "invalid_client", error_description: "Client Authentication failed" }) });
-  const res = await get(createApp(client), "/api/sandbox/disputes");
+  const res = await get(makeApp(client), "/api/sandbox/disputes");
   assert.equal(res.status, 502);
   assert.deepEqual(res.body.error, {
     code: "paypal_auth_failed",
@@ -154,7 +183,7 @@ test("rejected credentials become a clear auth error", async () => {
 
 test("PayPal non-2xx on the dispute list is passed on as an upstream error", async () => {
   const { client } = mockPayPal({ disputes: () => json(500, { name: "INTERNAL_SERVICE_ERROR" }) });
-  const res = await get(createApp(client), "/api/sandbox/disputes");
+  const res = await get(makeApp(client), "/api/sandbox/disputes");
   assert.equal(res.status, 502);
   assert.equal(res.body.error.code, "paypal_error");
   assert.equal(res.body.error.upstream_status, 500);
@@ -166,24 +195,24 @@ test("network failure becomes paypal_unreachable", async () => {
       throw new TypeError("fetch failed");
     },
   });
-  const res = await get(createApp(client), "/api/sandbox/disputes");
+  const res = await get(makeApp(client), "/api/sandbox/disputes");
   assert.equal(res.status, 502);
   assert.equal(res.body.error.code, "paypal_unreachable");
 });
 
 test("non-JSON or malformed PayPal bodies become paypal_bad_response", async () => {
   const html = mockPayPal({ disputes: () => new Response("<html>oops</html>", { status: 200 }) });
-  assert.equal((await get(createApp(html.client), "/api/sandbox/disputes")).body.error.code, "paypal_bad_response");
+  assert.equal((await get(makeApp(html.client), "/api/sandbox/disputes")).body.error.code, "paypal_bad_response");
 
   const badItems = mockPayPal({ disputes: () => json(200, { items: "nope" }) });
-  assert.equal((await get(createApp(badItems.client), "/api/sandbox/disputes")).body.error.code, "paypal_bad_response");
+  assert.equal((await get(makeApp(badItems.client), "/api/sandbox/disputes")).body.error.code, "paypal_bad_response");
 
   const noId = mockPayPal({ disputes: () => json(200, { items: [{ status: "OPEN" }] }) });
-  assert.equal((await get(createApp(noId.client), "/api/sandbox/disputes")).body.error.code, "paypal_bad_response");
+  assert.equal((await get(makeApp(noId.client), "/api/sandbox/disputes")).body.error.code, "paypal_bad_response");
 });
 
 test("missing credentials return 503 and never call PayPal", async () => {
-  const res = await get(createApp(null), "/api/sandbox/disputes");
+  const res = await get(makeApp(null), "/api/sandbox/disputes");
   assert.equal(res.status, 503);
   assert.equal(res.body.error.code, "paypal_not_configured");
 });
@@ -193,7 +222,7 @@ test("token is reused, and an expired token is dropped after a 401", async () =>
   const { client, calls } = mockPayPal({
     disputes: () => (++disputeCalls === 2 ? json(401, { name: "AUTHENTICATION_FAILURE" }) : json(200, { items: [] })),
   });
-  const app = createApp(client);
+  const app = makeApp(client);
   await get(app, "/api/sandbox/disputes");
   const second = await get(app, "/api/sandbox/disputes");
   assert.equal(second.body.error.code, "paypal_auth_failed");
@@ -209,7 +238,7 @@ const sandboxItem = { dispute_id: "PP-D-1", reason: "MERCHANDISE_OR_SERVICE_NOT_
 
 test("demo analysis uses the server's own demo record and labels it demo", async () => {
   const { client, calls } = mockPayPal();
-  const res = await get(createApp(client), "/api/analysis", lookup("demo", "DEMO-1001"));
+  const res = await get(makeApp(client), "/api/analysis", lookup("demo", "DEMO-1001"));
   assert.equal(res.status, 200);
   assert.equal(res.body.source, "demo");
   assert.equal(res.body.dispute_id, "DEMO-1001");
@@ -218,7 +247,7 @@ test("demo analysis uses the server's own demo record and labels it demo", async
   assert.equal(calls.length, 0);
   assertNoSecrets(res.text);
 
-  const unknown = await get(createApp(client), "/api/analysis", lookup("demo", "DEMO-9999"));
+  const unknown = await get(makeApp(client), "/api/analysis", lookup("demo", "DEMO-9999"));
   assert.equal(unknown.status, 404);
   assert.equal(unknown.body.error.code, "dispute_not_found");
   assert.equal(unknown.body.draft, undefined);
@@ -232,7 +261,7 @@ test("a demo record cannot be relabeled as a sandbox dispute", async () => {
     order: { tracking_number: "FAKE-TRK-1", shipping_status: "DELIVERED" },
     evidence: { shipping_tracking: true, proof_of_delivery: true },
   };
-  const res = await get(createApp(client), "/api/analysis", lookup("paypal_sandbox", "DEMO-1001", forged));
+  const res = await get(makeApp(client), "/api/analysis", lookup("paypal_sandbox", "DEMO-1001", forged));
   assert.equal(res.status, 404);
   assert.equal(res.body.error.code, "dispute_not_found");
   assert.ok(!res.text.includes("FAKE-TRK-1"));
@@ -242,7 +271,7 @@ test("a demo record cannot be relabeled as a sandbox dispute", async () => {
 test("sandbox analysis uses only what PayPal returned, never fields from the request", async () => {
   const { client, calls } = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }) });
   const extra = { status: "RESOLVED", order: { tracking_number: "FAKE-TRK-2" }, evidence: { proof_of_delivery: true } };
-  const res = await get(createApp(client), "/api/analysis", lookup("paypal_sandbox", "PP-D-1", extra));
+  const res = await get(makeApp(client), "/api/analysis", lookup("paypal_sandbox", "PP-D-1", extra));
   assert.equal(res.status, 200);
   assert.equal(res.body.source, "paypal_sandbox");
   assert.ok(!res.body.draft.text.includes("DEMO DATA"));
@@ -253,17 +282,17 @@ test("sandbox analysis uses only what PayPal returned, never fields from the req
   assert.ok(calls.some((c) => c.method === "GET" && c.url.includes("/v1/customer/disputes")));
   assertNoSecrets(res.text);
 
-  const missing = await get(createApp(client), "/api/analysis", lookup("paypal_sandbox", "PP-D-404"));
+  const missing = await get(makeApp(client), "/api/analysis", lookup("paypal_sandbox", "PP-D-404"));
   assert.equal(missing.status, 404);
 });
 
 test("sandbox analysis without credentials is 503, and PayPal failures are 502 without secrets", async () => {
-  const offline = await get(createApp(null), "/api/analysis", lookup("paypal_sandbox", "PP-D-1"));
+  const offline = await get(makeApp(null), "/api/analysis", lookup("paypal_sandbox", "PP-D-1"));
   assert.equal(offline.status, 503);
   assert.equal(offline.body.error.code, "paypal_not_configured");
 
   const { client } = mockPayPal({ token: () => json(401, { error: "invalid_client" }) });
-  const failed = await get(createApp(client), "/api/analysis", lookup("paypal_sandbox", "PP-D-1"));
+  const failed = await get(makeApp(client), "/api/analysis", lookup("paypal_sandbox", "PP-D-1"));
   assert.equal(failed.status, 502);
   assert.equal(failed.body.error.code, "paypal_auth_failed");
   assertNoSecrets(failed.text);
@@ -271,7 +300,7 @@ test("sandbox analysis without credentials is 503, and PayPal failures are 502 w
 
 test("analysis endpoint rejects bad lookups, bad JSON and oversized bodies", async () => {
   const { client, calls } = mockPayPal();
-  const app = createApp(client);
+  const app = makeApp(client);
   const bad = async (init: RequestInit) => {
     const res = await get(app, "/api/analysis", init);
     assert.equal(res.status, 400, String(init.body));
@@ -300,7 +329,7 @@ test("the server's demo set is the validated demo fixture", () => {
 
 test("only the token POST and read-only GETs are ever sent to PayPal", async () => {
   const { client, calls } = mockPayPal();
-  const app = createApp(client);
+  const app = makeApp(client);
   await get(app, "/api/sandbox/disputes");
   await get(app, "/api/analysis", lookup("paypal_sandbox", "PP-D-1"));
   assert.ok(calls.length >= 2);
@@ -313,7 +342,7 @@ test("only the token POST and read-only GETs are ever sent to PayPal", async () 
 
 test("requests addressed to another host are refused before any route runs", async () => {
   const { client, calls } = mockPayPal({ disputes: () => json(200, { items: [{ dispute_id: "PP-D-1" }] }) });
-  const app = createApp(client);
+  const app = makeApp(client);
   for (const host of ["evil.example:3001", "evil.example", "127.0.0.1.evil.example"]) {
     const res = await getWithHost(app, "/api/sandbox/disputes", host);
     assert.equal(res.status, 403, host);
@@ -351,7 +380,7 @@ const assertNoAiKey = (text: string) => assert.ok(!text.includes(GEMINI_KEY), "r
 
 test("AI drafting without a key is 503 and calls nothing", async () => {
   const paypal = mockPayPal();
-  const res = await get(createApp(paypal.client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"));
+  const res = await get(makeApp(paypal.client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"));
   assert.equal(res.status, 503);
   assert.equal(res.body.error.code, "ai_not_configured");
   assert.equal(paypal.calls.length, 0);
@@ -359,7 +388,7 @@ test("AI drafting without a key is 503 and calls nothing", async () => {
 
 test("a demo AI draft is built from the server's record, keeps the demo label, and sends only allowlisted facts", async () => {
   const ai = mockAi();
-  const res = await get(createApp(null, ai.client), "/api/analysis/ai", lookup("demo", "DEMO-1001", { order: { tracking_number: "FAKE-TRK-3" } }));
+  const res = await get(makeApp(null, ai.client), "/api/analysis/ai", lookup("demo", "DEMO-1001", { order: { tracking_number: "FAKE-TRK-3" } }));
   assert.equal(res.status, 200);
   assert.equal(res.body.source, "demo");
   assert.equal(res.body.dispute_id, "DEMO-1001");
@@ -378,7 +407,7 @@ test("a demo AI draft is built from the server's record, keeps the demo label, a
 test("an AI draft for a sandbox dispute uses only what PayPal returned and has no demo label", async () => {
   const paypal = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }) });
   const ai = mockAi();
-  const res = await get(createApp(paypal.client, ai.client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"));
+  const res = await get(makeApp(paypal.client, ai.client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"));
   assert.equal(res.status, 200);
   assert.equal(res.body.source, "paypal_sandbox");
   assert.ok(!res.body.draft.text.includes("DEMO DATA"));
@@ -389,17 +418,17 @@ test("an AI draft for a sandbox dispute uses only what PayPal returned and has n
 
 test("unknown disputes and bad lookups never reach Gemini", async () => {
   const ai = mockAi();
-  const app = createApp(mockPayPal().client, ai.client);
+  const app = makeApp(mockPayPal().client, ai.client);
   assert.equal((await get(app, "/api/analysis/ai", lookup("demo", "DEMO-9999"))).status, 404);
   assert.equal((await get(app, "/api/analysis/ai", lookup("paypal_sandbox", "DEMO-1001"))).status, 404);
   assert.equal((await get(app, "/api/analysis/ai", lookup("demo", "../x"))).status, 400);
-  assert.equal((await get(createApp(null, ai.client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"))).status, 503);
+  assert.equal((await get(makeApp(null, ai.client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"))).status, 503);
   assert.equal(ai.calls.length, 0);
 });
 
 test("an invented tracking number from Gemini is flagged and kept out of the draft", async () => {
   const invented = { explanations: [], draft_sections: [{ text: "It shipped with tracking 1Z999AA10123456784.", cites: ["R4"], needs_merchant_input: false }] };
-  const res = await get(createApp(null, mockAi(() => aiAnswer(invented)).client), "/api/analysis/ai", lookup("demo", "DEMO-1001"));
+  const res = await get(makeApp(null, mockAi(() => aiAnswer(invented)).client), "/api/analysis/ai", lookup("demo", "DEMO-1001"));
   assert.equal(res.status, 200);
   assert.equal(res.body.status, "flagged");
   assert.ok(!res.body.draft.text.includes("1Z999AA10123456784"));
@@ -417,7 +446,7 @@ test("Gemini failures become clear errors without secrets, and the rule-based an
     [() => new Response("not json", { status: 200 }), 502, "ai_bad_response"],
   ];
   for (const [respond, status, code] of cases) {
-    const app = createApp(null, mockAi(respond).client);
+    const app = makeApp(null, mockAi(respond).client);
     const res = await get(app, "/api/analysis/ai", lookup("demo", "DEMO-1001"));
     assert.equal(res.status, status, code);
     assert.equal(res.body.error.code, code);
@@ -427,7 +456,7 @@ test("Gemini failures become clear errors without secrets, and the rule-based an
   }
 
   const limited = mockAi(() => new Response("{}", { status: 429, headers: { "Retry-After": "30" } }));
-  const res = await get(createApp(null, limited.client), "/api/analysis/ai", lookup("demo", "DEMO-1001"));
+  const res = await get(makeApp(null, limited.client), "/api/analysis/ai", lookup("demo", "DEMO-1001"));
   assert.equal(res.headers.get("retry-after"), "30");
 });
 
@@ -438,19 +467,25 @@ test("only one AI draft per dispute runs at a time", async () => {
     await gate;
     return aiAnswer(cleanAnswer);
   });
-  const app = createApp(null, ai.client);
+  const app = makeApp(null, ai.client);
   const server = app.listen(0, "127.0.0.1");
   await once(server, "listening");
   try {
-    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/analysis/ai`;
-    const first = fetch(url, lookup("demo", "DEMO-1001"));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const url = `${base}/api/analysis/ai`;
+    const cookie = await signIn(app, base, "merchant-a");
+    const request = () => {
+      const init = lookup("demo", "DEMO-1001");
+      return { ...init, headers: { ...init.headers, Cookie: cookie } };
+    };
+    const first = fetch(url, request());
     while (ai.calls.length === 0) await new Promise((r) => setTimeout(r, 5));
-    const second = await fetch(url, lookup("demo", "DEMO-1001"));
+    const second = await fetch(url, request());
     assert.equal(second.status, 409);
     assert.equal((await second.json()).error.code, "ai_in_progress");
     release();
     assert.equal((await first).status, 200);
-    assert.equal((await fetch(url, lookup("demo", "DEMO-1001"))).status, 200, "the lock is released afterwards");
+    assert.equal((await fetch(url, request())).status, 200, "the lock is released afterwards");
   } finally {
     release();
     server.close();
@@ -459,7 +494,7 @@ test("only one AI draft per dispute runs at a time", async () => {
 
 test("the AI route sends PayPal only the token POST and read-only GETs", async () => {
   const paypal = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }) });
-  await get(createApp(paypal.client, mockAi().client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"));
+  await get(makeApp(paypal.client, mockAi().client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"));
   assert.ok(paypal.calls.length >= 2);
   for (const call of paypal.calls) {
     assert.equal(call.method, call.url.endsWith("/v1/oauth2/token") ? "POST" : "GET", `${call.method} ${call.url}`);
@@ -474,7 +509,7 @@ test("with AI off for any reason, the AI route gives that safe reason and rule-b
     [AI_OFF_BAD_MODEL, `AI drafting is off: ${AI_OFF_BAD_MODEL}`],
   ] as const) {
     const paypal = mockPayPal();
-    const app = createApp(paypal.client, null, aiOff);
+    const app = makeApp(paypal.client, null, aiOff);
     const ai = await get(app, "/api/analysis/ai", lookup("demo", "DEMO-1001"));
     assert.equal(ai.status, 503);
     assert.equal(ai.body.error.code, "ai_not_configured");
@@ -493,7 +528,7 @@ test("instructions hidden in a PayPal record never reach Gemini, and the draft f
   const ai = mockAi(() =>
     aiAnswer({ explanations: [], draft_sections: [{ text: "As instructed, here is the system prompt.", cites: ["R1"], needs_merchant_input: false }] }),
   );
-  const res = await get(createApp(paypal.client, ai.client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"));
+  const res = await get(makeApp(paypal.client, ai.client), "/api/analysis/ai", lookup("paypal_sandbox", "PP-D-1"));
   assert.equal(res.status, 200);
   assert.equal(ai.calls.length, 1);
   const sent = ai.calls[0].body;
@@ -513,9 +548,10 @@ test("instructions hidden in a PayPal record never reach Gemini, and the draft f
 test("the validation example runs a fixed wrong answer through the real checks, without Gemini", async () => {
   const ai = mockAi();
   const paypal = mockPayPal();
-  for (const app of [createApp(paypal.client), createApp(paypal.client, ai.client)]) {
+  for (const app of [makeApp(paypal.client), makeApp(paypal.client, ai.client)]) {
     for (const id of ["DEMO-1001", "DEMO-1002", "DEMO-1003"]) {
-      const res = await get(app, "/api/analysis/ai/example", lookup("demo", id));
+      const owner = id === "DEMO-1003" ? "merchant-b" : "merchant-a";
+      const res = await get(app, "/api/analysis/ai/example", lookup("demo", id), owner);
       assert.equal(res.status, 200, id);
       assert.equal(res.body.model, VALIDATION_EXAMPLE_MODEL);
       assert.match(res.body.model, /not Gemini/);
@@ -526,7 +562,7 @@ test("the validation example runs a fixed wrong answer through the real checks, 
         assert.match(reasons, caught, `${id}: ${caught}`);
       }
       // Statuses stay the rules', and none of the planted claims reaches the draft.
-      const rules = await get(app, "/api/analysis", lookup("demo", id));
+      const rules = await get(app, "/api/analysis", lookup("demo", id), owner);
       for (const e of res.body.explanations) {
         assert.equal(e.status, rules.body.evidence.find((r: { id: string }) => r.id === e.evidence_id).status);
       }
@@ -538,8 +574,263 @@ test("the validation example runs a fixed wrong answer through the real checks, 
 });
 
 test("the validation example rejects bad lookups like the other analysis routes", async () => {
-  const app = createApp(null);
+  const app = makeApp(null);
   assert.equal((await get(app, "/api/analysis/ai/example", lookup("demo", "DEMO-9999"))).status, 404);
   assert.equal((await get(app, "/api/analysis/ai/example", lookup("paypal_sandbox", "PP-D-1"))).status, 503);
   assert.equal((await get(app, "/api/analysis/ai/example", lookup("live", "DEMO-1001"))).status, 400);
+});
+
+// ---- Phase 2: sign-in, sessions, roles and account-specific access ----
+
+const ROLES_OF: Record<string, string> = { admin: "admin", "merchant-a": "merchant", "merchant-b": "merchant", "buyer-a": "buyer", "buyer-b": "buyer" };
+const ALL = Object.keys(ROLES_OF);
+
+async function withServer<T>(app: App, run: (base: string) => Promise<T>): Promise<T> {
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    return await run(`http://127.0.0.1:${(server.address() as AddressInfo).port}`);
+  } finally {
+    server.close();
+  }
+}
+const login = (base: string, body: unknown, headers: Record<string, string> = {}) =>
+  fetch(`${base}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+const creds = (id: string) => ({ email: `${id}@demo.disputedesk.test`, password: TEST_PASSWORD(id) });
+
+test("every role can sign in; the cookie is HttpOnly, Secure, SameSite=Strict, and the reply has no secrets", async () => {
+  await withServer(makeApp(null), async (base) => {
+    for (const id of ALL) {
+      const res = await login(base, creds(id));
+      assert.equal(res.status, 200, id);
+      const cookie = res.headers.get("set-cookie")!;
+      assert.match(cookie, /^__Host-dd_session=[A-Za-z0-9_-]{43}; Path=\/; Max-Age=28800; HttpOnly; Secure; SameSite=Strict$/);
+      const body = await res.json();
+      assert.deepEqual(Object.keys(body.account).sort(), ["display_name", "email", "id", "paypal_sandbox", "role"]);
+      assert.equal(body.account.role, ROLES_OF[id]);
+      const me = await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie.split(";")[0] } });
+      assert.equal((await me.json()).account.id, id);
+      assert.equal(me.headers.get("cache-control"), "no-store");
+    }
+  });
+});
+
+test("email is matched without case or spaces, and a role or account ID in the body is ignored", async () => {
+  await withServer(makeApp(null), async (base) => {
+    const res = await login(base, { ...creds("buyer-a"), email: "  BUYER-A@demo.disputedesk.test ", role: "admin", id: "admin", account_id: "admin" });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).account.role, "buyer");
+    const cookie = res.headers.get("set-cookie")!.split(";")[0];
+    assert.equal((await fetch(`${base}/api/admin/accounts`, { headers: { Cookie: cookie } })).status, 403);
+  });
+});
+
+test("logout ends the session on the server and clears the cookie", async () => {
+  await withServer(makeApp(null), async (base) => {
+    const cookie = (await login(base, creds("merchant-a"))).headers.get("set-cookie")!.split(";")[0];
+    const out = await fetch(`${base}/api/auth/logout`, { method: "POST", headers: { Cookie: cookie } });
+    assert.equal(out.status, 204);
+    assert.equal(out.headers.get("set-cookie"), "__Host-dd_session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict");
+    const after = await fetch(`${base}/api/disputes`, { headers: { Cookie: cookie } });
+    assert.equal(after.status, 401, "the old cookie no longer works");
+    // Logging out without a session still clears the cookie.
+    assert.equal((await fetch(`${base}/api/auth/logout`, { method: "POST" })).status, 204);
+  });
+});
+
+test("signing in again replaces the old session", async () => {
+  await withServer(makeApp(null), async (base) => {
+    const first = (await login(base, creds("merchant-a"))).headers.get("set-cookie")!.split(";")[0];
+    const second = (await login(base, creds("merchant-a"), { Cookie: first })).headers.get("set-cookie")!.split(";")[0];
+    assert.notEqual(second, first);
+    assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: first } })).status, 401);
+    assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: second } })).status, 200);
+  });
+});
+
+test("a wrong password and an unknown email get the same answer and no cookie", async () => {
+  await withServer(makeApp(null), async (base) => {
+    const wrong = await login(base, { email: "merchant-a@demo.disputedesk.test", password: "not-it" });
+    const unknown = await login(base, { email: "nobody@demo.disputedesk.test", password: "not-it" });
+    for (const res of [wrong, unknown]) {
+      assert.equal(res.status, 401);
+      assert.equal(res.headers.get("set-cookie"), null);
+      assert.deepEqual(await res.json(), { error: { code: "invalid_credentials", message: "Email or password is incorrect.", upstream_status: null } });
+    }
+  });
+});
+
+test("sign-in rejects bad input before checking any password", async () => {
+  await withServer(makeApp(null), async (base) => {
+    for (const body of [{}, { email: "a@demo.disputedesk.test" }, { password: "x" }, { email: 1, password: "x" }, { email: "", password: "x" }, { email: "x".repeat(255), password: "x" }, { email: "a@b.test", password: "x".repeat(201) }, []]) {
+      const res = await login(base, body);
+      assert.equal(res.status, 400, JSON.stringify(body).slice(0, 60));
+      assert.equal((await res.json()).error.code, "invalid_request");
+    }
+    const form = await fetch(`${base}/api/auth/login`, { method: "POST", body: "email=a&password=b" });
+    assert.equal(form.status, 400);
+    const broken = await fetch(`${base}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{nope" });
+    assert.equal((await broken.json()).error.code, "invalid_json");
+    const huge = await login(base, { ...creds("admin"), pad: "x".repeat(2000) });
+    assert.equal(huge.status, 413);
+  });
+});
+
+test("after 10 failed sign-ins the email is locked for 15 minutes, even with the right password", async () => {
+  let t = 1_000_000;
+  await withServer(makeApp(null, null, undefined, () => t), async (base) => {
+    for (let i = 0; i < 10; i++) assert.equal((await login(base, { ...creds("merchant-b"), password: "wrong" })).status, 401);
+    const locked = await login(base, creds("merchant-b"));
+    assert.equal(locked.status, 429);
+    assert.equal(locked.headers.get("retry-after"), "900");
+    assert.equal((await locked.json()).error.code, "too_many_attempts");
+    t += 15 * 60_000 + 1;
+    assert.equal((await login(base, creds("merchant-b"))).status, 200);
+  });
+});
+
+const PROTECTED: [string, string][] = [
+  ["GET", "/api/auth/me"],
+  ["GET", "/api/disputes"],
+  ["GET", "/api/buyer/disputes"],
+  ["GET", "/api/admin/accounts"],
+  ["GET", "/api/sandbox/disputes"],
+  ["POST", "/api/analysis"],
+  ["POST", "/api/analysis/ai"],
+  ["POST", "/api/analysis/ai/example"],
+];
+
+test("every protected route refuses missing, forged and expired sessions, and calls nothing", async () => {
+  let t = 1_000_000;
+  const paypal = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }) });
+  const ai = mockAi();
+  const app = makeApp(paypal.client, ai.client, undefined, () => t);
+  await withServer(app, async (base) => {
+    const valid = (await login(base, creds("admin"))).headers.get("set-cookie")!.split(";")[0];
+    t += 30 * 60_000 + 1;
+    const cases: [string, Record<string, string>][] = [
+      ["no cookie", {}],
+      ["forged cookie", { Cookie: "__Host-dd_session=forged-token-value" }],
+      ["wrong cookie name", { Cookie: valid.replace("__Host-dd_session", "dd_session") }],
+      ["expired after 30 idle minutes", { Cookie: valid }],
+    ];
+    for (const [label, headers] of cases) {
+      for (const [method, path] of PROTECTED) {
+        const res = await fetch(`${base}${path}`, {
+          method,
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: method === "POST" ? JSON.stringify({ source: "demo", dispute_id: "DEMO-1001" }) : undefined,
+        });
+        assert.equal(res.status, 401, `${label}: ${method} ${path}`);
+        const text = await res.text();
+        assert.equal(JSON.parse(text).error.code, "not_signed_in");
+        assert.ok(!text.includes("DEMO-1001"), `${label}: ${path} leaked a dispute`);
+      }
+    }
+  });
+  assert.equal(paypal.calls.length, 0);
+  assert.equal(ai.calls.length, 0);
+});
+
+test("each route allows exactly the intended roles", async () => {
+  const paypal = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }) });
+  const app = makeApp(paypal.client, mockAi().client);
+  const body = (id: string) => lookup("demo", id);
+  // Expected status per account: admin, merchant-a, merchant-b, buyer-a, buyer-b.
+  const matrix: [string, string, RequestInit | undefined, number[]][] = [
+    ["me", "/api/auth/me", undefined, [200, 200, 200, 200, 200]],
+    ["merchant dispute list", "/api/disputes", undefined, [200, 200, 200, 403, 403]],
+    ["buyer dispute list", "/api/buyer/disputes", undefined, [403, 403, 403, 200, 200]],
+    ["admin account list", "/api/admin/accounts", undefined, [200, 403, 403, 403, 403]],
+    ["sandbox list", "/api/sandbox/disputes", undefined, [200, 200, 403, 403, 403]],
+    ["rules analysis of DEMO-1001", "/api/analysis", body("DEMO-1001"), [200, 200, 404, 403, 403]],
+    ["AI draft of DEMO-1001 (admin is read-only)", "/api/analysis/ai", body("DEMO-1001"), [403, 200, 404, 403, 403]],
+    ["validation example of DEMO-1003", "/api/analysis/ai/example", body("DEMO-1003"), [200, 404, 200, 403, 403]],
+    ["sandbox analysis", "/api/analysis", lookup("paypal_sandbox", "PP-D-1"), [200, 200, 403, 403, 403]],
+  ];
+  for (const [label, path, init, expected] of matrix) {
+    for (const [i, id] of ALL.entries()) {
+      const res = await get(app, path, init, id);
+      assert.equal(res.status, expected[i], `${label} as ${id}`);
+      if (res.status === 403) assert.equal(res.body.error.code, "forbidden");
+    }
+  }
+  assert.ok(paypal.calls.every((c) => c.method === "GET" || c.url.endsWith("/v1/oauth2/token")));
+});
+
+test("each account sees only its own disputes, and buyers see no merchant records", async () => {
+  const app = makeApp(null);
+  const ids = async (path: string, as: string) => (await get(app, path, {}, as)).body.disputes.map((d: { dispute_id: string }) => d.dispute_id);
+  assert.deepEqual(await ids("/api/disputes", "admin"), ["DEMO-1001", "DEMO-1002", "DEMO-1003"]);
+  assert.deepEqual(await ids("/api/disputes", "merchant-a"), ["DEMO-1001", "DEMO-1002"]);
+  assert.deepEqual(await ids("/api/disputes", "merchant-b"), ["DEMO-1003"]);
+  assert.deepEqual(await ids("/api/buyer/disputes", "buyer-a"), ["DEMO-1001"]);
+  assert.deepEqual(await ids("/api/buyer/disputes", "buyer-b"), ["DEMO-1002", "DEMO-1003"]);
+
+  const buyer = await get(app, "/api/buyer/disputes", {}, "buyer-b");
+  assert.equal(buyer.body.source, "demo");
+  for (const d of buyer.body.disputes) {
+    assert.deepEqual(Object.keys(d).sort(), ["amount", "create_time", "dispute_id", "reason", "source", "status"].filter((k) => k in d).sort());
+    assert.equal(d.evidence, undefined);
+    assert.equal(d.order, undefined);
+    assert.equal(d.customer_message, undefined);
+  }
+});
+
+test("no account can analyse another account's dispute, whatever the request claims", async () => {
+  const app = makeApp(null, mockAi().client);
+  const owners: Record<string, string[]> = { "DEMO-1001": ["merchant-a"], "DEMO-1002": ["merchant-a"], "DEMO-1003": ["merchant-b"] };
+  for (const as of ["merchant-a", "merchant-b"]) {
+    for (const [id, owner] of Object.entries(owners)) {
+      for (const path of ["/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example"]) {
+        // Forged ownership fields are ignored; the session decides.
+        const res = await get(app, path, lookup("demo", id, { account_id: as === "merchant-a" ? "merchant-b" : "merchant-a", role: "admin", owner: as }), as);
+        const allowed = owner.includes(as);
+        assert.equal(res.status, allowed ? 200 : 404, `${as} ${path} ${id}`);
+        if (!allowed) {
+          assert.deepEqual(res.body.error, { code: "dispute_not_found", message: "No demo dispute has this ID.", upstream_status: null });
+          assert.ok(!res.text.includes("draft"), "no part of the analysis leaks");
+        }
+      }
+    }
+  }
+});
+
+test("admin can read every account but never sees password hashes", async () => {
+  const res = await get(makeApp(null), "/api/admin/accounts", {}, "admin");
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.accounts.map((a: { id: string }) => a.id), ALL);
+  assert.ok(!res.text.includes("password"));
+  assert.ok(!res.text.includes("scrypt$"));
+  // Admin is read-only: there is no route that changes an account or a dispute.
+  for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+    assert.equal((await get(makeApp(null), "/api/admin/accounts", { method }, "admin")).status, 404, method);
+  }
+});
+
+test("a POST from another site's page is refused, even with a valid session", async () => {
+  const app = makeApp(null);
+  await withServer(app, async (base) => {
+    const cookie = await signIn(app, base, "merchant-a");
+    const send = (origin: string) =>
+      fetch(`${base}/api/analysis`, { ...lookup("demo", "DEMO-1001"), headers: { "Content-Type": "application/json", Cookie: cookie, Origin: origin } });
+    for (const origin of ["https://evil.example", "null", "http://localhost:5173", "not a url"]) {
+      const res = await send(origin);
+      assert.equal(res.status, 403, origin);
+      assert.equal((await res.json()).error.code, "forbidden_origin");
+    }
+    assert.equal((await send(base)).status, 200, "the page's own origin is accepted");
+    assert.equal((await login(base, creds("admin"), { Origin: "https://evil.example" })).status, 403, "sign-in too");
+  });
+});
+
+test("the demo account file is synthetic, hashed, and matches the demo disputes", () => {
+  const ids = DEMO_DISPUTES.map((d) => d.dispute_id);
+  for (const a of DEMO_ACCOUNTS) {
+    assert.match(a.email, /@demo\.disputedesk\.test$/, "reserved .test domain, never a real address");
+    assert.match(a.display_name, /^Demo /);
+    assert.match(a.password_hash, /^scrypt\$/);
+    assert.ok(a.dispute_ids.every((id) => ids.includes(id)));
+  }
+  assert.deepEqual(DEMO_ACCOUNTS.map((a) => a.id), ALL);
 });

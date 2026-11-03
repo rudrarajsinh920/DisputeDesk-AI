@@ -1,5 +1,16 @@
 export type Source = "demo" | "paypal_sandbox";
 
+export type Role = "merchant" | "buyer" | "admin";
+
+// What the browser may know about the signed-in account. Never a password hash or session token.
+export interface AccountInfo {
+  id: string;
+  email: string;
+  role: Role;
+  display_name: string;
+  paypal_sandbox: boolean;
+}
+
 export interface Money {
   currency_code: string;
   value: string;

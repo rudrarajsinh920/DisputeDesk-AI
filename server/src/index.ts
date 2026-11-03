@@ -10,7 +10,7 @@ const app = createApp(
   config.aiOff ?? undefined,
 );
 
-// Localhost only: this server holds PayPal credentials and has no login yet.
+// Localhost only: this server holds PayPal credentials, and its accounts are synthetic demo accounts.
 app.listen(config.port, "127.0.0.1", (error?: Error) => {
   if (error) {
     console.error(`Could not start server: ${error.message}`);

@@ -12,11 +12,19 @@ import { VALIDATION_EXAMPLE_MODEL, validationExampleAnswer } from "../../server/
 import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
 import { AiResult, AiSectionView, AnalysisView, DISCARD_EDITS, DraftEditor, ValidationExampleView } from "./AnalysisPanel.tsx";
 import type { AiState, ExampleState } from "./AnalysisPanel.tsx";
-import App, { DisputesView } from "./App.tsx";
+import App, { BuyerDisputes, Dashboard, DisputesView } from "./App.tsx";
 import type { SandboxLoad } from "./App.tsx";
 import { DisputeDetail } from "./DisputeDetail.tsx";
-import { demoDisputes } from "./data.ts";
-import type { AiAssist, Dispute } from "../../shared/types.ts";
+import { Login } from "./Login.tsx";
+import { SIGNED_OUT_EVENT, serverError } from "./sandbox.ts";
+import extraDemos from "../../demo-disputes.json" with { type: "json" };
+import sample from "../../sample-dispute.json" with { type: "json" };
+import type { AccountInfo, AiAssist, Dispute } from "../../shared/types.ts";
+
+// Test fixture: the synthetic records the server serves. The page itself no longer bundles them.
+const demoDisputes = [sample, ...extraDemos].map((record) => ({ ...record, source: "demo" })) as Dispute[];
+const merchant: AccountInfo = { id: "merchant-a", email: "merchant-a@demo.disputedesk.test", role: "merchant", display_name: "Demo Merchant A", paypal_sandbox: true };
+const admin: AccountInfo = { id: "admin", email: "admin@demo.disputedesk.test", role: "admin", display_name: "Demo Admin", paypal_sandbox: false };
 
 globalThis.fetch = (() => {
   throw new Error("UI tests must not make network requests");
@@ -88,13 +96,79 @@ function regenerateButton(assist: AiAssist, pending: boolean, onRegenerate: () =
 // ---- Dashboard states ----
 
 test("dashboard loads with demo data, labeled as synthetic and not PayPal", () => {
-  const page = text(html(createElement(App)));
+  const page = text(html(createElement(Dashboard, { account: merchant, onSignOut: noop })));
   assert.match(page, /DEMO DATA — NOT A REAL PAYPAL DISPUTE/);
   assert.match(page, /Nothing here is connected to PayPal/);
-  assert.match(page, /Demo dispute DEMO-1001/);
-  assert.doesNotMatch(page, /PayPal sandbox dispute/);
+  assert.match(page, /Demo Merchant A Merchant Sign out/);
+  // The demo list comes from the server for this account, so the first render shows its loading state.
+  assert.match(page, /Loading demo disputes…/);
+  assert.doesNotMatch(page, /DEMO-100/, "no demo record is bundled into the page");
+
+  const list = text(view(demoDisputes, { status: "ready", disputes: demoDisputes }));
+  assert.match(list, /Demo dispute DEMO-1001/);
+  assert.doesNotMatch(list, /PayPal sandbox dispute/);
   // Analysis runs on the server, so the first render shows its loading state.
-  assert.match(page, /Analyzing evidence…/);
+  assert.match(list, /Analyzing evidence…/);
+});
+
+// ---- Sign-in and roles ----
+
+test("before the server answers, the app shows only a session check", () => {
+  const page = text(html(createElement(App)));
+  assert.match(page, /Checking your session…/);
+  assert.doesNotMatch(page, /DEMO-100|Sign out/);
+});
+
+test("the sign-in form is labeled, says the accounts are synthetic, and holds no credentials", () => {
+  const out = html(createElement(Login, { notice: "Your session has ended. Sign in again to continue.", onSignedIn: noop }));
+  assert.match(out, /<label for="login-email">Email<\/label>/);
+  const input = (id: string) => out.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0] ?? "";
+  for (const attr of ['type="email"', 'name="email"', 'autoComplete="username"', 'required=""']) assert.ok(input("login-email").includes(attr), attr);
+  for (const attr of ['type="password"', 'name="password"', 'autoComplete="current-password"', 'required=""']) assert.ok(input("login-password").includes(attr), attr);
+  assert.match(text(out), /SYNTHETIC DEMO ACCOUNTS/);
+  assert.match(text(out), /Never enter a real password here/);
+  assert.match(out, /role="status">Your session has ended/);
+  assert.doesNotMatch(out, /value=|demo-(admin|merchant|buyer)-/, "no prefilled or listed passwords");
+});
+
+test("the admin view is read-only: no sandbox switch is hidden, but there is no AI draft button", () => {
+  const page = text(html(createElement(Dashboard, { account: admin, onSignOut: noop })));
+  assert.match(page, /Admin \(read-only\)/);
+  assert.match(page, /Demo data PayPal sandbox/, "admin can read both sources");
+
+  const merchantB: AccountInfo = { ...merchant, id: "merchant-b", paypal_sandbox: false };
+  assert.doesNotMatch(text(html(createElement(Dashboard, { account: merchantB, onSignOut: noop }))), /PayPal sandbox/);
+
+  const analysis = analyzeDispute(demo);
+  const readOnly = text(html(createElement(AnalysisView, { dispute: demo, analysis, canDraft: false })));
+  assert.match(readOnly, /Admin view is read-only/);
+  assert.doesNotMatch(readOnly, /Generate AI draft/);
+  assert.match(readOnly, /Show a validation example/);
+});
+
+test("buyers see their own disputes without the merchant's records", () => {
+  const buyerRecords = demoDisputes.slice(1).map(({ source, dispute_id, reason, status, amount, create_time }) => ({ source, dispute_id, reason, status, amount, create_time }));
+  const out = text(html(createElement(BuyerDisputes, { load: { status: "ready", disputes: buyerRecords as Dispute[] }, onRetry: noop })));
+  assert.match(out, /Your disputes 2 on this account/);
+  assert.match(out, /DEMO-1002 .*DEMO-1003/);
+  assert.doesNotMatch(out, /DEMO-1001|Evidence analysis|Response draft|Generate AI draft/);
+  assert.match(text(html(createElement(BuyerDisputes, { load: { status: "error", message: "Sign in to continue. (HTTP 401)" }, onRetry: noop }))), /Couldn't load your disputes/);
+});
+
+test("a not-signed-in reply from any endpoint sends the app back to sign-in", () => {
+  const events: string[] = [];
+  const target = new EventTarget();
+  const realWindow = (globalThis as { window?: unknown }).window;
+  (globalThis as { window?: unknown }).window = target;
+  target.addEventListener(SIGNED_OUT_EVENT, () => events.push("signed-out"));
+  try {
+    const err = serverError(new Response(null, { status: 401 }), { error: { code: "not_signed_in", message: "Sign in to continue." } });
+    assert.equal(err.code, "not_signed_in");
+    serverError(new Response(null, { status: 403 }), { error: { code: "forbidden", message: "Your account can't use this." } });
+    assert.deepEqual(events, ["signed-out"], "only a missing session signs the app out");
+  } finally {
+    (globalThis as { window?: unknown }).window = realWindow;
+  }
 });
 
 test("sandbox loading, empty and error states", () => {
@@ -296,8 +370,8 @@ test("the client calls only DisputeDesk's own read and analysis endpoints", () =
     .map((f) => readFileSync(new URL(f, dir), "utf8"))
     .join("\n");
   const urls = [...new Set([...sources.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(urls, ["/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/health", "/api/sandbox/disputes"]);
-  assert.equal((sources.match(/fetch\(/g) ?? []).length, 4, "each fetch call uses one of the endpoints above");
+  assert.deepEqual(urls, ["/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/disputes", "/api/health", "/api/sandbox/disputes"]);
+  assert.equal((sources.match(/fetch\(/g) ?? []).length, 7, "each fetch call uses one of the endpoints above");
   assert.doesNotMatch(sources, /paypal\.com|generativelanguage|method:\s*"(PUT|PATCH|DELETE)"/i);
 });
 

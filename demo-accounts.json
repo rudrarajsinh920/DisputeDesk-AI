@@ -1,0 +1,60 @@
+{
+  "notice": "SYNTHETIC DEMO ACCOUNTS. Not real people or real credentials. The matching demo passwords are in README.md and work only on this local demo server.",
+  "accounts": [
+    {
+      "id": "admin",
+      "email": "admin@demo.disputedesk.test",
+      "role": "admin",
+      "display_name": "Demo Admin",
+      "paypal_sandbox": false,
+      "dispute_ids": [],
+      "password_hash": "scrypt$16384$8$1$OeKudslhCrnNcxJdd8zxMA==$txTt0yEvTcvygIkxjpt51eWa6U+nlgmfpHbRm5lcsG0="
+    },
+    {
+      "id": "merchant-a",
+      "email": "merchant-a@demo.disputedesk.test",
+      "role": "merchant",
+      "display_name": "Demo Merchant A",
+      "paypal_sandbox": true,
+      "dispute_ids": [
+        "DEMO-1001",
+        "DEMO-1002"
+      ],
+      "password_hash": "scrypt$16384$8$1$HS9bw23nEzBqAnNke7KAxw==$3TYQyRZlf4XSY3i4rC463+B+Ux8kW/w+dTxG4nAIDVM="
+    },
+    {
+      "id": "merchant-b",
+      "email": "merchant-b@demo.disputedesk.test",
+      "role": "merchant",
+      "display_name": "Demo Merchant B",
+      "paypal_sandbox": false,
+      "dispute_ids": [
+        "DEMO-1003"
+      ],
+      "password_hash": "scrypt$16384$8$1$P+gIFOtikvJqbKcT0VmOCA==$pirxpfPEb1L7gIjwWO2sAxQSdpdfvjjkMVg0cP+j9qw="
+    },
+    {
+      "id": "buyer-a",
+      "email": "buyer-a@demo.disputedesk.test",
+      "role": "buyer",
+      "display_name": "Demo Buyer A",
+      "paypal_sandbox": false,
+      "dispute_ids": [
+        "DEMO-1001"
+      ],
+      "password_hash": "scrypt$16384$8$1$S2pK43vOdxTHNvMqy71HLg==$LqigFJKJdtDkgXA/glQq/+NPsvXCndm05P549m6LerI="
+    },
+    {
+      "id": "buyer-b",
+      "email": "buyer-b@demo.disputedesk.test",
+      "role": "buyer",
+      "display_name": "Demo Buyer B",
+      "paypal_sandbox": false,
+      "dispute_ids": [
+        "DEMO-1002",
+        "DEMO-1003"
+      ],
+      "password_hash": "scrypt$16384$8$1$eZ5r5SPlPZTHWCTyXJ5GAw==$9IU0UGSQ7IbjLgEBhJh9i5sJmbt/SE+n0e7VibqZyRs="
+    }
+  ]
+}

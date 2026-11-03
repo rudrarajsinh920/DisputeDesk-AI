@@ -6,7 +6,7 @@ import { StatusBadge } from "./ui.tsx";
 
 const orNotRecorded = (value: ReactNode) => value || <span className="muted">Not recorded</span>;
 
-export function DisputeDetail({ dispute }: { dispute: Dispute }) {
+export function DisputeDetail({ dispute, canDraft = true }: { dispute: Dispute; canDraft?: boolean }) {
   return (
     <article className="detail">
       <header className="detail-head">
@@ -60,7 +60,7 @@ export function DisputeDetail({ dispute }: { dispute: Dispute }) {
         </section>
       )}
 
-      <AnalysisPanel dispute={dispute} />
+      <AnalysisPanel dispute={dispute} canDraft={canDraft} />
 
       <p className="footnote">DisputeDesk never submits responses to PayPal automatically.</p>
     </article>

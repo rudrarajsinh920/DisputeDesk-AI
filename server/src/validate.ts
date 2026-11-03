@@ -18,6 +18,17 @@ export function validateLookup(input: unknown): { ok: true; lookup: Lookup } | {
   return { ok: true, lookup: { source: source as Source, dispute_id: dispute_id as string } };
 }
 
+// Only email and password are read; anything else in the body (a role, an account ID) is ignored.
+export function validateLogin(input: unknown): { ok: true; email: string; password: string } | { ok: false; errors: string[] } {
+  if (!isObject(input)) return { ok: false, errors: ["The body must be an object with email and password."] };
+  const errors: string[] = [];
+  const { email, password } = input;
+  if (typeof email !== "string" || email.trim() === "" || email.length > 254) errors.push("email must be 1 to 254 characters.");
+  if (typeof password !== "string" || password === "" || password.length > 200) errors.push("password must be 1 to 200 characters.");
+  if (errors.length > 0) return { ok: false, errors };
+  return { ok: true, email: (email as string).trim().toLowerCase(), password: password as string };
+}
+
 // Checks every field the engine reads and copies only those, so unknown fields never pass through.
 export function validateDispute(input: unknown): Validation {
   if (!isObject(input)) return { ok: false, errors: ["The body must be a dispute object."] };

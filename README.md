@@ -15,7 +15,7 @@ submits anything to PayPal.
 
 | Source | What it is |
 |---|---|
-| **Demo data** | Synthetic records in `sample-dispute.json` and `demo-disputes.json`. Labeled "DEMO DATA — NOT A REAL PAYPAL DISPUTE". Never sent to PayPal. |
+| **Demo data** | Synthetic records in `sample-dispute.json` and `demo-disputes.json`, served by the server only to the accounts they belong to (`demo-accounts.json`). Labeled "DEMO DATA — NOT A REAL PAYPAL DISPUTE". Never sent to PayPal. |
 | **PayPal sandbox** | Read-only list of disputes from PayPal's test environment. Shows an empty state when the sandbox has none. Demo records never fill it. |
 
 ## Setup
@@ -53,7 +53,30 @@ cd server && npm start
 cd client && npm run dev
 ```
 
-Open http://localhost:5173. The server log line says whether PayPal and AI drafting are on, and why not.
+Open http://localhost:5173 (always this address, not 127.0.0.1, so the sign-in cookie stays on one host). The server
+log line says whether PayPal and AI drafting are on, and why not.
+
+## Demo accounts
+
+Sign in with one of these **synthetic demo accounts**. They are not real people, the passwords are not real secrets,
+and they work only on this local demo server. `demo-accounts.json` stores only their scrypt hashes. Never reuse a real
+password here.
+
+| Account | Role | Email | Password | Can see |
+|---|---|---|---|---|
+| Demo Admin | admin | `admin@demo.disputedesk.test` | `demo-admin-89HLaG83` | all (read-only) |
+| Demo Merchant A | merchant | `merchant-a@demo.disputedesk.test` | `demo-merchant-a-C9Y-jSMY` | DEMO-1001, DEMO-1002, PayPal sandbox |
+| Demo Merchant B | merchant | `merchant-b@demo.disputedesk.test` | `demo-merchant-b-rHa959Nf` | DEMO-1003 |
+| Demo Buyer A | buyer | `buyer-a@demo.disputedesk.test` | `demo-buyer-a-wF8iuKjc` | DEMO-1001 |
+| Demo Buyer B | buyer | `buyer-b@demo.disputedesk.test` | `demo-buyer-b-rrkFQMjo` | DEMO-1002, DEMO-1003 |
+
+- **Merchants** see and analyse only the demo disputes on their own account. Merchant A also has the PayPal sandbox.
+- **Buyers** see the status and amount of their own disputes only, without the merchant's order or evidence records.
+- **Admin** reads every demo dispute, the sandbox and the account list, and changes nothing. Admin cannot generate AI drafts.
+
+Sessions end after 30 minutes without activity, 8 hours after sign-in, on sign-out, or when the server restarts. After
+10 failed sign-ins for one email or address, sign-in is locked for 15 minutes. The session cookie is `HttpOnly`,
+`Secure` and `SameSite=Strict`; browsers accept `Secure` cookies on `http://localhost`, which Chrome, Edge and Firefox do.
 
 ## Test
 
@@ -71,7 +94,8 @@ All tests use synthetic data and mocked PayPal and Gemini. They make no network 
 
 Before you start: both terminals running, and the server log says `AI drafting: on (...)`.
 
-1. **Dashboard.** Point at the yellow banner: these are synthetic demo records, not PayPal data. Three disputes.
+1. **Sign in as Demo Merchant A.** Point at the yellow banner: these are synthetic demo records, not PayPal data. Merchant
+   A sees two disputes (DEMO-1001 and DEMO-1002), only the ones on this account.
 2. **DEMO-1001 (item not received, gaps).** Evidence analysis: tracking and proof of delivery are Missing and marked
    "Key for this reason". Read the line "Missing from the supplied records does not show that it did not happen."
    Show "Based on" under each finding: every status traces to a record field.
@@ -85,10 +109,13 @@ Before you start: both terminals running, and the server log says `AI drafting: 
    it reaches a draft.
 6. **DEMO-1002 (contradiction).** The order says "Delivered" but proof of delivery is marked not available. The
    contradiction is listed with both records, and the draft carries a `[CONFLICT: …]` marker instead of choosing a side.
-7. **DEMO-1003 (complete evidence).** Everything Available, no contradictions: the rules don't invent problems either.
-8. **PayPal sandbox.** Switch sources: blue banner, test environment only. With no sandbox disputes, it says so; demo
+7. **PayPal sandbox.** Switch sources: blue banner, test environment only. With no sandbox disputes, it says so; demo
    records never appear here.
-9. Close on the footnote: DisputeDesk never submits responses to PayPal.
+8. **Sign out, sign in as Demo Merchant B.** Only DEMO-1003 (complete evidence): everything Available, no contradictions.
+   The rules don't invent problems either, and Merchant B cannot see Merchant A's disputes or the sandbox.
+9. **Sign in as Demo Buyer B.** The buyer sees DEMO-1002 and DEMO-1003 with status and amount only, no merchant records.
+10. **Sign in as Demo Admin.** Every dispute, read-only: no AI draft button.
+11. Close on the footnote: DisputeDesk never submits responses to PayPal.
 
 The demo can be repeated as often as needed: nothing is saved, and reloading the page resets every draft.
 
@@ -99,8 +126,8 @@ The demo can be repeated as often as needed: nothing is saved, and reloading the
 | "Couldn't analyze this dispute" on every dispute | The server isn't running. Start it (`cd server && npm start`), then press Try again. |
 | "AI drafting is off on this server" | Check the server log for the reason (missing key or invalid `GEMINI_MODEL`). Fix `.env`, restart the server. Everything else still works; use step 5 to show the checks. |
 | AI error: rate limit or "did not answer in time" | Wait a few seconds and press Try again. Otherwise show step 5 instead; it never calls Gemini. |
-| "Couldn't load PayPal sandbox disputes" | PayPal's sandbox is unreachable or slow. Press Try again, or skip step 8. Demo data is unaffected. |
-| No network at the venue | Steps 1–3 and 5–7 work offline. Only steps 4 and 8 need the internet. |
+| "Couldn't load PayPal sandbox disputes" | PayPal's sandbox is unreachable or slow. Press Try again, or skip step 7. Demo data is unaffected. |
+| No network at the venue | Steps 1–3, 5, 6 and 8–11 work offline. Only steps 4 and 7 need the internet. |
 
 Keep screenshots or a screen recording of a successful run as a backup.
 
@@ -111,4 +138,4 @@ Keep screenshots or a screen recording of a successful run as a backup.
   why merchant review stays mandatory.
 - The PayPal integration only reads (an access token and the dispute list). It never creates, changes or answers a
   dispute.
-- Drafts are not saved. There are no accounts. The server answers only on this machine (127.0.0.1).
+- Drafts are not saved. Accounts are five synthetic demo accounts with no sign-up; sessions live in server memory. The server answers only on this machine (127.0.0.1).
