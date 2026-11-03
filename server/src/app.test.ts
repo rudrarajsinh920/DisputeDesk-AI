@@ -6,6 +6,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { DEMO_ACCOUNTS, DEMO_DISPUTES, createApp } from "./app.ts";
 import { VALIDATION_EXAMPLE_MODEL } from "./assist.ts";
+import { buyerGuidance, toBuyerRecord } from "./buyer.ts";
 import { LOGIN_MAX_FAILURES, hashPassword } from "./auth.ts";
 import { AI_OFF_BAD_MODEL, AI_OFF_NO_KEY } from "./config.ts";
 import { openDatabase } from "./db.ts";
@@ -698,6 +699,7 @@ const PROTECTED: [string, string][] = [
   ["GET", "/api/auth/me"],
   ["GET", "/api/disputes"],
   ["GET", "/api/buyer/disputes"],
+  ["POST", "/api/buyer/explain"],
   ["GET", "/api/admin/accounts"],
   ["GET", "/api/sandbox/disputes"],
   ["POST", "/api/analysis"],
@@ -751,6 +753,7 @@ test("each route allows exactly the intended roles", async () => {
     ["me", "/api/auth/me", undefined, [200, 200, 200, 200, 200]],
     ["merchant dispute list", "/api/disputes", undefined, [200, 200, 200, 403, 403]],
     ["buyer dispute list", "/api/buyer/disputes", undefined, [403, 403, 403, 200, 200]],
+    ["buyer explanation of DEMO-1001", "/api/buyer/explain", body("DEMO-1001"), [403, 403, 403, 200, 404]],
     ["admin account list", "/api/admin/accounts", undefined, [200, 403, 403, 403, 403]],
     ["sandbox list", "/api/sandbox/disputes", undefined, [200, 200, 403, 403, 403]],
     ["rules analysis of DEMO-1001", "/api/analysis", body("DEMO-1001"), [200, 200, 404, 403, 403]],
@@ -785,7 +788,7 @@ test("each account sees only its own disputes, and buyers see no merchant record
   const buyer = await get(app, "/api/buyer/disputes", {}, "buyer-b");
   assert.equal(buyer.body.source, "demo");
   for (const d of buyer.body.disputes) {
-    assert.deepEqual(Object.keys(d).sort(), ["amount", "create_time", "dispute_id", "reason", "source", "status"].filter((k) => k in d).sort());
+    assert.deepEqual(Object.keys(d).sort(), ["amount", "create_time", "dispute_id", "guidance", "reason", "source", "status"]);
     assert.equal(d.evidence, undefined);
     assert.equal(d.order, undefined);
     assert.equal(d.customer_message, undefined);
@@ -1071,4 +1074,88 @@ test("a failure while signing in leaves no session and no audit entry behind", a
   }
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sessions").get()!.n, 0);
   assert.deepEqual(auditRows(db), [], "the login_succeeded entry was rolled back with the session");
+});
+
+// ---- Buyer Dispute Clarity ----
+
+const D1002 = DEMO_DISPUTES.find((d) => d.dispute_id === "DEMO-1002")!;
+// Values only the merchant may see. None may reach a buyer or the buyer's Gemini request.
+const MERCHANT_ONLY = ["ORDER-1002", "DEMO-TRK-1002", "Bluetooth speaker", D1002.customer_message!, "proof_of_delivery", "evidence", "DRAFT"];
+const buyerAnswer = (...paragraphs: string[]) => aiAnswer({ paragraphs });
+
+test("buyers get rule-based guidance and the opened date with their own disputes, and nothing of the merchant's", async () => {
+  const res = await get(makeApp(null), "/api/buyer/disputes", {}, "buyer-b");
+  assert.equal(res.status, 200);
+  const [d] = res.body.disputes;
+  assert.equal(d.dispute_id, "DEMO-1002");
+  assert.equal(d.create_time, "2026-10-18T09:30:00Z");
+  assert.deepEqual(d.guidance, JSON.parse(JSON.stringify(buyerGuidance(toBuyerRecord(D1002)))));
+  assert.equal(d.guidance.stages.find((s: { state: string }) => s.state === "current").id, "responses");
+  for (const value of MERCHANT_ONLY) assert.ok(!res.text.includes(value), `buyer list leaked ${value}`);
+});
+
+test("with AI off, a buyer's explanation is the standard one, labelled, audited, and nothing calls Gemini", async () => {
+  const db = openDatabase(":memory:");
+  const app = createApp(null, null, AI_OFF_BAD_MODEL, { accounts: TEST_ACCOUNTS, db });
+  const res = await get(app, "/api/buyer/explain", lookup("demo", "DEMO-1002"), "buyer-b");
+  assert.equal(res.status, 200);
+  assert.equal(res.body.origin, "rules");
+  assert.equal(res.body.model, null);
+  assert.equal(res.body.fallback_reason, "AI wording is off on this server, so this is the standard explanation.");
+  assert.ok(!res.text.includes(AI_OFF_BAD_MODEL), "the server's setup is not described to buyers");
+  assert.deepEqual(auditRows(db).at(-1), { event: "buyer_explanation_generated", account_id: "buyer-b", dispute_id: "DEMO-1002", detail: "rules" });
+});
+
+test("checked AI wording reaches the buyer; Gemini sees no merchant data or dispute ID", async () => {
+  const db = openDatabase(":memory:");
+  const ai = mockAi(() => buyerAnswer("The dispute is waiting for the seller to respond.", "The payment provider reviews the dispute; DisputeDesk does not decide it."));
+  const app = createApp(null, ai.client, undefined, { accounts: TEST_ACCOUNTS, db });
+  const res = await get(app, "/api/buyer/explain", lookup("demo", "DEMO-1002"), "buyer-b");
+  assert.equal(res.status, 200);
+  assert.equal(res.body.origin, "ai");
+  assert.equal(res.body.model, "gemini-test-model");
+  assert.equal(res.body.source, "demo");
+  assert.equal(ai.calls.length, 1);
+  for (const value of [...MERCHANT_ONLY, "DEMO-1002", GEMINI_KEY]) assert.ok(!ai.calls[0].body.includes(value), `Gemini request includes ${value}`);
+  assertNoAiKey(res.text);
+  assert.deepEqual(auditRows(db).at(-1), { event: "buyer_explanation_generated", account_id: "buyer-b", dispute_id: "DEMO-1002", detail: "ai, gemini-test-model" });
+});
+
+test("AI wording that promises a refund is never shown; the buyer gets the standard explanation", async () => {
+  const promise = "Good news: you will get a refund soon.";
+  const res = await get(makeApp(null, mockAi(() => buyerAnswer(promise)).client), "/api/buyer/explain", lookup("demo", "DEMO-1002"), "buyer-b");
+  assert.equal(res.status, 200);
+  assert.equal(res.body.origin, "rules");
+  assert.match(res.body.fallback_reason, /did not pass DisputeDesk's checks/);
+  assert.ok(res.body.flags.includes("promises or predicts an outcome or refund"));
+  assert.ok(!res.text.includes(promise));
+});
+
+test("a Gemini failure gives the buyer the standard explanation, not an error", async () => {
+  const original = console.error;
+  console.error = () => {};
+  try {
+    for (const respond of [() => json(500, {}), () => json(429, {}), () => Promise.reject(new Error("network down"))]) {
+      const res = await get(makeApp(null, mockAi(respond).client), "/api/buyer/explain", lookup("demo", "DEMO-1002"), "buyer-b");
+      assert.equal(res.status, 200);
+      assert.equal(res.body.origin, "rules");
+      assert.equal(res.body.fallback_reason, "AI wording is unavailable right now, so this is the standard explanation.");
+    }
+  } finally {
+    console.error = original;
+  }
+});
+
+test("a buyer can't get an explanation of another account's dispute, and Gemini is never asked", async () => {
+  const db = openDatabase(":memory:");
+  const ai = mockAi(() => buyerAnswer("The dispute is waiting for the seller to respond."));
+  const app = createApp(mockPayPal().client, ai.client, undefined, { accounts: TEST_ACCOUNTS, db });
+  const other = await get(app, "/api/buyer/explain", lookup("demo", "DEMO-1001"), "buyer-b");
+  const missing = await get(app, "/api/buyer/explain", lookup("demo", "DEMO-9999"), "buyer-b");
+  assert.equal(other.status, 404);
+  assert.deepEqual(other.body, missing.body, "someone else's dispute looks exactly like a missing one");
+  assert.deepEqual(auditRows(db).at(-1), { event: "dispute_access_denied", account_id: "buyer-b", dispute_id: "DEMO-1001", detail: "demo" });
+  assert.equal((await get(app, "/api/buyer/explain", lookup("paypal_sandbox", "PP-D-1"), "buyer-a")).status, 403);
+  assert.equal((await get(app, "/api/buyer/explain", lookup("demo", "../x"), "buyer-a")).status, 400);
+  assert.equal(ai.calls.length, 0);
 });

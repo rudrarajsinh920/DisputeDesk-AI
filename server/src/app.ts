@@ -8,6 +8,15 @@ import sample from "../../sample-dispute.json" with { type: "json" };
 import type { Dispute, Role } from "../../shared/types.ts";
 import { VALIDATION_EXAMPLE_MODEL, buildAiRequest, composeAiAssist, validationExampleAnswer } from "./assist.ts";
 import {
+  AI_WORDING_OFF,
+  AI_WORDING_UNAVAILABLE,
+  buildBuyerAiRequest,
+  buyerGuidance,
+  composeBuyerExplanation,
+  rulesExplanation,
+  toBuyerRecord,
+} from "./buyer.ts";
+import {
   LOGIN_MAX_FAILURES_PER_ADDRESS,
   LOGIN_WINDOW_MS,
   SESSION_COOKIE,
@@ -53,15 +62,11 @@ const sendError = (res: Response, status: number, code: string, message: string)
 
 const hasSandboxAccess = (account: Account) => account.role === "admin" || (account.role === "merchant" && account.paypal_sandbox);
 
-// The buyer view leaves out the merchant's order and evidence records.
-const buyerView = ({ source, dispute_id, reason, status, amount, create_time }: Dispute) => ({
-  source,
-  dispute_id,
-  reason,
-  status,
-  amount,
-  create_time,
-});
+// The buyer view leaves out the merchant's order, evidence and message records; guidance is built from what is left.
+const buyerView = (d: Dispute) => {
+  const record = toBuyerRecord(d);
+  return { ...record, guidance: buyerGuidance(record) };
+};
 
 function notConfigured(res: Response) {
   res.status(503).json({
@@ -261,6 +266,38 @@ export function createApp(
   app.get("/api/buyer/disputes", requireRole("buyer"), (_req, res) => {
     const account = signedIn(res);
     res.json({ source: "demo", disputes: loadDisputes(db).filter((d) => canAccess(account, d)).map(buyerView) });
+  });
+
+  // Buyers only, on their own disputes. The rules' guidance is always the answer; Gemini may only reword it, and
+  // every paragraph is checked. AI off, failing or flagged gives the standard explanation, labelled so.
+  app.post("/api/buyer/explain", requireRole("buyer"), express.json({ limit: "4kb" }), async (req, res) => {
+    const dispute = await findDispute(req, res);
+    if (!dispute) return;
+    const record = toBuyerRecord(dispute);
+    const guidance = buyerGuidance(record);
+    let result = rulesExplanation(record, guidance, AI_WORDING_OFF);
+    if (ai) {
+      const key = `buyer:${dispute.source}:${dispute.dispute_id}`;
+      if (aiInFlight.has(key)) {
+        res.status(409).json({
+          error: { code: "ai_in_progress", message: "An explanation for this dispute is already being written.", upstream_status: null },
+        });
+        return;
+      }
+      aiInFlight.add(key);
+      try {
+        result = composeBuyerExplanation(record, guidance, await ai.generateJson(buildBuyerAiRequest(record, guidance)), ai.model);
+      } catch (error) {
+        if (!(error instanceof AiError)) throw error;
+        console.error(`Gemini request failed: ${error.code}${error.upstreamStatus ? ` (HTTP ${error.upstreamStatus})` : ""}`);
+        result = rulesExplanation(record, guidance, AI_WORDING_UNAVAILABLE);
+      } finally {
+        aiInFlight.delete(key);
+      }
+    }
+    const detail = result.origin === "ai" ? `ai, ${result.model}` : "rules";
+    audit(db, now(), "buyer_explanation_generated", { account_id: signedIn(res).id, dispute_id: dispute.dispute_id, detail });
+    res.json(result);
   });
 
   // Read-only: admin can list accounts but nothing changes them. Password hashes never leave the server.

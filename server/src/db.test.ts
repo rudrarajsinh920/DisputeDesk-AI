@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -130,6 +131,36 @@ test("the audit log can be added to but never changed or emptied", () => {
   assert.throws(() => db.prepare("DELETE FROM audit_log").run(), /append-only/);
   assert.throws(() => db.prepare("INSERT INTO audit_log (at, event) VALUES (1, 'made_up')").run(), /constraint/);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM audit_log").get()!.n, 1);
+});
+
+test("a released migration's SQL never changes", () => {
+  const v1 = createHash("sha256").update(MIGRATIONS[0].sql).digest("hex");
+  assert.equal(v1, "eb652aac866aa9c6745af4b36c048c5fdd1d0dfd51f1e7aa61e19b4f5d3a7fea", "add a new migration instead of editing version 1");
+});
+
+test("upgrading a version 1 database keeps every audit entry and the append-only rule", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec("PRAGMA foreign_keys = ON");
+  migrate(db, MIGRATIONS.slice(0, 1));
+  db.prepare("INSERT INTO audit_log (at, event, account_id, dispute_id, detail) VALUES (1, 'login_succeeded', 'buyer-b', NULL, NULL)").run();
+  db.prepare("INSERT INTO audit_log (at, event, account_id, dispute_id, detail) VALUES (2, 'analysis_viewed', 'merchant-a', 'DEMO-1001', 'demo')").run();
+  dispute(db, "DEMO-1");
+  const before = db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r }));
+  assert.throws(() => db.prepare("INSERT INTO audit_log (at, event) VALUES (3, 'buyer_explanation_generated')").run(), /constraint/);
+
+  migrate(db);
+  assert.equal(schemaVersion(db), MIGRATIONS.at(-1)!.version);
+  assert.deepEqual(db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r })), before, "entries copied unchanged");
+  const added = db.prepare("INSERT INTO audit_log (at, event) VALUES (3, 'buyer_explanation_generated')").run();
+  assert.equal(Number(added.lastInsertRowid), 3, "ids keep counting after the copied rows");
+  assert.throws(() => db.prepare("UPDATE audit_log SET event = 'logout'").run(), /append-only/);
+  assert.throws(() => db.prepare("DELETE FROM audit_log").run(), /append-only/);
+  assert.throws(() => db.prepare("INSERT INTO audit_log (at, event) VALUES (4, 'made_up')").run(), /constraint/);
+
+  // The opened date has its own column; an existing dispute simply has none.
+  assert.equal(db.prepare("SELECT create_time FROM disputes WHERE dispute_id = 'DEMO-1'").get()!.create_time, null);
+  db.prepare("UPDATE disputes SET create_time = '2026-10-18T09:30:00Z' WHERE dispute_id = 'DEMO-1'").run();
+  assert.throws(() => db.prepare("UPDATE disputes SET create_time = ? WHERE dispute_id = 'DEMO-1'").run("x".repeat(41)), /constraint/);
 });
 
 test("the indexes the server's lookups use exist", () => {

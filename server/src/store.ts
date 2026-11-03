@@ -70,11 +70,12 @@ export function createAccount(db: DatabaseSync, account: Account, now: number) {
 
 function writeDispute(db: DatabaseSync, d: Dispute, now: number) {
   db.prepare(
-    `INSERT INTO disputes (dispute_id, source, reason, status, amount_currency, amount_value, customer_message, order_json, has_evidence, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO disputes (dispute_id, source, reason, status, amount_currency, amount_value, create_time, customer_message, order_json, has_evidence, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (dispute_id) DO UPDATE SET source = excluded.source, reason = excluded.reason, status = excluded.status,
-       amount_currency = excluded.amount_currency, amount_value = excluded.amount_value, customer_message = excluded.customer_message,
-       order_json = excluded.order_json, has_evidence = excluded.has_evidence, updated_at = excluded.updated_at`,
+       amount_currency = excluded.amount_currency, amount_value = excluded.amount_value, create_time = excluded.create_time,
+       customer_message = excluded.customer_message, order_json = excluded.order_json, has_evidence = excluded.has_evidence,
+       updated_at = excluded.updated_at`,
   ).run(
     d.dispute_id,
     d.source,
@@ -82,6 +83,7 @@ function writeDispute(db: DatabaseSync, d: Dispute, now: number) {
     d.status,
     d.amount?.currency_code ?? null,
     d.amount?.value ?? null,
+    d.create_time ?? null,
     d.customer_message ?? null,
     d.order === undefined ? null : JSON.stringify(d.order),
     d.evidence === undefined ? 0 : 1,
@@ -110,6 +112,7 @@ export function loadDisputes(db: DatabaseSync): Dispute[] {
       reason: r.reason,
       status: r.status,
       amount: r.amount_currency === null ? null : { currency_code: r.amount_currency, value: r.amount_value },
+      create_time: r.create_time ?? undefined,
       customer_message: r.customer_message ?? undefined,
       order: r.order_json === null ? undefined : JSON.parse(r.order_json as string),
       evidence: r.has_evidence === 1 ? (evidence.get(r.dispute_id as string) ?? {}) : undefined,

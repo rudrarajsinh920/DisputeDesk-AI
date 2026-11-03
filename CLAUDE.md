@@ -1,6 +1,6 @@
 # DisputeDesk AI
 
-AI-assisted payment dispute platform. Planned modules: Merchant Evidence Intelligence (built), Buyer Dispute Clarity,
+AI-assisted payment dispute platform. Planned modules: Merchant Evidence Intelligence (built), Buyer Dispute Clarity (built),
 Dispute Prevention & Resolution Intelligence.
 
 ## Layout
@@ -9,6 +9,9 @@ Dispute Prevention & Resolution Intelligence.
 - `server/` Express + TypeScript, run directly by Node 24. `npm start`, `npm test`, `npm run typecheck`.
 - `shared/` Types and labels used by both. Pure TypeScript, no browser or Node APIs.
 - `server/src/evidence.ts` Rule-based evidence engine. `server/src/assist.ts` AI prompt and answer checks.
+- `server/src/buyer.ts` Buyer guidance from buyer-visible fields only, plus the buyer AI wording checks.
+  `client/src/Buyer.tsx` buyer screens. Buyers never receive order, evidence, customer message or merchant drafts,
+  and nothing merchant-only is sent to Gemini for them. Buyer AI text that fails a check is never shown.
 - Root `disputes.js`, `test.js`, `draft-response.js`, `evidence-checklist.js`: original PayPal sandbox scripts. Keep them.
   `draft-response.js` and `evidence-checklist.js` read `sample-dispute.json` as a single object; keep it one object.
 - `sample-dispute.json`, `demo-disputes.json`: synthetic demo records.

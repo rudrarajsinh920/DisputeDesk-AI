@@ -164,6 +164,19 @@ test("amounts allow 0 to 3 decimals, as ISO 4217 currencies do", () => {
   assert.equal(amount("USD", "-5.00"), false);
 });
 
+test("the opened date is kept only when it is a real ISO date and time", () => {
+  const opened = (create_time: unknown) => {
+    const r = validateDispute({ ...demo, create_time });
+    return r.ok ? r.dispute.create_time : "invalid";
+  };
+  assert.equal(opened("2026-10-18T09:30:00Z"), "2026-10-18T09:30:00Z");
+  assert.equal(opened("2026-10-01T10:00:00.000+05:30"), "2026-10-01T10:00:00.000+05:30");
+  assert.equal(opened(undefined), undefined);
+  for (const bad of ["2026-02-30T10:00:00Z", "yesterday", "2026-10-18", 1729243800, "2026-10-18T09:30:00Z<script>"]) {
+    assert.equal(opened(bad), "invalid", String(bad));
+  }
+});
+
 test("incomplete records give gaps, not guesses", () => {
   const d: Dispute = { source: "paypal_sandbox", dispute_id: "PP-X", reason: "UNAUTHORISED", status: "OPEN", amount: null };
   const a = analyzeDispute(d);

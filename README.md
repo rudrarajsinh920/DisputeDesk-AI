@@ -71,7 +71,12 @@ password here.
 | Demo Buyer B | buyer | `buyer-b@demo.disputedesk.test` | `demo-buyer-b-rrkFQMjo` | DEMO-1002, DEMO-1003 |
 
 - **Merchants** see and analyse only the demo disputes on their own account. Merchant A also has the PayPal sandbox.
-- **Buyers** see the status and amount of their own disputes only, without the merchant's order or evidence records.
+- **Buyers** see their own disputes only, without the merchant's order, evidence, messages or drafts. Each dispute shows
+  what its status usually means, the usual stages (not a recorded history), next steps, information worth having,
+  safe ways to talk to the seller, and what the record does not contain. Every block is labelled "From the record",
+  "General guidance" or "Not on record". "Explain in plain language" asks the server for a rewording: Gemini may word it,
+  every paragraph is checked (no promises, predictions, blame, legal claims, or dates, amounts, names or carriers that
+  aren't on record), and the standard rule-based explanation is shown, labelled, whenever AI is off, fails or a check fails.
 - **Admin** reads every demo dispute, the sandbox and the account list, and changes nothing. Admin cannot generate AI drafts.
 
 Sessions end after 30 minutes without activity, 8 hours after sign-in, or on sign-out. They are kept in the database,
@@ -100,9 +105,10 @@ gitignored: it holds password hashes and session hashes, never passwords or sess
   transaction. The files stay the source of truth; edit them, not the database. Changing an account's password hash ends
   that account's sessions. PayPal sandbox disputes are never stored: they are read live, so the two never mix.
 - **Tables.** `accounts`, `disputes` (demo only), `dispute_evidence` (one row per supplied flag; no row means "not
-  supplied", never "false"), `dispute_access`, `sessions` (keyed by a hash of the token) and `audit_log`.
+  supplied", never "false"), `dispute_access`, `sessions` (keyed by a hash of the token) and `audit_log`. Migration 2
+  adds each dispute's opened date and the buyer explanation audit event; an existing database is upgraded in place.
 - **Audit log.** Sign-in (succeeded, failed, locked out), sign-out, a refused request for another account's dispute,
-  analysis, AI drafts and the validation example. Entries name the account and dispute, never a password, token, hash or
+  analysis, AI drafts, the validation example and buyer explanations. Entries name the account and dispute, never a password, token, hash or
   an unknown email. The log cannot be changed or deleted from the app.
 - To start over, stop the server and delete the `server/data` folder.
 
@@ -141,7 +147,9 @@ Before you start: both terminals running, and the server log says `AI drafting: 
    records never appear here.
 8. **Sign out, sign in as Demo Merchant B.** Only DEMO-1003 (complete evidence): everything Available, no contradictions.
    The rules don't invent problems either, and Merchant B cannot see Merchant A's disputes or the sandbox.
-9. **Sign in as Demo Buyer B.** The buyer sees DEMO-1002 and DEMO-1003 with status and amount only, no merchant records.
+9. **Sign in as Demo Buyer B.** The buyer sees DEMO-1002 and DEMO-1003, no merchant records. DEMO-1002 marks
+   "Seller and buyer respond" as the current stage; the response deadline is listed as not on record. "Explain in plain
+   language" shows checked AI wording, or the labelled standard explanation when AI is off.
 10. **Sign in as Demo Admin.** Every dispute, read-only: no AI draft button.
 11. Close on the footnote: DisputeDesk never submits responses to PayPal.
 

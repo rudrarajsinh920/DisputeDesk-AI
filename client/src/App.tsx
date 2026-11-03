@@ -1,23 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { BuyerDisputes } from "./Buyer.tsx";
+import type { BuyerLoad } from "./Buyer.tsx";
 import { DisputeDetail } from "./DisputeDetail.tsx";
 import { DisputeList } from "./DisputeList.tsx";
 import { Login } from "./Login.tsx";
 import { fetchMe, signOut } from "./auth.ts";
 import {
-  REASON_LABELS,
   STATUS_FILTERS,
   STATUS_LABELS,
   countByStatus,
   filterByStatus,
-  formatDate,
   formatMoney,
   labelFor,
   summarize,
 } from "../../shared/disputes.ts";
 import { SIGNED_OUT_EVENT, fetchBuyerDisputes, fetchDemoDisputes, fetchSandboxDisputes } from "./sandbox.ts";
 import type { AccountInfo, Dispute, Role, Source } from "../../shared/types.ts";
-import { StatePanel, StatusBadge } from "./ui.tsx";
+import { StatePanel } from "./ui.tsx";
 
 export type SandboxLoad =
   | { status: "loading" }
@@ -327,7 +327,7 @@ export function Workspace({
 
 // Buyers see the status of their own disputes only, without the merchant's records.
 export function BuyerHome({ account, onSignOut }: { account: AccountInfo; onSignOut: () => void }) {
-  const [load, setLoad] = useState<SandboxLoad>({ status: "loading" });
+  const [load, setLoad] = useState<BuyerLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -352,50 +352,6 @@ export function BuyerHome({ account, onSignOut }: { account: AccountInfo; onSign
         <BuyerDisputes load={load} onRetry={() => setAttempt((n) => n + 1)} />
       </main>
     </Shell>
-  );
-}
-
-export function BuyerDisputes({ load, onRetry }: { load: SandboxLoad; onRetry: () => void }) {
-  if (load.status === "loading") return <StatePanel title="Loading your disputes…" busy />;
-  if (load.status === "error") {
-    return (
-      <StatePanel title="Couldn't load your disputes" tone="error">
-        <p>{load.message}</p>
-        <button type="button" className="button" onClick={onRetry}>
-          Try again
-        </button>
-      </StatePanel>
-    );
-  }
-  return (
-    <section className="panel" aria-labelledby="buyer-heading">
-      <div className="panel-head">
-        <h2 id="buyer-heading">Your disputes</h2>
-        <span className="muted">{load.disputes.length} on this account</span>
-      </div>
-      <p className="muted">
-        Status and amount for each dispute you opened. Plain-language guidance arrives with the Buyer Dispute Clarity module.
-      </p>
-      {load.disputes.length === 0 ? (
-        <p className="empty-inline">You have no disputes.</p>
-      ) : (
-        <ul className="dispute-list">
-          {load.disputes.map((d) => (
-            <li key={d.dispute_id} className="dispute-row buyer-row">
-              <div className="row-line">
-                <span className="mono">{d.dispute_id}</span>
-                <StatusBadge status={d.status} />
-              </div>
-              <div className="row-line">
-                <span>{labelFor(REASON_LABELS, d.reason)}</span>
-                <span className="row-amount">{formatMoney(d.amount)}</span>
-              </div>
-              {d.create_time && <span className="muted">Opened {formatDate(d.create_time)}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }
 

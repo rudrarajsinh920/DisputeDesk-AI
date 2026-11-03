@@ -343,13 +343,6 @@ code,
   transform: scale(0.99);
 }
 
-/* Buyer rows are not buttons: no press or hover feedback. */
-.buyer-row,
-.buyer-row:hover,
-.buyer-row:active {
-  background: var(--surface);
-  transform: none;
-}
 
 /* Account and sign-in */
 
@@ -686,6 +679,73 @@ blockquote {
   white-space: nowrap;
 }
 
+/* Where each piece of buyer information comes from. The words carry the meaning; colour only helps. */
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.tag-record { background: var(--ok-bg); color: var(--ok-text); }
+.tag-guidance { background: var(--info-bg); color: var(--info-text); }
+.tag-missing { background: var(--neutral-bg); color: var(--neutral-text); border-style: dashed; border-color: var(--neutral-text); }
+.tag-ai { background: var(--demo-bg); color: var(--demo-text); border-color: var(--demo-border); }
+.tag-standard { background: var(--neutral-bg); color: var(--neutral-text); }
+
+.stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+@media (min-width: 640px) {
+  .stages {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.stage {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.stage[aria-current="step"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.stage-name {
+  font-weight: 600;
+}
+
+.stage-state,
+.stage-date {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.stage[aria-current="step"] .stage-state {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .steps {
   margin: 0;
   padding-left: 20px;
@@ -774,4 +834,9 @@ blockquote {
   .dispute-row:active {
     transform: none;
   }
+}
+
+.explain-body {
+  display: grid;
+  gap: 8px;
 }

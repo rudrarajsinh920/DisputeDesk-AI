@@ -38,7 +38,7 @@ function factValue(dispute: Dispute, path: string): string | null {
 // The real protection is the output checks below; this only keeps obvious injections out of the prompt.
 const INSTRUCTION_LIKE =
   /\b(ignore|disregard|forget|override|bypass)\b.{0,40}\b(instructions?|rules?|prompts?|above|previous|prior|system)\b|\b(system|developer)\s+(prompt|message|instructions?)\b|\byou\s+(are|must|should|will|now)\b|\b(reveal|print|show|output|repeat|leak)\b.{0,30}\b(prompts?|instructions?|keys?|secrets?|tokens?|passwords?|config\w*)\b|\bapi[\s-]*key\b|<\/?[a-z][^>]*>|\b(assistant|system|user)\s*:/i;
-const looksLikeInstructions = (text: string) => INSTRUCTION_LIKE.test(text.replace(/_/g, " "));
+export const looksLikeInstructions = (text: string) => INSTRUCTION_LIKE.test(text.replace(/_/g, " "));
 export const WITHHELD = "[withheld: this record text reads like instructions, so it was not sent to Gemini]";
 // Rule text quotes record values (shipping status, tracking number), so it gets the same treatment.
 const safeRuleText = (text: string) =>
@@ -143,42 +143,42 @@ function readShape(raw: unknown): { explanations: RawExplanation[]; sections: Ra
 }
 
 // Written dates. "May" is left out because it is usually the verb; "May 3" is still caught by the digit check.
-const DATE_WORDS =
+export const DATE_WORDS =
   /\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|june?|july?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|yesterday|today|tomorrow|last (week|month)|\w+ ago)\b/i;
 const BUYER_MESSAGE = /\b(buyer|customer)\s+(said|says|wrote|writes|told|stated|states|emailed|messaged|contacted|admitted|confirmed|claimed|complained)\b/i;
-const DELIVERY_CLAIM = /\b(was|were|is|has been|have been|got)\s+(successfully\s+)?(delivered|received)\b|\b(arrived|delivered to|delivered on)\b/i;
-const SHIPPING_CLAIM = /\b(was|were|is|has been|have been)\s+(shipped|dispatched|posted|mailed)\b/i;
+export const DELIVERY_CLAIM = /\b(was|were|is|has been|have been|got)\s+(successfully\s+)?(delivered|received)\b|\b(arrived|delivered to|delivered on)\b/i;
+export const SHIPPING_CLAIM = /\b(was|were|is|has been|have been)\s+(shipped|dispatched|posted|mailed)\b/i;
 // A negation up to three words before the verb, in any wording: "hasn't been delivered", "did not arrive", "never shipped".
-const NOT_DELIVERED = /(\bnot\b|\bnever\b|n't\b)(\W+\w+){0,3}?\W+(deliver(ed)?|receive(d)?|arrive(d)?)\b/i;
-const NOT_SHIPPED = /(\bnot\b|\bnever\b|n't\b)(\W+\w+){0,3}?\W+(ship(ped)?|dispatch(ed)?|post(ed)?|mail(ed)?)\b/i;
+export const NOT_DELIVERED = /(\bnot\b|\bnever\b|n't\b)(\W+\w+){0,3}?\W+(deliver(ed)?|receive(d)?|arrive(d)?)\b/i;
+export const NOT_SHIPPED = /(\bnot\b|\bnever\b|n't\b)(\W+\w+){0,3}?\W+(ship(ped)?|dispatch(ed)?|post(ed)?|mail(ed)?)\b/i;
 // The rules' own caution ("does not show it was not delivered", "does not show that it did not happen") is allowed.
 // Only that exact phrase is skipped, so a claim later in the sentence is still checked.
 const CAUTION =
   /\b(does|do|did)(\s+not|n't)\s+(show|mean|prove|establish)\s+(that\s+)?(it|this|the\s+\w+)\s+(was\s+not|wasn't|was\s+never|did\s+not|didn't|has\s+not\s+been|hasn't\s+been|never)\s+(happen|occur|deliver|delivered|receive|received|arrive|arrived|ship|shipped)\b/gi;
 // Tokens are compared without surrounding punctuation or a leading currency symbol.
-const bare = (t: string) => t.replace(/^[("'[{<]+|[)"'\]}>.,;:!?]+$/g, "").replace(/^[$€£¥]/, "");
-const TRACKING_CLAIM = /\btracking\s+(shows|showed|confirms|confirmed|indicates|proves|proved)\b/i;
-const META = /\bsubmit(ted|ting)?\b|\bsent to paypal\b|\bfiled with paypal\b|\bapproved\b|\bnot (a )?(demo|synthetic)\b|\breal (paypal )?dispute\b/i;
+export const bare = (t: string) => t.replace(/^[("'[{<]+|[)"'\]}>.,;:!?]+$/g, "").replace(/^[$€£¥]/, "");
+export const TRACKING_CLAIM = /\btracking\s+(shows|showed|confirms|confirmed|indicates|proves|proved)\b/i;
+export const META = /\bsubmit(ted|ting)?\b|\bsent to paypal\b|\bfiled with paypal\b|\bapproved\b|\bnot (a )?(demo|synthetic)\b|\breal (paypal )?dispute\b/i;
 // The buyer had the item, or a record proves delivery: both need proof of delivery.
-const RECEIPT_CLAIM = /\b(buyer|customer|recipient|they|he|she)\s+(has\s+|have\s+|had\s+|did\s+|successfully\s+)?(received|got|collected|accepted|took\s+delivery\s+of)\b/i;
-const IMPLIED_PROOF =
+export const RECEIPT_CLAIM = /\b(buyer|customer|recipient|they|he|she)\s+(has\s+|have\s+|had\s+|did\s+|successfully\s+)?(received|got|collected|accepted|took\s+delivery\s+of)\b/i;
+export const IMPLIED_PROOF =
   /\b(proof\s+of\s+delivery|delivery\s+(record|confirmation|photo)|carrier\s+(record|scan)s?|tracking\s+(record|history))\s+(shows?|showed|confirms?|confirmed|proves?|proved|indicates?|indicated)\b|\bdelivery\s+(was|is|has\s+been)\s+(confirmed|completed|successful|verified)\b|\bconfirmed\s+(the\s+)?delivery\b|\bwe\s+have\s+proof\b/i;
 // The records hold only yes/no evidence flags, so a signature, pickup or handoff story is never on record.
-const HANDOFF_STORY =
+export const HANDOFF_STORY =
   /\b(signed|signature|picked\s+up|pick-?up|collected|handed\s+(it\s+|them\s+)?(to|over)|left\s+(it\s+|the\s+\w+\s+)?(at|on|with|outside|by)|porch|doorstep|front\s+door|mailbox|mail\s?room|reception|front\s+desk|neighbou?r|locker|out\s+for\s+delivery|in\s+transit|scanned|driver|courier|delivery\s+photo)\b/i;
 // No record field names a carrier. Lowercase names ("fedex") are caught here; capitalized ones also by the name check.
-const CARRIER =
+export const CARRIER =
   /(?<![\w-])(ups|usps|fedex|fed\s+ex|dhl|royal\s+mail|parcelforce|canada\s+post|australia\s+post|ontrac|lasership|purolator|evri|hermes|dpd|gls|yodel|aramex|blue\s?dart|delhivery|amazon\s+logistics|postnl|correos|la\s+poste|japan\s+post|china\s+post|india\s+post|speed\s?post)\b/i;
 // Model text that talks about its instructions or echoes a withheld placeholder is not merchant wording.
-const INSTRUCTION_ECHO =
+export const INSTRUCTION_ECHO =
   /\b(ignore|disregard|forget)\b.{0,40}\b(instructions?|rules?|prompts?)\b|\b(system|developer)\s+(prompt|message|instructions?)\b|\bapi[\s_-]*key\b|\b(my|these|the\s+above)\s+instructions\b|\bas\s+an\s+ai\b|<\s*\/?\s*data\b|\bwithheld\b/i;
 // Capitalized words DisputeDesk itself may use; every other name must come from the supplied text.
 const KNOWN_NAMES = ["paypal", "disputedesk", "i"];
-const words = (text: string) => text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+export const words = (text: string) => text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 
 // Names (capitalized words not starting a sentence, and all-caps words anywhere) must appear in the supplied text.
 // This catches invented carriers, people and places without a list of every possible name.
-function unknownNames(text: string, vocabulary: Set<string>): string[] {
+export function unknownNames(text: string, vocabulary: Set<string>): string[] {
   const found: string[] = [];
   for (const line of text.split(/\r?\n/)) {
     for (const m of line.matchAll(/[A-Za-z][A-Za-z0-9'’-]*/g)) {
@@ -247,7 +247,7 @@ function problems(text: string, cites: string[], ctx: CheckContext): string[] {
   return found;
 }
 
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+export const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // Model text never starts a line with ">" (that marks quoted buyer text and hides markers from the count).
 const clean = (text: string) =>

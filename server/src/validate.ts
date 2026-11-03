@@ -6,6 +6,7 @@ export type Lookup = { source: Source; dispute_id: string };
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
 const DISPUTE_ID = /^[A-Za-z0-9-]{1,100}$/;
+const ISO_TIME = /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/;
 
 // An analysis request names a record; it never carries one. Any other field is ignored.
 export function validateLookup(input: unknown): { ok: true; lookup: Lookup } | { ok: false; errors: string[] } {
@@ -57,6 +58,16 @@ export function validateDispute(input: unknown): Validation {
   const reason = text("reason", input.reason, 100, true);
   const status = text("status", input.status, 100, true);
   const customer_message = text("customer_message", input.customer_message, 5000);
+
+  // An ISO date and time that names a real day (Date.parse alone would roll 30 February into March).
+  let create_time: string | undefined;
+  if (input.create_time !== undefined) {
+    const value = input.create_time;
+    const match = typeof value === "string" ? ISO_TIME.exec(value) : null;
+    const day = match ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))) : null;
+    if (match && day!.getUTCDate() === Number(match[3]) && !Number.isNaN(Date.parse(value as string))) create_time = value as string;
+    else errors.push("create_time must be an ISO date and time, like 2026-10-18T09:30:00Z.");
+  }
 
   let amount: Dispute["amount"] = null;
   if (input.amount !== undefined && input.amount !== null) {
@@ -120,6 +131,7 @@ export function validateDispute(input: unknown): Validation {
       reason: reason!,
       status: status!,
       amount,
+      create_time,
       customer_message,
       order,
       evidence,

@@ -12,14 +12,17 @@ import { VALIDATION_EXAMPLE_MODEL, validationExampleAnswer } from "../../server/
 import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
 import { AiResult, AiSectionView, AnalysisView, DISCARD_EDITS, DraftEditor, ValidationExampleView } from "./AnalysisPanel.tsx";
 import type { AiState, ExampleState } from "./AnalysisPanel.tsx";
-import App, { BuyerDisputes, Dashboard, DisputesView } from "./App.tsx";
+import App, { Dashboard, DisputesView } from "./App.tsx";
+import { BuyerDisputes, ExplainView } from "./Buyer.tsx";
+import type { ExplainState } from "./Buyer.tsx";
+import { AI_WORDING_OFF, FAILED_CHECKS, buyerGuidance, rulesExplanation, toBuyerRecord } from "../../server/src/buyer.ts";
 import type { SandboxLoad } from "./App.tsx";
 import { DisputeDetail } from "./DisputeDetail.tsx";
 import { Login } from "./Login.tsx";
 import { SIGNED_OUT_EVENT, serverError } from "./sandbox.ts";
 import extraDemos from "../../demo-disputes.json" with { type: "json" };
 import sample from "../../sample-dispute.json" with { type: "json" };
-import type { AccountInfo, AiAssist, Dispute } from "../../shared/types.ts";
+import type { AccountInfo, AiAssist, BuyerDispute, Dispute } from "../../shared/types.ts";
 
 // Test fixture: the synthetic records the server serves. The page itself no longer bundles them.
 const demoDisputes = [sample, ...extraDemos].map((record) => ({ ...record, source: "demo" })) as Dispute[];
@@ -146,13 +149,80 @@ test("the admin view is read-only: no sandbox switch is hidden, but there is no 
   assert.match(readOnly, /Show a validation example/);
 });
 
-test("buyers see their own disputes without the merchant's records", () => {
-  const buyerRecords = demoDisputes.slice(1).map(({ source, dispute_id, reason, status, amount, create_time }) => ({ source, dispute_id, reason, status, amount, create_time }));
-  const out = text(html(createElement(BuyerDisputes, { load: { status: "ready", disputes: buyerRecords as Dispute[] }, onRetry: noop })));
+// What the server sends a buyer: the reduced record plus rule-based guidance.
+const buyerView = (d: Dispute): BuyerDispute => {
+  const r = toBuyerRecord(d);
+  return { ...r, guidance: buyerGuidance(r) };
+};
+const buyerReady = (disputes: BuyerDispute[]) => html(createElement(BuyerDisputes, { load: { status: "ready", disputes }, onRetry: noop }));
+const headingLevels = (markup: string) => [...markup.matchAll(/<h([1-6])/g)].map((m) => Number(m[1]));
+
+test("buyers see their own disputes with guidance labelled by source, and nothing of the merchant's", () => {
+  const markup = buyerReady(demoDisputes.slice(1).map(buyerView));
+  const out = text(markup);
   assert.match(out, /Your disputes 2 on this account/);
   assert.match(out, /DEMO-1002 .*DEMO-1003/);
-  assert.doesNotMatch(out, /DEMO-1001|Evidence analysis|Response draft|Generate AI draft/);
-  assert.match(text(html(createElement(BuyerDisputes, { load: { status: "error", message: "Sign in to continue. (HTTP 401)" }, onRetry: noop }))), /Couldn't load your disputes/);
+  assert.match(out, /Demo dispute DEMO-1002 Awaiting seller/, "the first dispute's details are shown");
+  for (const heading of ["What this status means", "Usual stages", "Next steps", "Information you may want to have", "Talking to the seller", "Not on record", "Plain-language explanation"]) {
+    assert.ok(out.includes(heading), heading);
+  }
+  assert.match(out, /The dispute is waiting for the seller to respond./);
+  assert.match(out, /Opened Oct 18, 2026 From the record/);
+  assert.match(out, /Amount \$129\.00 From the record/);
+  assert.match(out, /not a recorded history/);
+  assert.match(out, /Response deadline/);
+  assert.match(out, /DisputeDesk does not message the seller or the payment provider for you/);
+  assert.match(out, /does not decide the dispute or predict its outcome/);
+  assert.equal(markup.match(/aria-current="step"/g)?.length, 1);
+  assert.match(markup, /<li class="stage" aria-current="step"><span class="stage-name">Seller and buyer respond<\/span><span class="stage-state">Current status/);
+  for (const merchantOnly of ["DEMO-1001", "ORDER-1002", "DEMO-TRK-1002", "Bluetooth speaker", "nothing arrived at my door", "Evidence analysis", "Response draft", "Generate AI draft"]) {
+    assert.ok(!out.includes(merchantOnly), merchantOnly);
+  }
+  assert.ok([...markup.matchAll(/<button[^>]*>/g)].every((b) => /type="button"/.test(b[0])), "no button submits a form");
+  const levels = headingLevels(markup);
+  assert.equal(levels[0], 2);
+  assert.ok(levels.every((l, i) => i === 0 || l <= levels[i - 1] + 1), `headings skip a level: ${levels.join(",")}`);
+});
+
+test("a buyer record with missing or unknown fields says not on record instead of guessing", () => {
+  const markup = buyerReady([buyerView({ ...demoDisputes[0], status: "SOMETHING_NEW", amount: null })]);
+  const out = text(markup);
+  assert.match(out, /Amount Not on record/);
+  assert.match(out, /Opened Not on record/);
+  assert.match(out, /does not recognise the status "SOMETHING_NEW"/);
+  assert.match(out, /Not known/);
+  assert.doesNotMatch(markup, /aria-current="step"/, "no stage is marked current for an unknown status");
+  assert.match(out, /A status DisputeDesk recognises/);
+});
+
+test("buyer loading, empty and error states", () => {
+  const loading = html(createElement(BuyerDisputes, { load: { status: "loading" }, onRetry: noop }));
+  assert.match(loading, /role="status" aria-busy="true"/);
+  assert.match(text(loading), /Loading your disputes…/);
+  const empty = text(buyerReady([]));
+  assert.match(empty, /You have no disputes/);
+  const error = html(createElement(BuyerDisputes, { load: { status: "error", message: "Sign in to continue. (HTTP 401)" }, onRetry: noop }));
+  assert.match(error, /role="alert"/);
+  assert.match(text(error), /Couldn't load your disputes Sign in to continue\. \(HTTP 401\) Try again/);
+});
+
+test("the plain-language explanation is labelled as AI or standard wording, and says why", () => {
+  const view = (state: ExplainState) => html(createElement(ExplainView, { state, onRun: noop }));
+  const record = toBuyerRecord(demoDisputes[1]);
+  const guidance = buyerGuidance(record);
+
+  assert.match(text(view({ status: "idle" })), /checks every line .* Explain in plain language/);
+  assert.match(view({ status: "loading" }), /aria-disabled="true"[^>]*>Writing explanation…/);
+  const ai = text(view({ status: "ready", explanation: { source: "demo", dispute_id: "DEMO-1002", origin: "ai", model: "gemini-test-model", paragraphs: ["Checked wording."], fallback_reason: null, flags: [] } }));
+  assert.match(ai, /AI wording \(checked\) Checked wording\./);
+  assert.doesNotMatch(ai, /Standard explanation|Explain in plain language/);
+
+  const off = text(view({ status: "ready", explanation: rulesExplanation(record, guidance, AI_WORDING_OFF) }));
+  assert.match(off, /Standard explanation AI wording is off on this server/);
+  assert.doesNotMatch(off, /AI wording \(checked\)/);
+  const flagged = text(view({ status: "ready", explanation: rulesExplanation(record, guidance, FAILED_CHECKS, ["promises or predicts an outcome or refund"]) }));
+  assert.match(flagged, /Checks the AI wording failed: promises or predicts an outcome or refund\./);
+  assert.match(text(view({ status: "error", message: "Sign in to continue. (HTTP 401)" })), /Try again Sign in to continue/);
 });
 
 test("a not-signed-in reply from any endpoint sends the app back to sign-in", () => {
@@ -370,8 +440,8 @@ test("the client calls only DisputeDesk's own read and analysis endpoints", () =
     .map((f) => readFileSync(new URL(f, dir), "utf8"))
     .join("\n");
   const urls = [...new Set([...sources.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(urls, ["/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/disputes", "/api/health", "/api/sandbox/disputes"]);
-  assert.equal((sources.match(/fetch\(/g) ?? []).length, 7, "each fetch call uses one of the endpoints above");
+  assert.deepEqual(urls, ["/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/sandbox/disputes"]);
+  assert.equal((sources.match(/fetch\(/g) ?? []).length, 8, "each fetch call uses one of the endpoints above");
   assert.doesNotMatch(sources, /paypal\.com|generativelanguage|method:\s*"(PUT|PATCH|DELETE)"/i);
 });
 

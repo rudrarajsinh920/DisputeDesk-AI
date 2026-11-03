@@ -12,7 +12,8 @@ export interface Migration {
 }
 
 const EVIDENCE_KEYS = "'order_confirmation', 'shipping_tracking', 'proof_of_delivery', 'customer_communication'";
-export const AUDIT_EVENTS = [
+// Version 1's list, frozen with that migration. New events are added in a later migration.
+const V1_AUDIT_EVENTS = [
   "login_succeeded",
   "login_failed",
   "login_locked",
@@ -22,6 +23,7 @@ export const AUDIT_EVENTS = [
   "ai_draft_generated",
   "ai_example_viewed",
 ] as const;
+export const AUDIT_EVENTS = [...V1_AUDIT_EVENTS, "buyer_explanation_generated"] as const;
 
 // Forward-only and never edited once released: a change to the schema is a new migration at the end.
 export const MIGRATIONS: Migration[] = [
@@ -86,11 +88,38 @@ export const MIGRATIONS: Migration[] = [
       CREATE TABLE audit_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         at INTEGER NOT NULL,
+        event TEXT NOT NULL CHECK (event IN (${V1_AUDIT_EVENTS.map((e) => `'${e}'`).join(", ")})),
+        account_id TEXT,
+        dispute_id TEXT,
+        detail TEXT CHECK (detail IS NULL OR length(detail) <= 200)
+      ) STRICT;
+      CREATE INDEX idx_audit_account_at ON audit_log (account_id, at);
+      CREATE INDEX idx_audit_event_at ON audit_log (event, at);
+      CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+      CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+    `,
+  },
+  {
+    version: 2,
+    name: "dispute opened date; buyer explanation audit event",
+    // SQLite can't change a CHECK constraint, so the audit log is copied into a new table with the longer event
+    // list. Rows keep their ids; the indexes and append-only triggers are recreated on the new table.
+    sql: `
+      ALTER TABLE disputes ADD COLUMN create_time TEXT CHECK (create_time IS NULL OR length(create_time) BETWEEN 1 AND 40);
+
+      CREATE TABLE audit_log_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at INTEGER NOT NULL,
         event TEXT NOT NULL CHECK (event IN (${AUDIT_EVENTS.map((e) => `'${e}'`).join(", ")})),
         account_id TEXT,
         dispute_id TEXT,
         detail TEXT CHECK (detail IS NULL OR length(detail) <= 200)
       ) STRICT;
+      INSERT INTO audit_log_v2 (id, at, event, account_id, dispute_id, detail) SELECT id, at, event, account_id, dispute_id, detail FROM audit_log;
+      DROP TRIGGER audit_log_no_update;
+      DROP TRIGGER audit_log_no_delete;
+      DROP TABLE audit_log;
+      ALTER TABLE audit_log_v2 RENAME TO audit_log;
       CREATE INDEX idx_audit_account_at ON audit_log (account_id, at);
       CREATE INDEX idx_audit_event_at ON audit_log (event, at);
       CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;

@@ -112,6 +112,57 @@ export interface AiFlag {
   removed_text: string | null;
 }
 
+// ---- Buyer Dispute Clarity (server/src/buyer.ts). Built only from fields the buyer may see. ----
+
+// The usual order of a dispute. "earlier" and "later" are relative to the current status, not recorded history.
+// "unknown" when the status code is not one DisputeDesk recognises.
+export type BuyerStageState = "earlier" | "current" | "later" | "unknown";
+
+export interface BuyerStage {
+  id: "opened" | "responses" | "review" | "closed";
+  label: string;
+  state: BuyerStageState;
+  // Only the opened date, and only when the record has it. No other stage has a recorded date.
+  date: string | null;
+}
+
+// General guidance chosen by rules from the status and reason codes. Never a fact about the transaction.
+export interface BuyerGuidance {
+  status_known: boolean;
+  meaning: string;
+  stages: BuyerStage[];
+  next_steps: string[];
+  may_provide: string[];
+  contact: string[];
+  // Things this record does not contain. Never treated as meaning anything.
+  not_on_record: string[];
+  notice: string;
+}
+
+// What a buyer receives: no order, evidence, customer message or merchant drafts.
+export interface BuyerDispute {
+  source: Source;
+  dispute_id: string;
+  reason: string;
+  status: string;
+  amount: Money | null;
+  create_time?: string;
+  guidance: BuyerGuidance;
+}
+
+export interface BuyerExplanation {
+  source: Source;
+  dispute_id: string;
+  // "ai" only when every paragraph passed the server's checks; otherwise the rules' standard explanation.
+  origin: "ai" | "rules";
+  model: string | null;
+  paragraphs: string[];
+  // Why the standard explanation is shown instead of AI wording; null when origin is "ai".
+  fallback_reason: string | null;
+  // Which checks the AI wording failed. The failed text itself is never shown to the buyer.
+  flags: string[];
+}
+
 // From /api/health: whether the server can write AI drafts, and why not.
 export type AiStatus = { on: true; model: string } | { on: false; reason: string };
 

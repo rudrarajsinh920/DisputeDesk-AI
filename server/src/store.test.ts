@@ -22,6 +22,8 @@ test("demo disputes and their evidence read back exactly as the fixture files", 
   const db = seeded();
   assert.deepEqual(asJson(loadDisputes(db)), asJson(DEMO_DISPUTES));
   for (const d of loadDisputes(db)) assert.equal(d.source, "demo", "every stored record stays labelled demo");
+  // DEMO-1001 has no opened date in its file; it stays absent, never filled in.
+  assert.deepEqual(loadDisputes(db).map((d) => d.create_time), [undefined, "2026-10-18T09:30:00Z", "2026-10-22T14:05:00Z"]);
 });
 
 test("missing evidence stays missing; it is never stored as false", () => {
