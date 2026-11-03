@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import express from "express";
 import type { NextFunction, Request, Response } from "express";
+import type { DatabaseSync } from "node:sqlite";
 import demoAccounts from "../../demo-accounts.json" with { type: "json" };
 import extraDemos from "../../demo-disputes.json" with { type: "json" };
 import sample from "../../sample-dispute.json" with { type: "json" };
@@ -23,11 +24,13 @@ import {
 } from "./auth.ts";
 import type { Account } from "./auth.ts";
 import { AI_OFF_NO_KEY } from "./config.ts";
+import { openDatabase, transaction } from "./db.ts";
 import { analyzeDispute } from "./evidence.ts";
 import { AiError } from "./gemini.ts";
 import type { GeminiClient } from "./gemini.ts";
 import { PayPalError } from "./paypal.ts";
 import type { PayPalClient } from "./paypal.ts";
+import { audit, findAccountByEmail, getAccount, listAccounts, loadDisputes, seedDemo } from "./store.ts";
 import { validateDispute, validateLogin, validateLookup } from "./validate.ts";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -71,20 +74,22 @@ const AI_STATUS: Partial<Record<AiError["code"], number>> = { ai_rate_limited: 4
 
 // paypal and ai are null when they are not configured; the server still runs and says so.
 // aiOff is the safe reason shown when ai is null.
+// db is the server's database (index.ts opens the file); tests get a fresh in-memory one.
 // accounts and now are for tests; the server uses the demo accounts and the real clock.
+// The demo accounts and disputes are copied into db on every start (seedDemo).
 export function createApp(
   paypal: PayPalClient | null,
   ai: GeminiClient | null = null,
   aiOff: string = AI_OFF_NO_KEY,
-  { accounts = DEMO_ACCOUNTS, now = Date.now }: { accounts?: Account[]; now?: () => number } = {},
+  { accounts = DEMO_ACCOUNTS, now = Date.now, db = openDatabase(":memory:") }: { accounts?: Account[]; now?: () => number; db?: DatabaseSync } = {},
 ) {
   const app = express();
   app.disable("x-powered-by");
   // shortcut: in-memory, one server process; one AI request per dispute at a time to avoid double cost.
   const aiInFlight = new Set<string>();
-  const sessions = createSessions(now);
+  seedDemo(db, accounts, DEMO_DISPUTES, now());
+  const sessions = createSessions(db, now);
   const limiter = createLoginLimiter(now);
-  const accountsById = new Map(accounts.map((a) => [a.id, a]));
   // Checked against when the email is unknown, so a wrong email takes as long as a wrong password.
   const dummyHash = hashPassword(randomBytes(16).toString("hex"));
 
@@ -95,7 +100,8 @@ export function createApp(
     (req: Request, res: Response, next: NextFunction) => {
       res.set("Cache-Control", "no-store");
       const token = readCookie(req.headers.cookie, SESSION_COOKIE);
-      const account = token ? accountsById.get(sessions.get(token) ?? "") : undefined;
+      const accountId = token ? sessions.get(token) : null;
+      const account = accountId ? getAccount(db, accountId) : null;
       if (!account) {
         if (token) res.set("Set-Cookie", clearSessionCookie());
         sendError(res, 401, "not_signed_in", "Sign in to continue.");
@@ -129,9 +135,11 @@ export function createApp(
       notConfigured(res);
       return null;
     }
-    const records = source === "demo" ? DEMO_DISPUTES : await paypal!.listDisputes();
-    // Someone else's dispute looks exactly like a missing one, so IDs can't be probed.
-    const dispute = records.find((d) => d.dispute_id === dispute_id && canAccess(account, d));
+    const records = source === "demo" ? loadDisputes(db) : await paypal!.listDisputes();
+    // Someone else's dispute looks exactly like a missing one, so IDs can't be probed. The attempt is audited.
+    const match = records.find((d) => d.dispute_id === dispute_id);
+    const dispute = match && canAccess(account, match) ? match : undefined;
+    if (match && !dispute) audit(db, now(), "dispute_access_denied", { account_id: account.id, dispute_id, detail: source });
     if (!dispute) {
       res.status(404).json({
         error: {
@@ -198,30 +206,43 @@ export function createApp(
       return;
     }
     const keys = [`email:${result.email}`, `ip:${req.ip}`];
+    const account = findAccountByEmail(db, result.email);
+    // Unknown emails are never written to the audit log; only known account IDs are.
     if (limiter.blocked([keys[0]]) || limiter.blocked([keys[1]], LOGIN_MAX_FAILURES_PER_ADDRESS)) {
+      audit(db, now(), "login_locked", { account_id: account?.id ?? null });
       res.set("Retry-After", String(LOGIN_WINDOW_MS / 1000));
       sendError(res, 429, "too_many_attempts", "Too many failed sign-in attempts. Try again in 15 minutes.");
       return;
     }
-    const account = accounts.find((a) => a.email === result.email);
     const valid = await verifyPassword(result.password, account?.password_hash ?? (await dummyHash));
     if (!account || !valid) {
       limiter.fail(keys);
+      audit(db, now(), "login_failed", { account_id: account?.id ?? null });
       sendError(res, 401, "invalid_credentials", "Email or password is incorrect.");
       return;
     }
     limiter.reset(keys[0]);
     // A new token on every sign-in; any session the browser already had is ended.
     const previous = readCookie(req.headers.cookie, SESSION_COOKIE);
-    if (previous) sessions.delete(previous);
-    res.set("Set-Cookie", sessionCookie(sessions.create(account.id)));
+    const token = transaction(db, () => {
+      if (previous) sessions.delete(previous);
+      audit(db, now(), "login_succeeded", { account_id: account.id });
+      return sessions.create(account.id);
+    });
+    res.set("Set-Cookie", sessionCookie(token));
     res.json({ account: toAccountInfo(account) });
   });
 
   // Works with or without a valid session, so the browser can always clear its cookie.
   app.post("/api/auth/logout", (req, res) => {
     const token = readCookie(req.headers.cookie, SESSION_COOKIE);
-    if (token) sessions.delete(token);
+    if (token) {
+      const accountId = sessions.get(token);
+      transaction(db, () => {
+        sessions.delete(token);
+        if (accountId) audit(db, now(), "logout", { account_id: accountId });
+      });
+    }
     res.set("Cache-Control", "no-store");
     res.set("Set-Cookie", clearSessionCookie());
     res.status(204).end();
@@ -234,17 +255,17 @@ export function createApp(
   // Merchants get the demo disputes on their account; admin gets all of them.
   app.get("/api/disputes", requireRole("merchant", "admin"), (_req, res) => {
     const account = signedIn(res);
-    res.json({ source: "demo", disputes: DEMO_DISPUTES.filter((d) => canAccess(account, d)) });
+    res.json({ source: "demo", disputes: loadDisputes(db).filter((d) => canAccess(account, d)) });
   });
 
   app.get("/api/buyer/disputes", requireRole("buyer"), (_req, res) => {
     const account = signedIn(res);
-    res.json({ source: "demo", disputes: DEMO_DISPUTES.filter((d) => canAccess(account, d)).map(buyerView) });
+    res.json({ source: "demo", disputes: loadDisputes(db).filter((d) => canAccess(account, d)).map(buyerView) });
   });
 
   // Read-only: admin can list accounts but nothing changes them. Password hashes never leave the server.
   app.get("/api/admin/accounts", requireRole("admin"), (_req, res) => {
-    res.json({ accounts: accounts.map((a) => ({ ...toAccountInfo(a), dispute_ids: a.dispute_ids })) });
+    res.json({ accounts: listAccounts(db).map((a) => ({ ...toAccountInfo(a), dispute_ids: a.dispute_ids })) });
   });
 
   // Signed in only: it names the AI model and says why AI or PayPal is off. Buyers never need it.
@@ -265,7 +286,9 @@ export function createApp(
   // Sandbox records come from the same read-only list GET as above. Nothing is ever submitted to PayPal.
   app.post("/api/analysis", requireRole("merchant", "admin"), express.json({ limit: "4kb" }), async (req, res) => {
     const dispute = await findDispute(req, res);
-    if (dispute) res.json(analyzeDispute(dispute));
+    if (!dispute) return;
+    audit(db, now(), "analysis_viewed", { account_id: signedIn(res).id, dispute_id: dispute.dispute_id, detail: dispute.source });
+    res.json(analyzeDispute(dispute));
   });
 
   // On demand only. The rules run first; Gemini words their findings; assist.ts checks every line it returns.
@@ -293,7 +316,9 @@ export function createApp(
       const analysis = analyzeDispute(dispute);
       const { request, facts } = buildAiRequest(dispute, analysis);
       const raw = await ai.generateJson(request);
-      res.json(composeAiAssist(dispute, analysis, facts, raw, ai.model));
+      const result = composeAiAssist(dispute, analysis, facts, raw, ai.model);
+      audit(db, now(), "ai_draft_generated", { account_id: signedIn(res).id, dispute_id: dispute.dispute_id, detail: `${dispute.source}, ${ai.model}` });
+      res.json(result);
     } finally {
       aiInFlight.delete(key);
     }
@@ -306,6 +331,7 @@ export function createApp(
     if (!dispute) return;
     const analysis = analyzeDispute(dispute);
     const { facts } = buildAiRequest(dispute, analysis);
+    audit(db, now(), "ai_example_viewed", { account_id: signedIn(res).id, dispute_id: dispute.dispute_id, detail: dispute.source });
     res.json(composeAiAssist(dispute, analysis, facts, validationExampleAnswer(analysis, facts), VALIDATION_EXAMPLE_MODEL));
   });
 

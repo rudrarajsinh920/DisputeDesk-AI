@@ -1,13 +1,17 @@
 import { createApp } from "./app.ts";
-import { ENV_PATH, loadConfig } from "./config.ts";
+import { DEFAULT_DATABASE_PATH, ENV_PATH, loadConfig } from "./config.ts";
+import { openDatabase } from "./db.ts";
 import { createGeminiClient } from "./gemini.ts";
 import { createPayPalClient } from "./paypal.ts";
 
 const config = loadConfig();
+// A failed migration or a database from a newer server stops startup here, before anything is served.
+const db = openDatabase(process.env.DATABASE_PATH || DEFAULT_DATABASE_PATH);
 const app = createApp(
   config.paypal ? createPayPalClient(config.paypal) : null,
   config.ai ? createGeminiClient(config.ai) : null,
   config.aiOff ?? undefined,
+  { db },
 );
 
 // Localhost only: this server holds PayPal credentials, and its accounts are synthetic demo accounts.

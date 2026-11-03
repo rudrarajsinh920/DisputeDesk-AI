@@ -14,7 +14,9 @@ Dispute Prevention & Resolution Intelligence.
 - `sample-dispute.json`, `demo-disputes.json`: synthetic demo records.
 - `demo-accounts.json`: synthetic demo accounts (scrypt hashes only) and which disputes each can reach. The demo
   passwords are in README.md. Tests use their own test-only passwords.
-- `server/src/auth.ts`: password hashing, sessions, cookie, sign-in limit, `canAccess`. Every protected route uses
+- `server/src/db.ts`: SQLite (built-in `node:sqlite`), schema migrations, `transaction`. `server/src/store.ts`: accounts,
+  demo disputes, evidence, access and the audit log. Database file: `server/data/` (gitignored).
+- `server/src/auth.ts`: password hashing, sessions (in the database), cookie, sign-in limit, `canAccess`. Every protected route uses
   `requireRole` in `app.ts`; the account comes from the server's session store, never from the request.
 
 ## Guarantees (do not weaken)
@@ -34,6 +36,9 @@ Dispute Prevention & Resolution Intelligence.
 - Keep the security headers (API in `app.ts`, page in `client/src/security-headers.ts`) and the strict production CSP.
   Write requests from another site are refused (Origin and Sec-Fetch-Site).
 - Never return access tokens or credentials to the frontend.
+- SQL uses `?` placeholders only. Migrations are forward-only: never edit a released one, add a new one at the end.
+- The demo files are the source of truth for demo data; the database mirrors them on start. PayPal sandbox disputes
+  are never stored. Sessions store only a hash of the token. The audit log is append-only and never holds secrets.
 
 ## Working rules
 

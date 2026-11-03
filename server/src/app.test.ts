@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import type { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { DEMO_ACCOUNTS, DEMO_DISPUTES, createApp } from "./app.ts";
 import { VALIDATION_EXAMPLE_MODEL } from "./assist.ts";
-import { hashPassword } from "./auth.ts";
+import { LOGIN_MAX_FAILURES, hashPassword } from "./auth.ts";
 import { AI_OFF_BAD_MODEL, AI_OFF_NO_KEY } from "./config.ts";
+import { openDatabase } from "./db.ts";
 import { createGeminiClient } from "./gemini.ts";
 import { createPayPalClient } from "./paypal.ts";
 
@@ -964,4 +966,109 @@ test("every registered route is either public sign-in/out or in the protected li
     .sort();
   const expected = [...PUBLIC_ROUTES, ...PROTECTED.map(([m, p]) => `${m} ${p}`)].sort();
   assert.deepEqual(registered, expected, "a new route must be added to PROTECTED (and the role matrix) or PUBLIC_ROUTES");
+});
+
+// ---- Database persistence ----
+
+const appOn = (db: DatabaseSync) => createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, db });
+const auditRows = (db: DatabaseSync) =>
+  db.prepare("SELECT event, account_id, dispute_id, detail FROM audit_log ORDER BY id").all().map((r) => ({ ...r }));
+
+test("a session survives a server restart on the same database, and sign-out ends it for every server", async () => {
+  const db = openDatabase(":memory:");
+  const cookie = await withServer(appOn(db), async (base) => (await login(base, creds("merchant-a"))).headers.get("set-cookie")!.split(";")[0]);
+  await withServer(appOn(db), async (base) => {
+    const me = await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } });
+    assert.equal(me.status, 200, "the restarted server knows the session");
+    assert.equal((await me.json()).account.id, "merchant-a");
+    const disputes = await fetch(`${base}/api/disputes`, { headers: { Cookie: cookie } });
+    assert.deepEqual((await disputes.json()).disputes.map((d: { dispute_id: string }) => d.dispute_id), ["DEMO-1001", "DEMO-1002"]);
+    assert.equal((await fetch(`${base}/api/auth/logout`, { method: "POST", headers: { Cookie: cookie } })).status, 204);
+  });
+  await withServer(appOn(db), async (base) => {
+    assert.equal((await fetch(`${base}/api/auth/me`, { headers: { Cookie: cookie } })).status, 401, "a revoked session stays revoked");
+  });
+});
+
+test("security and dispute actions are audited, and the audit log holds no secrets or unknown emails", async () => {
+  const db = openDatabase(":memory:");
+  await withServer(appOn(db), async (base) => {
+    assert.equal((await login(base, { ...creds("merchant-b"), password: "wrong-password" })).status, 401);
+    assert.equal((await login(base, { email: "stranger@example.com", password: "guess" })).status, 401);
+    const res = await login(base, creds("merchant-b"));
+    const cookie = res.headers.get("set-cookie")!.split(";")[0];
+    const post = (path: string, id: string) =>
+      fetch(`${base}${path}`, { ...lookup("demo", id), headers: { "Content-Type": "application/json", Cookie: cookie } });
+    assert.equal((await post("/api/analysis", "DEMO-1003")).status, 200);
+    const other = await post("/api/analysis", "DEMO-1001");
+    const missing = await post("/api/analysis", "DEMO-9999");
+    assert.equal(other.status, 404, "another account's dispute still looks missing");
+    assert.deepEqual(await other.json(), await missing.json());
+    assert.equal((await post("/api/analysis/ai/example", "DEMO-1003")).status, 200);
+    await fetch(`${base}/api/auth/logout`, { method: "POST", headers: { Cookie: cookie } });
+
+    assert.deepEqual(auditRows(db), [
+      { event: "login_failed", account_id: "merchant-b", dispute_id: null, detail: null },
+      { event: "login_failed", account_id: null, dispute_id: null, detail: null },
+      { event: "login_succeeded", account_id: "merchant-b", dispute_id: null, detail: null },
+      { event: "analysis_viewed", account_id: "merchant-b", dispute_id: "DEMO-1003", detail: "demo" },
+      { event: "dispute_access_denied", account_id: "merchant-b", dispute_id: "DEMO-1001", detail: "demo" },
+      { event: "ai_example_viewed", account_id: "merchant-b", dispute_id: "DEMO-1003", detail: "demo" },
+      { event: "logout", account_id: "merchant-b", dispute_id: null, detail: null },
+    ]);
+    const everything = JSON.stringify(db.prepare("SELECT * FROM audit_log").all());
+    for (const secret of [cookie.split("=")[1], TEST_PASSWORD("merchant-b"), "wrong-password", "stranger@example.com", "scrypt$"]) {
+      assert.ok(!everything.includes(secret), "audit log leaked a secret");
+    }
+  });
+});
+
+test("an AI draft is audited with the model, and a locked-out sign-in is audited", async () => {
+  const db = openDatabase(":memory:");
+  const app = createApp(null, mockAi().client, undefined, { accounts: TEST_ACCOUNTS, db });
+  assert.equal((await get(app, "/api/analysis/ai", lookup("demo", "DEMO-1001"))).status, 200);
+  assert.deepEqual(auditRows(db).at(-1), { event: "ai_draft_generated", account_id: "merchant-a", dispute_id: "DEMO-1001", detail: `demo, ${mockAi().client.model}` });
+  await withServer(app, async (base) => {
+    for (let i = 0; i < LOGIN_MAX_FAILURES; i++) await login(base, { ...creds("buyer-a"), password: "wrong" });
+    assert.equal((await login(base, creds("buyer-a"))).status, 429);
+  });
+  assert.deepEqual(auditRows(db).at(-1), { event: "login_locked", account_id: "buyer-a", dispute_id: null, detail: null });
+});
+
+test("a database failure answers with a generic 500 that reveals nothing about the database", async () => {
+  const db = openDatabase(":memory:");
+  const app = appOn(db);
+  db.close();
+  const errors: unknown[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => errors.push(args);
+  try {
+    await withServer(app, async (base) => {
+      const res = await login(base, creds("merchant-a"));
+      assert.equal(res.status, 500);
+      const text = await res.text();
+      assert.deepEqual(JSON.parse(text), { error: { code: "internal_error", message: "Unexpected server error.", upstream_status: null } });
+      assert.ok(!/sqlite|database|SQL/i.test(text));
+      assert.ok(!res.headers.get("set-cookie"), "no session is handed out");
+    });
+  } finally {
+    console.error = original;
+  }
+  assert.equal(errors.length, 1, "the cause goes to the server log only");
+});
+
+test("a failure while signing in leaves no session and no audit entry behind", async () => {
+  const db = openDatabase(":memory:");
+  const app = appOn(db);
+  // Make the session insert fail after the audit insert has run in the same transaction.
+  db.exec("CREATE TRIGGER fail_session BEFORE INSERT ON sessions BEGIN SELECT RAISE(ABORT, 'forced failure'); END;");
+  const original = console.error;
+  console.error = () => {};
+  try {
+    await withServer(app, async (base) => assert.equal((await login(base, creds("merchant-a"))).status, 500));
+  } finally {
+    console.error = original;
+  }
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sessions").get()!.n, 0);
+  assert.deepEqual(auditRows(db), [], "the login_succeeded entry was rolled back with the session");
 });

@@ -19,6 +19,16 @@ import {
 } from "./auth.ts";
 import type { Account } from "./auth.ts";
 import type { Dispute } from "../../shared/types.ts";
+import { DEMO_ACCOUNTS } from "./app.ts";
+import { openDatabase } from "./db.ts";
+import { seedDemo } from "./store.ts";
+
+// Sessions point at real account rows, so each session test gets a fresh database with the demo accounts.
+function sessionDb() {
+  const db = openDatabase(":memory:");
+  seedDemo(db, DEMO_ACCOUNTS.map((a) => ({ ...a, dispute_ids: [] })), [], 0);
+  return db;
+}
 
 test("passwords are stored as salted scrypt hashes and verified exactly", async () => {
   const hash = await hashPassword("correct horse");
@@ -39,7 +49,7 @@ function clock(start = 1_000_000) {
 }
 
 test("a session finds its account until it is deleted", () => {
-  const sessions = createSessions(clock().now);
+  const sessions = createSessions(sessionDb(), clock().now);
   const token = sessions.create("merchant-a");
   assert.equal(sessions.get(token), "merchant-a");
   assert.equal(sessions.get(token + "x"), null);
@@ -51,7 +61,7 @@ test("a session finds its account until it is deleted", () => {
 
 test("sessions end after 30 idle minutes, and activity keeps them alive", () => {
   const c = clock();
-  const sessions = createSessions(c.now);
+  const sessions = createSessions(sessionDb(), c.now);
   const idle = sessions.create("buyer-a");
   const busy = sessions.create("buyer-a");
   c.advance(IDLE_MS - 1);
@@ -64,7 +74,7 @@ test("sessions end after 30 idle minutes, and activity keeps them alive", () => 
 
 test("sessions end 8 hours after login even when used constantly", () => {
   const c = clock();
-  const sessions = createSessions(c.now);
+  const sessions = createSessions(sessionDb(), c.now);
   const token = sessions.create("admin");
   for (let t = 0; t < ABSOLUTE_MS - IDLE_MS; t += IDLE_MS / 2) {
     c.advance(IDLE_MS / 2);
@@ -75,6 +85,45 @@ test("sessions end 8 hours after login even when used constantly", () => {
   // Used 15 minutes ago, so only the 8-hour limit can end it.
   c.advance(IDLE_MS / 2 + 1);
   assert.equal(sessions.get(token), null);
+});
+
+test("sessions are kept in the database, so a server restart keeps users signed in", () => {
+  const c = clock();
+  const db = sessionDb();
+  const token = createSessions(db, c.now).create("merchant-a");
+  c.advance(1000);
+  assert.equal(createSessions(db, c.now).get(token), "merchant-a", "a new store on the same database finds the session");
+  c.advance(IDLE_MS + 1);
+  assert.equal(createSessions(db, c.now).get(token), null, "expiry still applies after a restart");
+});
+
+test("only a hash of the token is stored, never the token", () => {
+  const db = sessionDb();
+  const token = createSessions(db, clock().now).create("buyer-a");
+  const rows = db.prepare("SELECT * FROM sessions").all();
+  assert.equal(rows.length, 1);
+  assert.ok(!JSON.stringify(rows).includes(token));
+  assert.match(String(rows[0].token_hash), /^[A-Za-z0-9_-]{43}$/);
+});
+
+test("a signed-out session stays revoked, and expired or revoked rows are cleared at the next sign-in", () => {
+  const c = clock();
+  const db = sessionDb();
+  const sessions = createSessions(db, c.now);
+  const out = sessions.create("merchant-b");
+  const stale = sessions.create("merchant-b");
+  sessions.delete(out);
+  assert.equal(sessions.get(out), null);
+  assert.ok(db.prepare("SELECT revoked_at FROM sessions WHERE revoked_at IS NOT NULL").get(), "revocation is recorded");
+  c.advance(IDLE_MS + 1);
+  const fresh = sessions.create("merchant-b");
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM sessions").get()!.n, 1, "only the new session is left");
+  assert.equal(sessions.get(stale), null);
+  assert.equal(sessions.get(fresh), "merchant-b");
+});
+
+test("a session for an account that does not exist cannot be created", () => {
+  assert.throws(() => createSessions(sessionDb(), clock().now).create("nobody"), /FOREIGN KEY/);
 });
 
 test("the session cookie is HttpOnly, Secure, SameSite=Strict and host-only", () => {

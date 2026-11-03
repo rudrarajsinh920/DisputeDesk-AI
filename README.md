@@ -74,7 +74,8 @@ password here.
 - **Buyers** see the status and amount of their own disputes only, without the merchant's order or evidence records.
 - **Admin** reads every demo dispute, the sandbox and the account list, and changes nothing. Admin cannot generate AI drafts.
 
-Sessions end after 30 minutes without activity, 8 hours after sign-in, on sign-out, or when the server restarts. After
+Sessions end after 30 minutes without activity, 8 hours after sign-in, or on sign-out. They are kept in the database,
+so restarting the server keeps everyone signed in. After
 10 failed sign-ins for one email, that email is locked for 15 minutes; after 100 failed sign-ins from one address, all
 sign-in from it is locked for 15 minutes. Locally every request comes from 127.0.0.1, so the second limit is a cap on
 all guessing. The session cookie is `HttpOnly`, `Secure` and `SameSite=Strict`; this needs a browser that accepts
@@ -85,6 +86,25 @@ Write requests from any other site are refused (Origin and `Sec-Fetch-Site` chec
 nothing to run. The production build (`cd client && npm run build && npm run preview`, then http://localhost:4173) has
 a strict CSP: only the app's own scripts and styles. The dev server keeps a looser page CSP because Vite's live reload
 needs inline code. Both refuse to start on another port, so the address never changes.
+
+## Database
+
+The server keeps its data in SQLite through Node's built-in `node:sqlite` (no extra package), in
+`server/data/disputedesk.sqlite`. Set the `DATABASE_PATH` shell variable to use another file. The folder is
+gitignored: it holds password hashes and session hashes, never passwords or session tokens.
+
+- **Created and upgraded on start.** Numbered migrations in `server/src/db.ts` run in order, each in one transaction.
+  A failed migration, or a database written by a newer server, stops the server before it serves anything.
+- **Demo data is mirrored from the files.** On every start the demo accounts, demo disputes, their evidence and who can
+  see them are copied from `demo-accounts.json`, `sample-dispute.json` and `demo-disputes.json`, in one
+  transaction. The files stay the source of truth; edit them, not the database. Changing an account's password hash ends
+  that account's sessions. PayPal sandbox disputes are never stored: they are read live, so the two never mix.
+- **Tables.** `accounts`, `disputes` (demo only), `dispute_evidence` (one row per supplied flag; no row means "not
+  supplied", never "false"), `dispute_access`, `sessions` (keyed by a hash of the token) and `audit_log`.
+- **Audit log.** Sign-in (succeeded, failed, locked out), sign-out, a refused request for another account's dispute,
+  analysis, AI drafts and the validation example. Entries name the account and dispute, never a password, token, hash or
+  an unknown email. The log cannot be changed or deleted from the app.
+- To start over, stop the server and delete the `server/data` folder.
 
 ## Test
 
@@ -146,4 +166,7 @@ Keep screenshots or a screen recording of a successful run as a backup.
   why merchant review stays mandatory.
 - The PayPal integration only reads (an access token and the dispute list). It never creates, changes or answers a
   dispute.
-- Drafts are not saved. Accounts are five synthetic demo accounts with no sign-up; sessions live in server memory. The server answers only on this machine (127.0.0.1).
+- Drafts are not saved. Accounts are five synthetic demo accounts with no sign-up. The server answers only on this
+  machine (127.0.0.1).
+- One server process per database. The sign-in limit is still kept in memory, so a restart lifts a lockout.
+- The audit log has no retention limit yet; it grows until the database is deleted.

@@ -5,6 +5,9 @@ import { parseEnv } from "node:util";
 // Repo-root .env, found from this file's location so the shell's folder never matters.
 export const ENV_PATH = fileURLToPath(new URL("../../.env", import.meta.url));
 
+// The server's SQLite database. Override with the DATABASE_PATH shell variable. Gitignored: it holds password hashes.
+export const DEFAULT_DATABASE_PATH = fileURLToPath(new URL("../data/disputedesk.sqlite", import.meta.url));
+
 // Google's model list (checked 2026-10-29) suggests "3.5 Flash-Lite or 3.8 Flash" for new projects.
 export const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 

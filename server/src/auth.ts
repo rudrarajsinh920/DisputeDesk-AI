@@ -1,4 +1,5 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
 import type { AccountInfo, Dispute } from "../../shared/types.ts";
 
 // Server-only account record. password_hash and dispute_ids never leave the server.
@@ -46,36 +47,35 @@ export const IDLE_MS = 30 * 60_000;
 export const ABSOLUTE_MS = 8 * 60 * 60_000;
 export const SESSION_COOKIE = "__Host-dd_session";
 
-// shortcut: in-memory, one server process; a restart signs everyone out. Move to node:sqlite with the dispute store.
-export function createSessions(now: () => number = Date.now) {
-  // Keyed by a hash of the token, so the store itself holds nothing a browser could replay.
-  const store = new Map<string, { accountId: string; created: number; seen: number }>();
+// Stored in the database, so a server restart keeps users signed in. Keyed by a hash of the token,
+// so the database holds nothing a browser could replay.
+export function createSessions(db: DatabaseSync, now: () => number = Date.now) {
   const key = (token: string) => createHash("sha256").update(token).digest("base64url");
-  const expired = (s: { created: number; seen: number }, t: number) => t - s.seen > IDLE_MS || t - s.created > ABSOLUTE_MS;
 
   return {
     create(accountId: string): string {
       const t = now();
-      for (const [k, s] of store) if (expired(s, t)) store.delete(k);
+      db.prepare("DELETE FROM sessions WHERE revoked_at IS NOT NULL OR last_seen_at < ? OR created_at < ?").run(t - IDLE_MS, t - ABSOLUTE_MS);
       const token = randomBytes(32).toString("base64url");
-      store.set(key(token), { accountId, created: t, seen: t });
+      db.prepare("INSERT INTO sessions (token_hash, account_id, created_at, last_seen_at) VALUES (?, ?, ?, ?)").run(key(token), accountId, t, t);
       return token;
     },
     get(token: string): string | null {
       if (!token) return null;
       const k = key(token);
-      const session = store.get(k);
-      if (!session) return null;
+      const s = db.prepare("SELECT account_id, created_at, last_seen_at FROM sessions WHERE token_hash = ? AND revoked_at IS NULL").get(k);
+      if (!s) return null;
       const t = now();
-      if (expired(session, t)) {
-        store.delete(k);
+      if (t - Number(s.last_seen_at) > IDLE_MS || t - Number(s.created_at) > ABSOLUTE_MS) {
+        db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(k);
         return null;
       }
-      session.seen = t;
-      return session.accountId;
+      db.prepare("UPDATE sessions SET last_seen_at = MAX(last_seen_at, ?) WHERE token_hash = ?").run(t, k);
+      return String(s.account_id);
     },
+    // Sign-out: the row is marked revoked, then cleared at the next sign-in.
     delete(token: string) {
-      store.delete(key(token));
+      db.prepare("UPDATE sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL").run(now(), key(token));
     },
   };
 }
