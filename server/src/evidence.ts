@@ -1,4 +1,4 @@
-import { REASON_LABELS, humanize, labelFor } from "../../client/src/disputes.ts";
+import { REASON_LABELS, humanize, labelFor } from "../../shared/disputes.ts";
 import type {
   Analysis,
   Contradiction,
@@ -7,7 +7,7 @@ import type {
   EvidenceFinding,
   EvidenceKey,
   RecordRef,
-} from "../../client/src/types.ts";
+} from "../../shared/types.ts";
 
 // Rule-based on purpose: every statement comes from a supplied record or is a marked gap.
 // Checklist rules and wording follow evidence-checklist.js; disclaimers follow draft-response.js.

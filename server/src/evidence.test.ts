@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import sample from "../../sample-dispute.json" with { type: "json" };
-import { humanize } from "../../client/src/disputes.ts";
-import type { Analysis, Dispute } from "../../client/src/types.ts";
+import { humanize } from "../../shared/disputes.ts";
+import type { Analysis, Dispute } from "../../shared/types.ts";
 import { analyzeDispute, findContradictions } from "./evidence.ts";
 import { validateDispute } from "./validate.ts";
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import sample from "../../sample-dispute.json" with { type: "json" };
-import type { AiAssist, Dispute } from "../../client/src/types.ts";
+import type { AiAssist, Dispute } from "../../shared/types.ts";
 import { WITHHELD, buildAiRequest, composeAiAssist } from "./assist.ts";
 import { DEMO_LABEL, DRAFT_HEADER, analyzeDispute } from "./evidence.ts";
 import { AiError } from "./gemini.ts";

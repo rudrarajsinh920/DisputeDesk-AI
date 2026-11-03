@@ -1,4 +1,4 @@
-import type { Dispute } from "./types.ts";
+import type { Dispute } from "../../shared/types.ts";
 
 // Turns a non-2xx server reply into an error carrying the server's own message and error code.
 export function serverError(response: Response, body: unknown): Error & { code?: string } {

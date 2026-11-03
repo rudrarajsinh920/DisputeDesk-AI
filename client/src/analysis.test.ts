@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis } from "./analysis.ts";
-import type { Dispute } from "./types.ts";
+import type { Dispute } from "../../shared/types.ts";
 
 const realFetch = globalThis.fetch;
 afterEach(() => {

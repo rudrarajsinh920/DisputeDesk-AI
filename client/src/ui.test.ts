@@ -16,7 +16,7 @@ import App, { DisputesView } from "./App.tsx";
 import type { SandboxLoad } from "./App.tsx";
 import { DisputeDetail } from "./DisputeDetail.tsx";
 import { demoDisputes } from "./data.ts";
-import type { AiAssist, Dispute } from "./types.ts";
+import type { AiAssist, Dispute } from "../../shared/types.ts";
 
 globalThis.fetch = (() => {
   throw new Error("UI tests must not make network requests");

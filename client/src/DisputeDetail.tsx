@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { AnalysisPanel } from "./AnalysisPanel.tsx";
-import { REASON_LABELS, formatDate, formatMoney, humanize, labelFor } from "./disputes.ts";
-import type { Dispute } from "./types.ts";
+import { REASON_LABELS, formatDate, formatMoney, humanize, labelFor } from "../../shared/disputes.ts";
+import type { Dispute } from "../../shared/types.ts";
 import { StatusBadge } from "./ui.tsx";
 
 const orNotRecorded = (value: ReactNode) => value || <span className="muted">Not recorded</span>;

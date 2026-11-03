@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import sample from "../../sample-dispute.json" with { type: "json" };
-import { countByStatus, filterByStatus, formatMoney, summarize } from "./disputes.ts";
-import type { Dispute } from "./types.ts";
+import { countByStatus, filterByStatus, formatMoney, summarize } from "../../shared/disputes.ts";
+import type { Dispute } from "../../shared/types.ts";
 
 // Evidence checklist tests now live with the engine in server/src/evidence.test.ts.
 

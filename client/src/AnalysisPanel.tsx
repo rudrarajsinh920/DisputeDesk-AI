@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis } from "./analysis.ts";
-import type { AiAssist, AiStatus, Analysis, Dispute, EvidenceStatus, RecordRef } from "./types.ts";
+import type { AiAssist, AiStatus, Analysis, Dispute, EvidenceStatus, RecordRef } from "../../shared/types.ts";
 import { StatePanel } from "./ui.tsx";
 
 type Load = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; analysis: Analysis };

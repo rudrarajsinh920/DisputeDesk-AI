@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { DisputeDetail } from "./DisputeDetail.tsx";
 import { DisputeList } from "./DisputeList.tsx";
 import { demoDisputes } from "./data.ts";
-import { STATUS_FILTERS, STATUS_LABELS, countByStatus, filterByStatus, formatMoney, labelFor, summarize } from "./disputes.ts";
+import { STATUS_FILTERS, STATUS_LABELS, countByStatus, filterByStatus, formatMoney, labelFor, summarize } from "../../shared/disputes.ts";
 import { fetchSandboxDisputes } from "./sandbox.ts";
-import type { Dispute, Source } from "./types.ts";
+import type { Dispute, Source } from "../../shared/types.ts";
 import { StatePanel } from "./ui.tsx";
 
 export type SandboxLoad =

@@ -2,7 +2,7 @@ import express from "express";
 import type { NextFunction, Request, Response } from "express";
 import extraDemos from "../../demo-disputes.json" with { type: "json" };
 import sample from "../../sample-dispute.json" with { type: "json" };
-import type { Dispute } from "../../client/src/types.ts";
+import type { Dispute } from "../../shared/types.ts";
 import { VALIDATION_EXAMPLE_MODEL, buildAiRequest, composeAiAssist, validationExampleAnswer } from "./assist.ts";
 import { AI_OFF_NO_KEY } from "./config.ts";
 import { analyzeDispute } from "./evidence.ts";

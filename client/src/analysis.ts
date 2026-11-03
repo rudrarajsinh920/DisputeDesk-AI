@@ -1,5 +1,5 @@
 import { serverError } from "./sandbox.ts";
-import type { AiAssist, AiStatus, Analysis, Dispute } from "./types.ts";
+import type { AiAssist, AiStatus, Analysis, Dispute } from "../../shared/types.ts";
 
 // Sends only which record to analyze; the server loads the record itself. Nothing here talks to PayPal.
 export async function fetchAnalysis(dispute: Dispute, signal?: AbortSignal): Promise<Analysis> {

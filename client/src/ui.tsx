@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { STATUS_LABELS, labelFor, statusTone } from "./disputes.ts";
+import { STATUS_LABELS, labelFor, statusTone } from "../../shared/disputes.ts";
 
 export function StatusBadge({ status }: { status: string }) {
   return <span className={`badge badge-${statusTone(status)}`}>{labelFor(STATUS_LABELS, status)}</span>;

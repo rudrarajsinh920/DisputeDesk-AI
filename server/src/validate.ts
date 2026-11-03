@@ -1,4 +1,4 @@
-import type { Dispute, Source } from "../../client/src/types.ts";
+import type { Dispute, Source } from "../../shared/types.ts";
 
 export type Validation = { ok: true; dispute: Dispute } | { ok: false; errors: string[] };
 export type Lookup = { source: Source; dispute_id: string };

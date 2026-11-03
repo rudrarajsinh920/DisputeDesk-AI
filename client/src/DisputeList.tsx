@@ -1,5 +1,5 @@
-import { REASON_LABELS, formatMoney, labelFor } from "./disputes.ts";
-import type { Dispute } from "./types.ts";
+import { REASON_LABELS, formatMoney, labelFor } from "../../shared/disputes.ts";
+import type { Dispute } from "../../shared/types.ts";
 import { StatusBadge } from "./ui.tsx";
 
 export function DisputeList({

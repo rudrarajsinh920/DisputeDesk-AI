@@ -1,4 +1,4 @@
-import type { Dispute } from "../../client/src/types.ts";
+import type { Dispute } from "../../shared/types.ts";
 
 // Sandbox only, on purpose: there is no setting that points this at live PayPal.
 export const PAYPAL_SANDBOX_URL = "https://api-m.sandbox.paypal.com";

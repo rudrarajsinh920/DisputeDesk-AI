@@ -1,5 +1,5 @@
-import { REASON_LABELS, labelFor } from "../../client/src/disputes.ts";
-import type { AiAssist, AiExplanation, AiFact, AiFlag, Analysis, Dispute, DraftLine, EvidenceKey } from "../../client/src/types.ts";
+import { REASON_LABELS, labelFor } from "../../shared/disputes.ts";
+import type { AiAssist, AiExplanation, AiFact, AiFlag, Analysis, Dispute, DraftLine, EvidenceKey } from "../../shared/types.ts";
 import { DEMO_LABEL, DRAFT_FOOTER, DRAFT_HEADER } from "./evidence.ts";
 import { AiError } from "./gemini.ts";
 import type { JsonRequest } from "./gemini.ts";
