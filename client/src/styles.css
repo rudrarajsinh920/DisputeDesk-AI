@@ -1,70 +1,79 @@
+/* Signed-in app (merchant, admin, buyer) and the sign-in form. Same values as the landing page's tokens in index.css:
+   ink on paper, one lime signal for the current selection, status tints that only carry meaning, IBM Plex Sans.
+   Names differ from the landing's shadcn tokens on purpose (there --muted is a fill, here it is text). */
 :root {
   color-scheme: light dark;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
 
-  --bg: #f5f6f8;
+  --bg: #f7f7f5;
   --surface: #ffffff;
-  --surface-2: #f0f2f5;
-  --border: #dfe3e8;
-  --text: #151a22;
-  --muted: #586172;
-  --accent: #3446c8;
+  --surface-2: #efefeb;
+  --border: #dcdcd6;
+  --rule: #e6e6e1;
+  --text: #0b0b0c;
+  --muted: #55555b;
+  --accent: #0b0b0c;
   --accent-text: #ffffff;
-  --focus: #3446c8;
+  --focus: #0b0b0c;
+  --signal: #d8f65a;
+  --signal-text: #0b0b0c;
 
-  --warn-bg: #fff3dc;
-  --warn-text: #7a4200;
-  --info-bg: #e5ecff;
-  --info-text: #2a3a9e;
-  --ok-bg: #e2f5e9;
-  --ok-text: #1b6337;
-  --neutral-bg: #eceef2;
-  --neutral-text: #3d4552;
-  --error-text: #a3221b;
+  --warn-bg: #fbefd5;
+  --warn-text: #6b3d0a;
+  --info-bg: #e7ebf3;
+  --info-text: #263350;
+  --ok-bg: #e2f3e7;
+  --ok-text: #14532d;
+  --gap-bg: #fbe3df;
+  --gap-text: #7f1d1d;
+  --neutral-bg: #ececE8;
+  --neutral-text: #3a3a40;
+  --error-text: #b42318;
 
-  --demo-bg: #fff6e3;
-  --demo-border: #e6a83a;
-  --demo-text: #5e3500;
-  --sandbox-bg: #e8f0ff;
-  --sandbox-border: #7d97e8;
-  --sandbox-text: #1f2f80;
+  --demo-bg: #fbefd5;
+  --demo-border: #d9a548;
+  --demo-text: #5c3307;
+  --sandbox-bg: #e7ebf3;
+  --sandbox-border: #8796b8;
+  --sandbox-text: #1d2742;
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --radius: 10px;
-  --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 1px 3px rgb(16 24 40 / 6%);
+  --radius: 8px;
+  --rail: 232px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0e1116;
-    --surface: #161a21;
-    --surface-2: #1d222b;
-    --border: #2b313c;
-    --text: #e7eaf0;
-    --muted: #9ba4b4;
-    --accent: #8d9dff;
-    --accent-text: #0e1116;
-    --focus: #8d9dff;
+    --bg: #0b0b0c;
+    --surface: #151517;
+    --surface-2: #1f1f22;
+    --border: #2a2a2e;
+    --rule: #232326;
+    --text: #f2f2ef;
+    --muted: #a7a7ad;
+    --accent: #f2f2ef;
+    --accent-text: #0b0b0c;
+    --focus: #f2f2ef;
 
-    --warn-bg: #3a2a0e;
-    --warn-text: #ffcf85;
-    --info-bg: #1e2752;
-    --info-text: #b5c3ff;
-    --ok-bg: #12321f;
-    --ok-text: #8fe0ac;
-    --neutral-bg: #262b35;
-    --neutral-text: #c6ccd7;
-    --error-text: #ff9c94;
+    --warn-bg: #2d220c;
+    --warn-text: #f6cd78;
+    --info-bg: #18202e;
+    --info-text: #b4c4e6;
+    --ok-bg: #10291a;
+    --ok-text: #8ee3ad;
+    --gap-bg: #331513;
+    --gap-text: #f8a9a0;
+    --neutral-bg: #232326;
+    --neutral-text: #cfcfd4;
+    --error-text: #f8a9a0;
 
-    --demo-bg: #33260c;
-    --demo-border: #a8771f;
-    --demo-text: #ffd894;
-    --sandbox-bg: #18214a;
-    --sandbox-border: #4a5fb5;
-    --sandbox-text: #c3cfff;
-
-    --shadow: none;
+    --demo-bg: #2d220c;
+    --demo-border: #7a5a1c;
+    --demo-text: #f6cd78;
+    --sandbox-bg: #18202e;
+    --sandbox-border: #4a5f8a;
+    --sandbox-text: #c3d0ee;
   }
 }
 
@@ -91,10 +100,23 @@ p {
   margin: 0;
 }
 
-button {
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+  letter-spacing: -0.01em;
+}
+
+button,
+input,
+textarea {
   font: inherit;
   color: inherit;
+}
+
+button {
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 :focus-visible {
@@ -113,7 +135,7 @@ code,
   color: var(--muted);
 }
 
-/* Layout */
+/* Layout. Signed out and while checking: a plain top bar. Signed in: a rail on wide screens, a top bar below 1024px. */
 
 .app {
   max-width: 1240px;
@@ -134,60 +156,176 @@ code,
   display: flex;
   align-items: center;
   gap: 10px;
-  font-weight: 650;
-  font-size: 1.1rem;
+  font-weight: 600;
+  font-size: 1rem;
   letter-spacing: -0.01em;
 }
 
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
   background: var(--accent);
   color: var(--accent-text);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+.shell {
+  min-height: 100svh;
+}
+
+.rail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.rail-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.rail-label {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.rail-nav {
+  display: flex;
+  gap: 2px;
+}
+
+.rail-nav button {
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+  text-align: left;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.rail-nav button[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.rail .topbar-actions {
+  margin-left: auto;
+}
+
+.app-main {
+  min-width: 0;
+  padding: 16px 16px 56px;
+}
+
+@media (min-width: 1024px) {
+  .shell {
+    display: grid;
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+  }
+
+  .rail {
+    position: sticky;
+    top: 0;
+    height: 100svh;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 28px;
+    padding: 22px 16px;
+    border-bottom: 0;
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+  }
+
+  .rail-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .rail-nav {
+    flex-direction: column;
+  }
+
+  .rail .segmented {
+    flex-direction: column;
+  }
+
+  .rail .topbar-actions {
+    margin: auto 0 0;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .rail .account-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .app-main {
+    padding: 20px 40px 64px;
+    max-width: 1320px;
+  }
 }
 
 .segmented {
   display: inline-flex;
   padding: 3px;
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 8px;
   background: var(--surface);
 }
 
 .segmented button {
+  min-height: 34px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
-  padding: 6px 14px;
+  padding: 6px 12px;
   color: var(--muted);
-  font-weight: 550;
-  transition: background-color 120ms ease, color 120ms ease, transform 120ms var(--ease-out);
+  font-weight: 500;
+  text-align: left;
+  transition: background-color 150ms ease, color 150ms ease, transform 150ms var(--ease-out);
 }
 
 .segmented button[aria-pressed="true"] {
   background: var(--accent);
   color: var(--accent-text);
+  font-weight: 600;
 }
 
+/* Which data is on screen. The words carry it; the tint only helps. */
 .banner {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: 2px 12px;
   align-items: baseline;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border: 1px solid;
-  border-radius: var(--radius);
-  font-size: 0.9rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
 }
 
 .banner strong {
-  letter-spacing: 0.03em;
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
 }
 
 .banner-demo {
@@ -206,44 +344,58 @@ code,
   margin-top: 20px;
 }
 
-/* Summary */
-
-.summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 12px;
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 24px;
   margin-bottom: 20px;
 }
 
-.stat,
-.panel,
-.state-panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+.page-head h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+/* Summary figures: set as type on one line, not tiles. */
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 36px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
 }
 
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 14px 16px;
+  gap: 2px;
+  min-width: 0;
 }
 
 .stat-label {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
 }
 
 .stat-value {
-  font-size: 1.5rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
 
-/* Workspace */
+.panel,
+.state-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* Workspace: the list, then the open case. */
 
 .workspace {
   display: grid;
@@ -251,9 +403,18 @@ code,
   align-items: start;
 }
 
-@media (min-width: 900px) {
+/* Two columns only where the case still gets enough width. From 1024px the rail takes 232px, so 1024–1199px
+   stacks again. Keep in step with ONE_COLUMN in App.tsx. */
+@media (min-width: 900px) and (max-width: 1023px), (min-width: 1200px) {
   .workspace {
-    grid-template-columns: minmax(300px, 380px) 1fr;
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  }
+
+  .list-panel {
+    position: sticky;
+    top: 16px;
+    max-height: calc(100svh - 32px);
+    overflow-y: auto;
   }
 }
 
@@ -266,30 +427,48 @@ code,
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 12px;
 }
 
 .panel-head h2 {
   font-size: 1rem;
+  font-weight: 600;
+}
+
+.search {
+  width: 100%;
+  min-height: 40px;
+  margin-bottom: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.search::placeholder {
+  color: var(--muted);
 }
 
 .filters {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 32px;
   padding: 4px 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--surface);
-  font-size: 0.85rem;
-  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms var(--ease-out);
+  font-size: 0.8125rem;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms var(--ease-out);
 }
 
 .chip[aria-pressed="true"] {
@@ -300,33 +479,60 @@ code,
 
 .chip-count {
   font-variant-numeric: tabular-nums;
-  opacity: 0.8;
+  opacity: 0.75;
 }
 
+/* Rows read like a table: rules, alignment, no cards. */
 .dispute-list {
   list-style: none;
-  margin: 0;
+  margin: 0 -16px;
   padding: 0;
-  display: grid;
-  gap: 6px;
+  border-top: 1px solid var(--rule);
 }
 
 .dispute-row {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
+  padding: 12px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: transparent;
   text-align: left;
-  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms var(--ease-out);
+  transition: background-color 150ms ease;
+}
+
+.dispute-row[aria-current="true"] {
+  background: var(--signal);
+  color: var(--signal-text);
+  box-shadow: inset 3px 0 0 var(--signal-text);
+}
+
+.dispute-row[aria-current="true"] .muted {
+  color: var(--signal-text);
+}
+
+.row-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.row-amount {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Touch screens fire :hover on tap and leave it stuck. */
 @media (hover: hover) and (pointer: fine) {
   .chip:hover,
-  .dispute-row:hover {
+  .dispute-row:not([aria-current="true"]):hover,
+  .rail-nav button:not([aria-pressed="true"]):hover {
+    background: var(--surface-2);
+  }
+
+  .button-secondary:not(:disabled, [aria-disabled="true"]):hover {
     background: var(--surface-2);
   }
 }
@@ -337,12 +543,6 @@ code,
 .button:not(:disabled, [aria-disabled="true"]):active {
   transform: scale(0.97);
 }
-
-/* Large rows: a smaller scale reads the same. */
-.dispute-row:active {
-  transform: scale(0.99);
-}
-
 
 /* Account and sign-in */
 
@@ -355,14 +555,14 @@ code,
 
 .account-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
 }
 
 .account-bar .button {
   margin-top: 0;
-  padding: 6px 12px;
 }
 
 .account-name {
@@ -388,17 +588,17 @@ code,
 
 .login-form label {
   margin-top: 8px;
-  font-weight: 550;
-  font-size: 0.9rem;
+  font-weight: 500;
+  font-size: 0.875rem;
 }
 
 .login-form input {
-  padding: 9px 11px;
+  min-height: 40px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--surface);
   color: var(--text);
-  font: inherit;
 }
 
 .login-form .button {
@@ -406,28 +606,11 @@ code,
   justify-self: start;
 }
 
-.dispute-row[aria-current="true"] {
-  border-color: var(--accent);
-  background: var(--surface-2);
-}
-
-.row-line {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.row-amount {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
 .badge {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 0.78rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -443,16 +626,35 @@ code,
   color: var(--muted);
 }
 
-/* Detail */
+.empty-inline .button {
+  display: flex;
+  margin: 10px auto 0;
+}
+
+/* The open case */
 
 .detail-panel {
-  padding: 20px;
+  padding: 0 20px 20px;
 }
 
 .detail {
   display: grid;
-  gap: 22px;
-  animation: fade-in 160ms var(--ease-out);
+  gap: 24px;
+  animation: fade-in 180ms var(--ease-out);
+}
+
+/* Stays in view while the case scrolls, with links to each part. */
+.case-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  gap: 10px;
+  margin: 0 -20px;
+  padding: 16px 20px 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--surface);
 }
 
 .detail-head {
@@ -463,13 +665,42 @@ code,
 }
 
 .detail-head h2 {
-  font-size: 1.25rem;
-  letter-spacing: -0.01em;
+  font-size: 1.5rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.case-nav {
+  display: flex;
+  gap: 4px 18px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  font-size: 0.8125rem;
+}
+
+.case-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.case-nav a:hover {
+  color: var(--text);
+  border-bottom-color: var(--border);
+}
+
+.detail [id] {
+  scroll-margin-top: 140px;
 }
 
 .eyebrow {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -477,61 +708,58 @@ code,
 
 .facts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px 24px;
   margin: 0;
-  padding: 14px 16px;
-  border-radius: 8px;
-  background: var(--surface-2);
 }
 
 .facts dt,
 .kv dt {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
 }
 
 .facts dd {
   margin: 2px 0 0;
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .facts .code {
   display: block;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 400;
   overflow-wrap: anywhere;
 }
 
 .amount-lg {
-  font-size: 1.4rem;
-  font-weight: 650;
+  font-size: 1.5rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .detail-section {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .detail-section h3 {
-  font-size: 0.95rem;
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 blockquote {
   margin: 0;
   padding: 10px 14px;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--surface-2);
   color: var(--text);
-  font-style: italic;
 }
 
 .kv {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 6px 20px;
+  gap: 6px 24px;
   margin: 0;
 }
 
@@ -540,6 +768,7 @@ blockquote {
   overflow-wrap: anywhere;
 }
 
+/* Evidence ledger: one ruled row per item, each status with its own mark as well as its label. */
 .findings {
   list-style: none;
   margin: 0;
@@ -548,26 +777,39 @@ blockquote {
   gap: 8px;
 }
 
+.ledger {
+  gap: 0;
+  border-top: 1px solid var(--rule);
+}
+
 .finding {
   display: grid;
   gap: 4px;
   padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 0.92rem;
+  border-radius: 6px;
+  font-size: 0.9375rem;
+}
+
+.ledger > .finding {
+  padding: 14px 0 14px 28px;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
 }
 
 .finding-conflict {
-  background: var(--warn-bg);
-  border-color: transparent;
-  color: var(--warn-text);
+  background: var(--gap-bg);
+  border-color: var(--gap-text);
+  color: var(--gap-text);
 }
 
 .finding-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 10px;
+  position: relative;
 }
 
 .finding-head .badge {
@@ -576,6 +818,33 @@ blockquote {
 
 .check-item {
   font-weight: 600;
+}
+
+/* Filled: available. Half: on record but unverified. Dashed and empty: not on record. */
+.mark {
+  position: absolute;
+  left: -28px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+}
+
+.mark-available {
+  color: var(--ok-text);
+  background: currentColor;
+}
+
+.mark-unverified {
+  color: var(--info-text);
+  background: linear-gradient(90deg, currentColor 50%, transparent 50%);
+}
+
+.mark-missing {
+  color: var(--muted);
+  border-style: dashed;
 }
 
 .key-tag {
@@ -588,7 +857,7 @@ blockquote {
 
 .records {
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
@@ -611,12 +880,12 @@ blockquote {
   min-height: 320px;
   padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-2);
+  border-radius: 6px;
+  background: var(--bg);
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: 0.85rem;
-  line-height: 1.55;
+  font-size: 0.8125rem;
+  line-height: 1.6;
   resize: vertical;
 }
 
@@ -631,13 +900,30 @@ blockquote {
   margin-top: 0;
 }
 
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  margin-top: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: transform 150ms var(--ease-out), background-color 150ms ease;
+}
+
 .button-secondary {
-  background: transparent;
-  color: var(--accent);
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
 }
 
 .button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -649,7 +935,7 @@ blockquote {
 .notice {
   margin: 8px 0 0;
   padding: 10px 14px;
-  border-radius: var(--radius);
+  border-radius: 6px;
   background: var(--neutral-bg);
   color: var(--neutral-text);
 }
@@ -658,7 +944,7 @@ blockquote {
   margin: 8px 0;
   padding: 10px 14px;
   border: 1px dashed var(--demo-border);
-  border-radius: var(--radius);
+  border-radius: 6px;
   background: var(--demo-bg);
   color: var(--demo-text);
 }
@@ -679,6 +965,10 @@ blockquote {
   white-space: nowrap;
 }
 
+details summary {
+  cursor: pointer;
+}
+
 /* Where each piece of buyer information comes from. The words carry the meaning; colour only helps. */
 .section-head {
   display: flex;
@@ -691,7 +981,7 @@ blockquote {
   display: inline-block;
   padding: 1px 8px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 4px;
   font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
@@ -723,12 +1013,13 @@ blockquote {
   gap: 2px;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
 }
 
 .stage[aria-current="step"] {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  border-color: var(--signal-text);
+  background: var(--signal);
+  color: var(--signal-text);
 }
 
 .stage-name {
@@ -738,11 +1029,15 @@ blockquote {
 .stage-state,
 .stage-date {
   color: var(--muted);
-  font-size: 0.82rem;
+  font-size: 0.8125rem;
+}
+
+.stage[aria-current="step"] .stage-state,
+.stage[aria-current="step"] .stage-date {
+  color: var(--signal-text);
 }
 
 .stage[aria-current="step"] .stage-state {
-  color: var(--accent);
   font-weight: 600;
 }
 
@@ -757,7 +1052,7 @@ blockquote {
   padding-top: 14px;
   border-top: 1px solid var(--border);
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
 }
 
 /* States */
@@ -773,7 +1068,8 @@ blockquote {
 }
 
 .state-panel h2 {
-  font-size: 1.1rem;
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 .state-error h2 {
@@ -784,24 +1080,35 @@ blockquote {
   overflow-wrap: anywhere;
 }
 
-.button {
-  margin-top: 6px;
-  padding: 8px 16px;
-  border: 1px solid var(--accent);
-  border-radius: 8px;
-  background: var(--accent);
-  color: var(--accent-text);
-  font-weight: 600;
-  transition: transform 120ms var(--ease-out);
-}
-
 .spinner {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border: 2px solid var(--border);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 800ms linear infinite;
+}
+
+/* Placeholder rows while the evidence is analysed, in the shape of the ledger that replaces them. */
+.skeleton {
+  display: grid;
+  gap: 12px;
+}
+
+.skeleton-line {
+  display: block;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  animation: pulse 1400ms ease-in-out infinite;
+}
+
+.skeleton-line:nth-child(even) {
+  width: 72%;
+}
+
+@keyframes pulse {
+  50% { opacity: 0.5; }
 }
 
 @keyframes spin {
@@ -811,6 +1118,12 @@ blockquote {
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -830,8 +1143,7 @@ blockquote {
 
   .button:active,
   .chip:active,
-  .segmented button:active,
-  .dispute-row:active {
+  .segmented button:active {
     transform: none;
   }
 }
@@ -842,12 +1154,6 @@ blockquote {
 }
 
 /* Insights */
-
-.view-switch {
-  margin-bottom: 16px;
-  width: max-content;
-  max-width: 100%;
-}
 
 .insights {
   display: grid;
@@ -860,7 +1166,8 @@ blockquote {
 
 .insight-panel {
   display: grid;
-  gap: 10px;
+  gap: 12px;
+  padding: 18px 20px;
 }
 
 .insight-panel .panel-head {
@@ -898,12 +1205,12 @@ blockquote {
 
 .bar-label {
   grid-column: 1 / -1;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
 }
 
 .bar-track {
   height: 8px;
-  border-radius: 4px;
+  border-radius: 2px;
   background: var(--surface-2);
   overflow: hidden;
 }
@@ -911,12 +1218,12 @@ blockquote {
 .bar-fill {
   display: block;
   height: 100%;
-  border-radius: 4px;
-  background: var(--accent);
+  border-radius: 2px;
+  background: var(--text);
 }
 
 .bar-value {
-  font-size: 0.85rem;
+  font-size: 0.8125rem;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -928,7 +1235,7 @@ blockquote {
 .id-list {
   display: block;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   overflow-wrap: anywhere;
 }
 
@@ -947,15 +1254,16 @@ blockquote {
   display: grid;
   gap: 8px;
   align-content: start;
-  padding: 14px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface-2);
+  border-radius: 6px;
+  background: var(--bg);
   min-width: 0;
 }
 
 .rec h3 {
-  font-size: 0.95rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
 }
 
 .rec-facts {
@@ -967,7 +1275,7 @@ blockquote {
 .rec-facts dt {
   margin-top: 6px;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -975,7 +1283,7 @@ blockquote {
 
 .rec-facts dd {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   overflow-wrap: anywhere;
 }
 
@@ -993,19 +1301,19 @@ blockquote {
 .evidence-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.88rem;
+  font-size: 0.875rem;
 }
 
 .evidence-table caption {
   text-align: left;
   padding-bottom: 8px;
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
 }
 
 .evidence-table th,
 .evidence-table td {
-  padding: 8px 10px 8px 0;
-  border-top: 1px solid var(--border);
+  padding: 10px 12px 10px 0;
+  border-top: 1px solid var(--rule);
   text-align: left;
   vertical-align: top;
   font-variant-numeric: tabular-nums;
@@ -1014,28 +1322,41 @@ blockquote {
 .evidence-table thead th {
   border-top: 0;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 600;
 }
 
 .evidence-table tbody th {
   font-weight: 600;
-  min-width: 130px;
+  min-width: 140px;
 }
 
-/* Available, unverified and missing as one bar, with a 2px gap between parts. The table cells carry the counts. */
+/* Available, unverified and missing as one bar, with a 2px gap between parts, in the ledger's three marks:
+   solid, hatched and dashed. The table cells carry the counts. */
 .stack {
   display: flex;
   gap: 2px;
-  height: 6px;
-  margin-top: 6px;
+  height: 8px;
+  margin-top: 8px;
 }
 
 .stack > span {
   display: block;
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
-.stack-available { background: var(--ok-text); }
-.stack-unverified { background: var(--info-text); }
-.stack-missing { background: var(--neutral-bg); outline: 1px dashed var(--neutral-text); outline-offset: -1px; }
+.stack-available { background: var(--text); }
+.stack-unverified { background: repeating-linear-gradient(135deg, var(--text) 0 2px, transparent 2px 4px); }
+.stack-missing { outline: 1px dashed var(--muted); outline-offset: -1px; }
+
+/* Fingers need bigger targets than a mouse. Last in the file so it wins over each control's own height. */
+@media (pointer: coarse) {
+  .chip,
+  .segmented button,
+  .rail-nav button,
+  .button,
+  .search,
+  .case-nav a {
+    min-height: 44px;
+  }
+}

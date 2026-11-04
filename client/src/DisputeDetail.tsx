@@ -4,20 +4,39 @@ import { REASON_LABELS, formatDate, formatMoney, humanize, labelFor } from "../.
 import type { Dispute } from "../../shared/types.ts";
 import { StatusBadge } from "./ui.tsx";
 
-const orNotRecorded = (value: ReactNode) => value || <span className="muted">Not recorded</span>;
+const CASE_PARTS = [
+  ["#case-facts", "Facts"],
+  ["#case-evidence", "Evidence"],
+  ["#case-contradictions", "Contradictions"],
+  ["#case-steps", "Next steps"],
+  ["#case-draft", "Draft"],
+  ["#case-ai", "AI draft"],
+] as const;
+
+const orNotRecorded =(value: ReactNode) => value || <span className="muted">Not recorded</span>;
 
 export function DisputeDetail({ dispute, canDraft = true }: { dispute: Dispute; canDraft?: boolean }) {
   return (
     <article className="detail">
-      <header className="detail-head">
-        <div>
-          <p className="eyebrow">{dispute.source === "demo" ? "Demo dispute" : "PayPal sandbox dispute"}</p>
-          <h2 className="mono">{dispute.dispute_id}</h2>
-        </div>
-        <StatusBadge status={dispute.status} />
-      </header>
+      <div className="case-head">
+        <header className="detail-head">
+          <div>
+            <p className="eyebrow">{dispute.source === "demo" ? "Demo dispute" : "PayPal sandbox dispute"}</p>
+            <h2 className="mono">{dispute.dispute_id}</h2>
+          </div>
+          <StatusBadge status={dispute.status} />
+        </header>
+        {/* In-page links, not tabs: every part stays rendered for screen readers and search. */}
+        <nav className="case-nav" aria-label="Parts of this dispute">
+          {CASE_PARTS.map(([href, label]) => (
+            <a key={href} href={href}>
+              {label}
+            </a>
+          ))}
+        </nav>
+      </div>
 
-      <dl className="facts">
+      <dl className="facts" id="case-facts">
         <div>
           <dt>Amount</dt>
           <dd className="amount-lg">{formatMoney(dispute.amount)}</dd>

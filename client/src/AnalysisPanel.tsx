@@ -34,7 +34,16 @@ export function AnalysisPanel({ dispute, canDraft = true }: { dispute: Dispute; 
     return () => controller.abort();
   }, [dispute, attempt]);
 
-  if (load.status === "loading") return <StatePanel title="Analyzing evidence…" busy />;
+  if (load.status === "loading") {
+    return (
+      <section className="detail-section skeleton" role="status" aria-busy="true">
+        <h3>Analyzing evidence…</h3>
+        {[0, 1, 2, 3].map((n) => (
+          <span key={n} className="skeleton-line" aria-hidden="true" />
+        ))}
+      </section>
+    );
+  }
   if (load.status === "error") {
     return (
       <StatePanel title="Couldn't analyze this dispute" tone="error">
@@ -53,16 +62,17 @@ export function AnalysisPanel({ dispute, canDraft = true }: { dispute: Dispute; 
 export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: Dispute; analysis: Analysis; canDraft?: boolean }) {
   return (
     <>
-      <section className="detail-section">
+      <section className="detail-section" id="case-evidence">
         <h3>Evidence analysis</h3>
         <p className="muted">
           Based only on the supplied records. "Available" means the record marks it available; DisputeDesk does not inspect
           the documents themselves.
         </p>
-        <ul className="findings">
+        <ul className="findings ledger">
           {analysis.evidence.map((e) => (
             <li key={e.id} className="finding">
               <div className="finding-head">
+                <span className={`mark mark-${e.status}`} aria-hidden="true" />
                 <span className="check-item">{e.label}</span>
                 {e.priority === "key" && <span className="key-tag">Key for this reason</span>}
                 <span className={`badge badge-${STATUS[e.status].tone}`}>{STATUS[e.status].label}</span>
@@ -75,7 +85,7 @@ export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: 
         </ul>
       </section>
 
-      <section className="detail-section">
+      <section className="detail-section" id="case-contradictions">
         <h3>Contradictions</h3>
         {analysis.contradictions.length === 0 ? (
           <p className="muted">No contradictions found between the supplied records.</p>
@@ -91,7 +101,7 @@ export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: 
         )}
       </section>
 
-      <section className="detail-section">
+      <section className="detail-section" id="case-steps">
         <h3>Next steps</h3>
         <ol className="steps">
           {analysis.next_steps.map((s) => (
@@ -102,6 +112,7 @@ export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: 
 
       <DraftEditor
         id={`draft-${dispute.dispute_id}`}
+        sectionId="case-draft"
         title="Response draft"
         note="Draft only. It requires merchant review, is never sent to PayPal, and edits are not saved when you leave this dispute."
         generated={analysis.draft.text}
@@ -110,7 +121,7 @@ export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: 
       {canDraft ? (
         <AiSection dispute={dispute} />
       ) : (
-        <section className="detail-section">
+        <section className="detail-section" id="case-ai">
           <h3>AI-assisted draft</h3>
           <p className="notice" role="note">
             Admin view is read-only. AI drafts are written by the merchant who owns the dispute.
@@ -165,8 +176,11 @@ export function AiSectionView({ dispute, ai, onGenerate }: { dispute: Dispute; a
     if (!ai.pending) onGenerate();
   };
   return (
-    <section className="detail-section">
-      <h3>AI-assisted draft</h3>
+    <section className="detail-section" id="case-ai">
+      <div className="section-head">
+        <h3>AI-assisted draft</h3>
+        <span className="tag tag-ai">Worded by Gemini · checked by DisputeDesk</span>
+      </div>
       <p className="muted">
         Optional. Gemini words the findings above using only the listed record values; DisputeDesk checks every line and
         removes anything it can't trace to those records. The evidence statuses above stay authoritative.
@@ -281,10 +295,11 @@ function AiFindings({ assist, wording, openUnused = false }: { assist: AiAssist;
         </ul>
       )}
 
-      <ul className="findings">
+      <ul className="findings ledger">
         {assist.explanations.map((e) => (
           <li key={e.evidence_id} className="finding">
             <div className="finding-head">
+              <span className={`mark mark-${e.status}`} aria-hidden="true" />
               <span className="check-item">{labelOf(e.evidence_id)}</span>
               <span className="key-tag">{e.source === "ai" ? wording : "Rules' wording"}</span>
               <span className={`badge badge-${STATUS[e.status].tone}`}>{STATUS[e.status].label}</span>
@@ -377,12 +392,14 @@ function factText(assist: AiAssist, id: string) {
 // Editable draft with a live count of markers left, Copy and Reset. Edits are local and never saved or sent.
 export function DraftEditor({
   id,
+  sectionId,
   title,
   note,
   generated,
   extraAction,
 }: {
   id: string;
+  sectionId?: string;
   title: string;
   note: string;
   generated: string;
@@ -411,7 +428,7 @@ export function DraftEditor({
   }
 
   return (
-    <section className="detail-section">
+    <section className="detail-section" id={sectionId}>
       <div className="draft-head">
         <h3>
           <label htmlFor={id}>{title}</label>

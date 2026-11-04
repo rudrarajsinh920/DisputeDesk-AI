@@ -9,6 +9,7 @@ import { Landing } from "./Landing.tsx";
 import { Login } from "./Login.tsx";
 import { fetchMe, signOut } from "./auth.ts";
 import {
+  REASON_LABELS,
   STATUS_FILTERS,
   STATUS_LABELS,
   countByStatus,
@@ -107,16 +108,32 @@ export default function App() {
   );
 }
 
-function Shell({ children, bar }: { children: ReactNode; bar?: ReactNode }) {
+const brand = (
+  <div className="brand">
+    <span className="brand-mark" aria-hidden="true">
+      DD
+    </span>
+    <span className="brand-name">DisputeDesk</span>
+  </div>
+);
+
+// Signed in: a rail (a top bar below 1024px) beside the page. Signed out or checking: a plain top bar.
+function Shell({ children, bar, rail }: { children: ReactNode; bar?: ReactNode; rail?: ReactNode }) {
+  if (rail) {
+    return (
+      <div className="shell">
+        <header className="rail">
+          {brand}
+          {rail}
+        </header>
+        <div className="app-main">{children}</div>
+      </div>
+    );
+  }
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            DD
-          </span>
-          <span className="brand-name">DisputeDesk</span>
-        </div>
+        {brand}
         {bar}
       </header>
       {children}
@@ -161,30 +178,45 @@ export function Dashboard({ account, onSignOut }: { account: AccountInfo; onSign
     return () => controller.abort();
   }, [source, attempt]);
 
-  const bar = (
-    <AccountBar account={account} onSignOut={onSignOut}>
-      {sources.length > 1 && view === "disputes" && (
-        <div className="segmented" role="group" aria-label="Data source">
-          {sources.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              aria-pressed={source === s.id}
-              onClick={() => {
-                setSource(s.id);
-                setSelectedId(null);
-              }}
-            >
-              {s.label}
+  const rail = (
+    <>
+      <nav className="rail-group" aria-label="Views">
+        <div className="rail-nav">
+          {(["disputes", "insights"] as const).map((v) => (
+            <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
+              {v === "disputes" ? "Disputes" : "Insights"}
             </button>
           ))}
         </div>
+      </nav>
+      {sources.length > 1 && view === "disputes" && (
+        <div className="rail-group">
+          <span className="rail-label" aria-hidden="true">
+            Data source
+          </span>
+          <div className="segmented" role="group" aria-label="Data source">
+            {sources.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                aria-pressed={source === s.id}
+                onClick={() => {
+                  setSource(s.id);
+                  setSelectedId(null);
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
       )}
-    </AccountBar>
+      <AccountBar account={account} onSignOut={onSignOut} />
+    </>
   );
 
   return (
-    <Shell bar={bar}>
+    <Shell rail={rail}>
       {view === "insights" ? (
         <div className="banner banner-demo" role="note">
           <strong>DEMO DATA — NOT A REAL PAYPAL DISPUTE</strong>
@@ -209,13 +241,9 @@ export function Dashboard({ account, onSignOut }: { account: AccountInfo; onSign
       )}
 
       <main className="main">
-        <div className="segmented view-switch" role="group" aria-label="View">
-          {(["disputes", "insights"] as const).map((v) => (
-            <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
-              {v === "disputes" ? "Disputes" : "Insights"}
-            </button>
-          ))}
-        </div>
+        <header className="page-head">
+          <h1>{view === "disputes" ? "Disputes" : "Insights"}</h1>
+        </header>
         {view === "insights" ? (
           <Insights canExplain={account.role === "merchant"} />
         ) : (
@@ -296,6 +324,9 @@ export function DisputesView({
   );
 }
 
+// Widths where the list and the case stack (see .workspace in styles.css).
+const ONE_COLUMN = "(max-width: 899px), (min-width: 1024px) and (max-width: 1199px)";
+
 export function Workspace({
   disputes,
   filter,
@@ -311,16 +342,21 @@ export function Workspace({
   onSelect: (id: string) => void;
   canDraft?: boolean;
 }) {
+  const [query, setQuery] = useState("");
   const summary = summarize(disputes);
   const counts = countByStatus(disputes);
-  const visible = filterByStatus(disputes, filter);
+  // Search only narrows what is already loaded: dispute ID, reason label or reason code.
+  const q = query.trim().toLowerCase();
+  const visible = filterByStatus(disputes, filter).filter(
+    (d) => !q || [d.dispute_id, d.reason, labelFor(REASON_LABELS, d.reason)].some((s) => s.toLowerCase().includes(q)),
+  );
   const selected = visible.find((d) => d.dispute_id === selectedId) ?? visible[0];
   const detail = useRef<HTMLElement>(null);
 
   function select(id: string) {
     onSelect(id);
     // On one-column layouts the details sit below the list; take the merchant there.
-    if (window.matchMedia("(max-width: 899px)").matches) detail.current?.focus();
+    if (window.matchMedia(ONE_COLUMN).matches) detail.current?.focus();
   }
 
   return (
@@ -328,14 +364,23 @@ export function Workspace({
       <section className="summary" aria-label="Summary">
         <Stat label="Total disputes" value={summary.total} />
         <Stat label="Unresolved" value={summary.unresolved} />
-        <Stat label="Amount in dispute" value={summary.amounts.map(formatMoney).join(" · ") || "—"} />      </section>
+        <Stat label="Amount in dispute" value={summary.amounts.map(formatMoney).join(" · ") || "—"} />
+      </section>
 
       <div className="workspace">
-        <section className="panel" aria-labelledby="list-heading">
+        <section className="panel list-panel" aria-labelledby="list-heading">
           <div className="panel-head">
-            <h2 id="list-heading">Disputes</h2>
+            <h2 id="list-heading">Dispute list</h2>
             <span className="muted">{visible.length} shown</span>
           </div>
+          <input
+            type="search"
+            className="search"
+            aria-label="Search disputes by ID or reason"
+            placeholder="Search ID or reason"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
           <div className="filters" role="group" aria-label="Filter by status">
             {STATUS_FILTERS.map((f) => (
               <button key={f} type="button" className="chip" aria-pressed={filter === f} onClick={() => onFilter(f)}>
@@ -346,6 +391,13 @@ export function Workspace({
           </div>
           {visible.length > 0 ? (
             <DisputeList disputes={visible} selectedId={selected?.dispute_id} onSelect={select} />
+          ) : q ? (
+            <div className="empty-inline">
+              <p>No disputes match “{query.trim()}”.</p>
+              <button type="button" className="button button-secondary" onClick={() => setQuery("")}>
+                Clear search
+              </button>
+            </div>
           ) : (
             <p className="empty-inline">No disputes with this status.</p>
           )}
@@ -381,7 +433,7 @@ export function BuyerHome({ account, onSignOut }: { account: AccountInfo; onSign
   }, [attempt]);
 
   return (
-    <Shell bar={<AccountBar account={account} onSignOut={onSignOut} />}>
+    <Shell rail={<AccountBar account={account} onSignOut={onSignOut} />}>
       <div className="banner banner-demo" role="note">
         <strong>DEMO DATA — NOT A REAL PAYPAL DISPUTE</strong>
         <span>Synthetic disputes on this demo buyer account. Nothing here is connected to PayPal.</span>
