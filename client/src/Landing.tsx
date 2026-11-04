@@ -150,13 +150,16 @@ function BuyerBody() {
 function Pane({ label, face, turnRef, className }: { label: string; face: Side; turnRef: RefObject<HTMLDivElement | null>; className?: string }) {
   return (
     <figure data-ui aria-label={label} className={cn("pane-stage", className)}>
-      <div ref={turnRef} className="pane-turn">
-        <Face side="merchant" shown={face === "merchant"}>
-          <MerchantBody />
-        </Face>
-        <Face side="buyer" shown={face === "buyer"}>
-          <BuyerBody />
-        </Face>
+      {/* The tilt layer leans toward the pointer; the turn layer inside it flips between the two sides. */}
+      <div className="pane-tilt">
+        <div ref={turnRef} className="pane-turn">
+          <Face side="merchant" shown={face === "merchant"}>
+            <MerchantBody />
+          </Face>
+          <Face side="buyer" shown={face === "buyer"}>
+            <BuyerBody />
+          </Face>
+        </div>
       </div>
     </figure>
   );
@@ -186,10 +189,19 @@ function SignIn({ onSignIn, className, children = "Sign in", variant }: { onSign
   );
 }
 
-function Header({ onSignIn }: { onSignIn: () => void }) {
+// Sticky glass bar: it slides away while you read down and returns when you scroll up, marks the section you are in,
+// and a hairline along its foot shows how far down the page you are.
+function Header({ onSignIn, active }: { onSignIn: () => void; active: string }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
   return (
-    <header className="mx-auto flex w-full max-w-[90rem] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-4 md:px-8 lg:px-12">
+    <div className="l-header" data-open={open || undefined}>
+    <header className="mx-auto flex w-full max-w-[90rem] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3 md:px-8 lg:px-12">
       <a href="#top" className="flex min-h-11 items-center gap-2.5 text-base font-semibold tracking-tight" translate="no">
         <span aria-hidden="true" className="logo-mark">
           DD
@@ -211,11 +223,16 @@ function Header({ onSignIn }: { onSignIn: () => void }) {
           {open ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
         </Button>
       </div>
-      <nav id="l-nav" aria-label="Sections" className={cn("w-full md:flex md:w-auto", open ? "block" : "hidden")}>
+      <nav id="l-nav" aria-label="Sections" className={cn("l-menu w-full md:flex md:w-auto", open ? "block" : "hidden")}>
         <ul className="flex flex-col gap-1 md:flex-row md:gap-7">
           {LINKS.map((l) => (
             <li key={l.href}>
-              <a href={l.href} onClick={() => setOpen(false)} className="nav-link block py-2.5 text-sm md:py-1">
+              <a
+                href={l.href}
+                onClick={() => setOpen(false)}
+                aria-current={active === l.href.slice(1) ? "location" : undefined}
+                className="nav-link block py-2.5 text-sm md:py-1"
+              >
                 {l.label}
               </a>
             </li>
@@ -223,6 +240,8 @@ function Header({ onSignIn }: { onSignIn: () => void }) {
         </ul>
       </nav>
     </header>
+    <span aria-hidden="true" className="l-progress" />
+    </div>
   );
 }
 
@@ -246,7 +265,7 @@ function Hero({ onSignIn, face, onFace, turnRef }: { onSignIn: () => void; face:
           <h1 id="hero-h" className="motion-safe:animate-rise text-[2.75rem] leading-[1] font-semibold tracking-[-0.04em] sm:text-6xl xl:text-[4.25rem]">
             Every dispute, checked against the record.
           </h1>
-          <div className="mt-6">
+          <div className="mt-6 motion-safe:animate-rise motion-safe:[animation-delay:120ms]">
             <p className="max-w-md text-lg">
               DisputeDesk reviews PayPal disputes for merchants and buyers. Both sides read the same facts, gaps stay marked as gaps, and a person makes every decision.
             </p>
@@ -275,7 +294,7 @@ function Hero({ onSignIn, face, onFace, turnRef }: { onSignIn: () => void; face:
 function SectionHead({ id, title, lead }: { id: string; title: string; lead: string }) {
   return (
     <div className="grid gap-4 md:grid-cols-12 md:gap-8">
-      <h2 id={id} className="text-[2rem] leading-[1.06] font-semibold tracking-[-0.035em] md:col-span-7 md:text-5xl lg:text-[3.5rem]">
+      <h2 id={id} data-reveal className="text-[2rem] leading-[1.06] font-semibold tracking-[-0.035em] md:col-span-7 md:text-5xl lg:text-[3.5rem]">
         {title}
       </h2>
       <p className="max-w-xl text-lg text-muted-foreground md:col-span-5 md:self-end">{lead}</p>
@@ -477,7 +496,7 @@ function Roles() {
             ))}
           </TabsList>
           {ROLES.map((r) => (
-            <TabsContent key={r.id} value={r.id} className="grid gap-10 md:grid-cols-12 md:gap-8">
+            <TabsContent key={r.id} value={r.id} className="role-panel grid gap-10 md:grid-cols-12 md:gap-8">
               <div className="md:col-span-5">
                 <h3 className="text-2xl font-semibold tracking-tight md:text-3xl">{r.title}</h3>
                 <p className="mt-3 text-muted-foreground">{r.body}</p>
@@ -512,7 +531,7 @@ function Safeguards() {
   return (
     <section id="safeguards" aria-labelledby="safeguards-h" className="mx-auto grid max-w-[90rem] gap-14 px-4 py-24 md:px-8 md:py-36 lg:grid-cols-12 lg:gap-12 lg:px-12">
       <div className="lg:col-span-5">
-        <h2 id="safeguards-h" className="text-[2rem] leading-[1.06] font-semibold tracking-[-0.035em] md:text-5xl lg:text-[3.5rem]">
+        <h2 id="safeguards-h" data-reveal className="text-[2rem] leading-[1.06] font-semibold tracking-[-0.035em] md:text-5xl lg:text-[3.5rem]">
           What DisputeDesk will and won’t do.
         </h2>
         <p className="mt-5 max-w-md text-lg text-muted-foreground">These rules are built into the code, not just written on this page. The record shows each one the same way.</p>
@@ -547,7 +566,7 @@ const FAQ: { q: string; a: string }[] = [
 function Questions() {
   return (
     <section id="faq" aria-labelledby="faq-h" className="mx-auto grid max-w-[90rem] gap-10 px-4 pb-24 md:grid-cols-12 md:gap-8 md:px-8 md:pb-36 lg:px-12">
-      <h2 id="faq-h" className="text-[2rem] leading-[1.06] font-semibold tracking-[-0.035em] md:col-span-4 md:text-5xl">
+      <h2 id="faq-h" data-reveal className="text-[2rem] leading-[1.06] font-semibold tracking-[-0.035em] md:col-span-4 md:text-5xl">
         Questions
       </h2>
       <Accordion type="single" collapsible className="border-t md:col-span-8">
@@ -567,7 +586,7 @@ function Close({ onSignIn }: { onSignIn: () => void }) {
     <section aria-labelledby="close-h" className="px-2 md:px-4">
       <div className="close glass mx-auto flex max-w-[90rem] flex-col items-start gap-8 px-6 py-16 md:flex-row md:items-end md:justify-between md:px-12 md:py-24">
         <div>
-          <h2 id="close-h" className="etch max-w-3xl text-4xl leading-[1.02] font-semibold tracking-[-0.04em] md:text-6xl">
+          <h2 id="close-h" data-reveal className="etch max-w-3xl text-4xl leading-[1.02] font-semibold tracking-[-0.04em] md:text-6xl">
             See a dispute checked against its records.
           </h2>
           <p className="mt-4 max-w-xl text-lg text-muted-foreground">Sign in with a synthetic demo account to read the merchant’s side, the buyer’s side and the admin view.</p>
@@ -610,29 +629,103 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
   const howTurn = useRef<HTMLDivElement>(null);
   const [heroFace, setHeroFace] = useState<Side>("merchant");
   const [step, setStep] = useState(0);
+  const [active, setActive] = useState("");
 
   const { contextSafe } = useGSAP(
     () => {
+      const scope = root.current!;
+
+      // Navigation runs with or without motion: the bar marks the section in view and the hairline tracks the scroll.
+      LINKS.forEach(({ href }) => {
+        const id = href.slice(1);
+        ScrollTrigger.create({
+          trigger: href,
+          start: "top 40%",
+          end: "bottom 40%",
+          onToggle: (self) => setActive((prev) => (self.isActive ? id : prev === id ? "" : prev)),
+        });
+      });
+      gsap.fromTo(".l-progress", { scaleX: 0 }, { scaleX: 1, ease: "none", scrollTrigger: { start: 0, end: "max", scrub: true } });
+
       const mm = gsap.matchMedia();
-      mm.add({ motion: "(prefers-reduced-motion: no-preference)", wide: "(min-width: 1024px)" }, (ctx) => {
-        const { motion, wide } = ctx.conditions as { motion: boolean; wide: boolean };
+      mm.add(
+        {
+          motion: "(prefers-reduced-motion: no-preference)",
+          wide: "(min-width: 1024px)",
+          tilt: "(prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) and (min-width: 1280px)",
+        },
+        (ctx) => {
+        const { motion, wide, tilt } = ctx.conditions as { motion: boolean; wide: boolean; tilt: boolean };
         const hero = heroTurn.current;
         const how = howTurn.current;
         const section = document.getElementById("how");
-        if (!hero || !how || !section) return;
+        const bar = scope.querySelector<HTMLElement>(".l-header");
+        if (!hero || !how || !section || !bar) return;
+        const cleanups: (() => void)[] = [];
 
-        // Arrival: the pane clears out of the smoke, then its lines are etched in, then the crack runs.
         if (motion) {
+          // Arrival: the pane clears out of the smoke, then its lines are etched in, then the crack runs.
           gsap
             .timeline({ delay: 0.15 })
-            // Fade and blur go on the frame: a filter on the turning layer would flatten its 3D faces mid-turn.
-            .from(hero.parentElement, { opacity: 0, filter: "blur(18px)", duration: 1.2, ease: "expo.out", clearProps: "opacity,filter" })
+            // Fade and blur go on the figure: a filter on a 3D layer would flatten its faces mid-turn.
+            .from(hero.closest("figure"), { opacity: 0, filter: "blur(18px)", duration: 1.2, ease: "expo.out", clearProps: "opacity,filter" })
             .from(hero, { y: 36, rotationX: 12, duration: 1.2, ease: "expo.out" }, 0)
             .from(hero.querySelectorAll('[data-side="merchant"] [data-etch]'), { clipPath: "inset(0 100% 0 0)", duration: 0.7, stagger: 0.06, ease: "expo.out", clearProps: "clipPath" }, 0.35)
             .from(hero.querySelector('[data-side="merchant"] .crack path'), { strokeDashoffset: 1, duration: 0.6, ease: "power2.out" }, 0.95);
+
+          // The bar slides away while reading down and comes back on the way up.
+          ScrollTrigger.create({
+            start: 0,
+            end: "max",
+            onUpdate: (self) => {
+              if (self.direction === 1 && self.scroll() > 160) bar.dataset.away = "";
+              else delete bar.dataset.away;
+            },
+          });
+          cleanups.push(() => delete bar.dataset.away);
+
+          // Section headings are etched in from the left, once, as they arrive.
+          gsap.utils.toArray<HTMLElement>("h2[data-reveal]", scope).forEach((h) =>
+            gsap.fromTo(
+              h,
+              { clipPath: "inset(-12% 100% -12% 0)" },
+              { clipPath: "inset(-12% 0% -12% 0)", duration: 1.1, ease: "expo.out", clearProps: "clipPath", scrollTrigger: { trigger: h, start: "top 88%", once: true } },
+            ),
+          );
+          // Safeguard rules and questions settle in as a group, not one by one.
+          const groups = ".rules li, #faq [data-slot=accordion-item]";
+          gsap.set(groups, { opacity: 0, y: 18 });
+          ScrollTrigger.batch(groups, {
+            start: "top 92%",
+            once: true,
+            onEnter: (els) => gsap.to(els, { opacity: 1, y: 0, duration: 0.8, stagger: 0.07, ease: "expo.out", clearProps: "opacity,transform" }),
+          });
         }
 
-        if (!wide) return;
+        if (tilt) {
+          // The resting hero pane leans a few degrees toward the pointer, with some weight to it.
+          const layer = hero.parentElement!;
+          const stage = layer.parentElement!;
+          const rx = gsap.quickTo(layer, "rotationX", { duration: 0.7, ease: "power3.out" });
+          const ry = gsap.quickTo(layer, "rotationY", { duration: 0.7, ease: "power3.out" });
+          const move = (e: PointerEvent) => {
+            const r = stage.getBoundingClientRect();
+            rx(((e.clientY - r.top) / r.height - 0.5) * -5);
+            ry(((e.clientX - r.left) / r.width - 0.5) * 7);
+          };
+          const leave = () => {
+            rx(0);
+            ry(0);
+          };
+          stage.addEventListener("pointermove", move);
+          stage.addEventListener("pointerleave", leave);
+          cleanups.push(() => {
+            stage.removeEventListener("pointermove", move);
+            stage.removeEventListener("pointerleave", leave);
+          });
+        }
+
+        if (!wide) return () => cleanups.forEach((fn) => fn());
         section.dataset.crank = "on";
         gsap.utils.toArray<HTMLElement>("[data-step]", section).forEach((el, i) =>
           ScrollTrigger.create({
@@ -661,10 +754,12 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
         }
 
         return () => {
+          cleanups.forEach((fn) => fn());
           delete section.dataset.crank;
           setStep(0);
         };
-      });
+        },
+      );
     },
     { scope: root },
   );
@@ -679,7 +774,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
       <a href="#main" className="sr-only rounded-md bg-primary px-4 py-2 text-primary-foreground focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-10">
         Skip to content
       </a>
-      <Header onSignIn={onSignIn} />
+      <Header onSignIn={onSignIn} active={active} />
       <main id="main">
         <Hero onSignIn={onSignIn} face={heroFace} onFace={turnHero} turnRef={heroTurn} />
         <HowItWorks step={step} turnRef={howTurn} />

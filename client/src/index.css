@@ -217,7 +217,7 @@
     outline-offset: 2px;
   }
   .landing [id] {
-    scroll-margin-top: 24px;
+    scroll-margin-top: 88px;
   }
 }
 
@@ -251,12 +251,68 @@
   font-weight: 700;
   box-shadow: inset 0 0 0 1px var(--border);
 }
+/* Section links glide instead of jumping. */
+@media (prefers-reduced-motion: no-preference) {
+  html:has(.landing) {
+    scroll-behavior: smooth;
+  }
+}
+
+/* The bar: a strip of the same mist, frosted, that rides above the page and steps aside while you read down. */
+.l-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: color-mix(in oklab, var(--background) 78%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  transition: transform 420ms var(--ease-out-strong);
+}
+.l-header[data-away]:not([data-open]):not(:focus-within) {
+  transform: translateY(-100%);
+}
+/* How far down the page you are, drawn in both sides' colours like the closing pane's edge. */
+.l-progress {
+  position: absolute;
+  inset: auto 0 -1px;
+  height: 2px;
+  transform: scaleX(0);
+  transform-origin: left;
+  background: linear-gradient(90deg, var(--merchant), var(--buyer));
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .l-menu.block {
+    animation: rise 260ms var(--ease-out-strong) both;
+  }
+}
+
 .nav-link {
+  position: relative;
   color: var(--muted-foreground);
   transition: color 150ms ease;
 }
-.nav-link:hover {
+.nav-link:hover,
+.nav-link[aria-current] {
   color: var(--foreground);
+}
+/* The section in view gets an etched underline that draws in from the left. */
+@media (min-width: 768px) {
+  .l-menu .nav-link::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 -6px;
+    height: 2px;
+    border-radius: 2px;
+    background: currentColor;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 320ms var(--ease-out-strong);
+  }
+  .l-menu .nav-link[aria-current]::after {
+    transform: scaleX(1);
+  }
 }
 
 .press {
@@ -348,6 +404,7 @@
 .pane-stage {
   perspective: 2200px;
 }
+.pane-tilt,
 .pane-turn {
   display: grid;
   transform-style: preserve-3d;
@@ -593,6 +650,15 @@
 .role-tab[data-side][data-state="active"] {
   background: var(--side);
   color: var(--ink);
+}
+.role-tab {
+  transition: background-color 200ms ease, color 200ms ease;
+}
+/* A new view rises in, so switching tabs reads as a change rather than a swap. */
+@media (prefers-reduced-motion: no-preference) {
+  .role-panel[data-state="active"] {
+    animation: rise 420ms var(--ease-out-strong) both;
+  }
 }
 
 .rules {
