@@ -22,7 +22,7 @@ import { AI_WORDING_OFF, FAILED_CHECKS, buyerGuidance, rulesExplanation, toBuyer
 import type { SandboxLoad } from "./App.tsx";
 import { DisputeDetail } from "./DisputeDetail.tsx";
 import { Landing } from "./Landing.tsx";
-import { Login } from "./Login.tsx";
+import { Login, emailError, passwordError } from "./Login.tsx";
 import { SIGNED_OUT_EVENT, serverError } from "./sandbox.ts";
 import accountsFile from "../../demo-accounts.json" with { type: "json" };
 import extraDemos from "../../demo-disputes.json" with { type: "json" };
@@ -137,6 +137,15 @@ test("the sign-in form is labeled, says the accounts are synthetic, and holds no
   assert.match(text(out), /Never enter a real password here/);
   assert.match(out, /role="status">Your session has ended/);
   assert.doesNotMatch(out, /value=|demo-(admin|merchant|buyer)-/, "no prefilled or listed passwords");
+});
+
+test("sign-in field checks give a message per field, and none for a valid entry", () => {
+  assert.equal(emailError(""), "Enter your email address.");
+  assert.match(emailError("merchant-a") ?? "", /like name@example.com/);
+  assert.equal(emailError(" merchant-a@demo.disputedesk.test "), undefined);
+  assert.equal(passwordError(""), "Enter your password.");
+  assert.equal(passwordError("x"), undefined);
+  assert.match(html(createElement(Login, { notice: null, onSignedIn: noop })), /<form class="login-form" noValidate="">/i);
 });
 
 // ---- Landing page (signed out) ----

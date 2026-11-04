@@ -83,9 +83,13 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  background: var(--bg);
+}
+
 body {
   margin: 0;
-  background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
   font-size: 15px;
@@ -536,6 +540,11 @@ code,
   .button-secondary:not(:disabled, [aria-disabled="true"]):hover {
     background: var(--surface-2);
   }
+
+  .button:not(.button-secondary, :disabled, [aria-disabled="true"]):hover {
+    background: color-mix(in oklab, var(--accent) 84%, var(--bg));
+    border-color: color-mix(in oklab, var(--accent) 84%, var(--bg));
+  }
 }
 
 /* Press feedback; disabled and busy buttons stay still. */
@@ -602,9 +611,34 @@ code,
   color: var(--text);
 }
 
+.login-form input::placeholder {
+  color: var(--muted);
+}
+
+.login-form input[aria-invalid="true"] {
+  border-color: var(--error-text);
+}
+
+.field-error {
+  color: var(--error-text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
 .login-form .button {
   margin-top: 12px;
   justify-self: start;
+}
+
+@media (max-width: 639px) {
+  .login {
+    margin: 16px auto;
+    padding: 20px 16px;
+  }
+
+  .login-form .button {
+    justify-self: stretch;
+  }
 }
 
 .badge {
@@ -914,7 +948,8 @@ blockquote {
   color: var(--accent-text);
   font-weight: 600;
   font-size: 0.875rem;
-  transition: transform 150ms var(--ease-out), background-color 150ms ease;
+  gap: 8px;
+  transition: transform 150ms var(--ease-out), background-color 150ms ease, border-color 150ms ease;
 }
 
 .button-secondary {
@@ -928,9 +963,21 @@ blockquote {
   cursor: not-allowed;
 }
 
+/* Busy: the button stays focusable (aria-disabled), ignores clicks, and shows a small spinner. */
 .button[aria-disabled="true"] {
-  opacity: 0.7;
+  opacity: 0.8;
   cursor: progress;
+}
+
+.button[aria-disabled="true"]::before {
+  content: "";
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
 }
 
 .notice {
@@ -1671,7 +1718,8 @@ details summary {
   }
 
   /* A stopped spinner looks frozen; keep it turning, slower. */
-  .spinner {
+  .spinner,
+  .button[aria-disabled="true"]::before {
     animation-duration: 1600ms !important;
     animation-iteration-count: infinite !important;
   }
