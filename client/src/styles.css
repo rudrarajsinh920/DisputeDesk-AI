@@ -404,7 +404,7 @@ code,
 }
 
 /* Two columns only where the case still gets enough width. From 1024px the rail takes 232px, so 1024–1199px
-   stacks again. Keep in step with ONE_COLUMN in App.tsx. */
+   stacks again. Keep in step with ONE_COLUMN in ui.tsx. */
 @media (min-width: 900px) and (max-width: 1023px), (min-width: 1200px) {
   .workspace {
     grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
@@ -1053,6 +1053,214 @@ details summary {
   border-top: 1px solid var(--border);
   color: var(--muted);
   font-size: 0.8125rem;
+}
+
+/* Buyer view. Same marks as the merchant ledger: filled = from the record, ring = general guidance,
+   dashed = not on record. Scoped to .buyer so merchant Insights tags and stages stay as they are. */
+
+.buyer-panel {
+  padding-top: 20px;
+  container-type: inline-size;
+}
+
+.buyer .row-stage {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.buyer .dispute-row[aria-current="true"] .row-stage {
+  color: var(--signal-text);
+}
+
+.buyer .tag-record::before,
+.buyer .tag-guidance::before,
+.buyer .tag-missing::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  vertical-align: 0;
+}
+
+.buyer .tag-record::before {
+  background: currentColor;
+}
+
+.buyer .tag-missing::before {
+  border-style: dashed;
+}
+
+.source-key {
+  list-style: none;
+  margin: 0;
+  padding: 10px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.buyer .detail-section + .detail-section {
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+
+.buyer .detail-section p,
+.buyer .detail-section li {
+  max-width: 68ch;
+}
+
+.buyer .lead p {
+  font-size: 1.125rem;
+  line-height: 1.5;
+}
+
+/* Usual stages: a track. Earlier filled, current lime, later outlined; all outlined when the status is unknown. */
+.buyer .stages {
+  gap: 0;
+}
+
+.buyer .stage,
+.buyer .stage[aria-current="step"] {
+  position: relative;
+  padding: 0 0 20px 30px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+}
+
+.buyer .stage::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 2px;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.buyer .stage::after {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 22px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--border);
+}
+
+.buyer .stage:last-child {
+  padding-bottom: 0;
+}
+
+.buyer .stage:last-child::after {
+  display: none;
+}
+
+.buyer .stage:has(~ .stage[aria-current="step"])::before,
+.buyer .stage:has(~ .stage[aria-current="step"])::after {
+  border-color: var(--text);
+  background: var(--text);
+}
+
+.buyer .stage[aria-current="step"]::before {
+  border-color: var(--signal-text);
+  background: var(--signal);
+  animation: stage-in 200ms var(--ease-out);
+}
+
+.buyer .stage[aria-current="step"] .stage-state {
+  justify-self: start;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--signal);
+  color: var(--signal-text);
+}
+
+.buyer .stage[aria-current="step"] .stage-date {
+  color: var(--muted);
+}
+
+@keyframes stage-in {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+
+@container (min-width: 560px) {
+  .buyer .stages {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .buyer .stage,
+  .buyer .stage[aria-current="step"] {
+    padding: 26px 12px 0 0;
+  }
+
+  .buyer .stage::before {
+    top: 0;
+  }
+
+  .buyer .stage::after {
+    left: 22px;
+    right: 6px;
+    top: 7px;
+    bottom: auto;
+    width: auto;
+    height: 2px;
+  }
+}
+
+.buyer .steps.not-recorded {
+  list-style: none;
+  padding-left: 0;
+}
+
+.buyer .not-recorded li {
+  position: relative;
+  padding-left: 22px;
+}
+
+.buyer .not-recorded li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.45em;
+  width: 10px;
+  height: 10px;
+  border: 1.5px dashed var(--muted);
+  border-radius: 50%;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 12px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Two columns: the list is already beside the dispute. Keep in step with ONE_COLUMN in ui.tsx. */
+@media (min-width: 900px) and (max-width: 1023px), (min-width: 1200px) {
+  .back-link {
+    display: none;
+  }
+}
+
+#buyer-heading {
+  scroll-margin-top: 16px;
 }
 
 /* States */

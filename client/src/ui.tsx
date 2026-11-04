@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 import { STATUS_LABELS, labelFor, statusTone } from "../../shared/disputes.ts";
 
+// Widths where the list and the open dispute stack (see .workspace in styles.css).
+export const ONE_COLUMN = "(max-width: 899px), (min-width: 1024px) and (max-width: 1199px)";
+
 export function StatusBadge({ status }: { status: string }) {
   return <span className={`badge badge-${statusTone(status)}`}>{labelFor(STATUS_LABELS, status)}</span>;
 }

@@ -20,7 +20,7 @@ import {
 } from "../../shared/disputes.ts";
 import { SIGNED_OUT_EVENT, fetchBuyerDisputes, fetchDemoDisputes, fetchSandboxDisputes } from "./sandbox.ts";
 import type { AccountInfo, Dispute, Role, Source } from "../../shared/types.ts";
-import { StatePanel } from "./ui.tsx";
+import { ONE_COLUMN, StatePanel } from "./ui.tsx";
 
 export type SandboxLoad =
   | { status: "loading" }
@@ -324,9 +324,6 @@ export function DisputesView({
   );
 }
 
-// Widths where the list and the case stack (see .workspace in styles.css).
-const ONE_COLUMN = "(max-width: 899px), (min-width: 1024px) and (max-width: 1199px)";
-
 export function Workspace({
   disputes,
   filter,
@@ -439,6 +436,9 @@ export function BuyerHome({ account, onSignOut }: { account: AccountInfo; onSign
         <span>Synthetic disputes on this demo buyer account. Nothing here is connected to PayPal.</span>
       </div>
       <main className="main">
+        <header className="page-head">
+          <h1>Disputes</h1>
+        </header>
         <BuyerDisputes load={load} onRetry={() => setAttempt((n) => n + 1)} />
       </main>
     </Shell>

@@ -1,10 +1,9 @@
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { DisputeList } from "./DisputeList.tsx";
 import { fetchBuyerExplanation } from "./sandbox.ts";
 import { REASON_LABELS, formatDate, formatMoney, labelFor } from "../../shared/disputes.ts";
 import type { BuyerDispute, BuyerExplanation, BuyerStage } from "../../shared/types.ts";
-import { StatePanel, StatusBadge } from "./ui.tsx";
+import { ONE_COLUMN, StatePanel, StatusBadge } from "./ui.tsx";
 
 // Buyer Dispute Clarity. Every block says where it comes from: the record, general guidance, or checked AI wording.
 
@@ -54,28 +53,62 @@ export function BuyerDisputes({ load, onRetry }: { load: BuyerLoad; onRetry: () 
   function select(id: string) {
     setSelectedId(id);
     // On one-column layouts the details sit below the list; take the buyer there.
-    if (window.matchMedia("(max-width: 899px)").matches) detail.current?.focus();
+    if (window.matchMedia(ONE_COLUMN).matches) detail.current?.focus();
   }
 
   return (
-    <div className="workspace">
-      <section className="panel" aria-labelledby="buyer-heading">
+    <div className="workspace buyer">
+      <section className="panel list-panel" aria-labelledby="buyer-heading">
         <div className="panel-head">
           <h2 id="buyer-heading">Your disputes</h2>
           <span className="muted">{load.disputes.length} on this account</span>
         </div>
-        <DisputeList disputes={load.disputes} selectedId={selected.dispute_id} onSelect={select} />
+        <BuyerList disputes={load.disputes} selectedId={selected.dispute_id} onSelect={select} />
       </section>
-      <section className="panel detail-panel" aria-label="Dispute details" ref={detail} tabIndex={-1}>
+      <section className="panel detail-panel buyer-panel" aria-label="Dispute details" ref={detail} tabIndex={-1}>
         <BuyerDetail key={selected.dispute_id} dispute={selected} />
+        <a className="back-link" href="#buyer-heading">
+          Back to your disputes
+        </a>
       </section>
     </div>
   );
 }
 
-function Section({ title, origin, children }: { title: string; origin: Origin; children: ReactNode }) {
+// The buyer's own rows: status and the usual stage it sits at, from buyer-visible fields only.
+function BuyerList({ disputes, selectedId, onSelect }: { disputes: BuyerDispute[]; selectedId: string; onSelect: (id: string) => void }) {
   return (
-    <section className="detail-section">
+    <ul className="dispute-list">
+      {disputes.map((d) => {
+        const stage = d.guidance.stages.find((s) => s.state === "current");
+        return (
+          <li key={d.dispute_id}>
+            <button
+              type="button"
+              className="dispute-row"
+              aria-current={d.dispute_id === selectedId ? "true" : undefined}
+              onClick={() => onSelect(d.dispute_id)}
+            >
+              <span className="row-line">
+                <span className="mono">{d.dispute_id}</span>
+                <span className="row-amount">{d.amount ? formatMoney(d.amount) : "Amount not on record"}</span>
+              </span>
+              <span className="row-line">
+                <span className="muted">{labelFor(REASON_LABELS, d.reason)}</span>
+                <StatusBadge status={d.status} />
+              </span>
+              {stage && <span className="row-stage">Usual stage: {stage.label}</span>}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function Section({ title, origin, className, children }: { title: string; origin: Origin; className?: string; children: ReactNode }) {
+  return (
+    <section className={className ? `detail-section ${className}` : "detail-section"}>
       <div className="section-head">
         <h3>{title}</h3>
         <SourceTag origin={origin} />
@@ -106,6 +139,18 @@ export function BuyerDetail({ dispute }: { dispute: BuyerDispute }) {
         <StatusBadge status={dispute.status} />
       </header>
 
+      <ul className="source-key" aria-label="How to read the labels on this page">
+        <li>
+          <SourceTag origin="record" /> taken from this dispute's record
+        </li>
+        <li>
+          <SourceTag origin="guidance" /> what usually applies, not specific to this dispute
+        </li>
+        <li>
+          <SourceTag origin="missing" /> the record doesn't include it
+        </li>
+      </ul>
+
       <dl className="facts">
         <div>
           <dt>Amount</dt>
@@ -124,7 +169,7 @@ export function BuyerDetail({ dispute }: { dispute: BuyerDispute }) {
         </div>
       </dl>
 
-      <Section title="What this status means" origin="guidance">
+      <Section title="What this status means" origin="guidance" className="lead">
         <p>{g.meaning}</p>
       </Section>
 
@@ -142,11 +187,11 @@ export function BuyerDetail({ dispute }: { dispute: BuyerDispute }) {
       </Section>
 
       <Section title="Next steps" origin="guidance">
-        <ul className="steps">
+        <ol className="steps">
           {g.next_steps.map((s) => (
             <li key={s}>{s}</li>
           ))}
-        </ul>
+        </ol>
       </Section>
 
       <Section title="Information you may want to have" origin="guidance">
@@ -168,7 +213,7 @@ export function BuyerDetail({ dispute }: { dispute: BuyerDispute }) {
 
       <Section title="Not on record" origin="missing">
         <p className="muted">This record doesn't include these. That doesn't say anything about the dispute either way.</p>
-        <ul className="steps">
+        <ul className="steps not-recorded">
           {g.not_on_record.map((s) => (
             <li key={s}>{s}</li>
           ))}
