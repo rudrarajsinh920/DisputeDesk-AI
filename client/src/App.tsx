@@ -5,6 +5,7 @@ import type { BuyerLoad } from "./Buyer.tsx";
 import { DisputeDetail } from "./DisputeDetail.tsx";
 import { Insights } from "./Intelligence.tsx";
 import { DisputeList } from "./DisputeList.tsx";
+import { Landing } from "./Landing.tsx";
 import { Login } from "./Login.tsx";
 import { fetchMe, signOut } from "./auth.ts";
 import {
@@ -36,6 +37,7 @@ const ROLE_LABELS: Record<Role, string> = { merchant: "Merchant", buyer: "Buyer"
 export default function App() {
   const [account, setAccount] = useState<AccountInfo | null | undefined>(undefined);
   const [notice, setNotice] = useState<string | null>(null);
+  const [signInOpen, setSignInOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -71,8 +73,23 @@ export default function App() {
     );
   }
   if (account === null) {
+    // A fresh visit gets the landing page; a sign-in click, a sign-out or a session problem gets the form.
+    if (!signInOpen && !notice) return <Landing onSignIn={() => setSignInOpen(true)} />;
     return (
-      <Shell>
+      <Shell
+        bar={
+          <button
+            type="button"
+            className="button button-secondary"
+            onClick={() => {
+              setNotice(null);
+              setSignInOpen(false);
+            }}
+          >
+            Back to overview
+          </button>
+        }
+      >
         <Login
           notice={notice}
           onSignedIn={(signedIn) => {

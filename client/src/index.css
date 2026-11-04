@@ -1,0 +1,217 @@
+/* Stylesheet entry. Tailwind (for the signed-out landing page and its shadcn/ui components) plus the app's own
+   styles.css, which goes into the "app" layer below Tailwind so its element rules (p, button, :focus-visible) no
+   longer beat utilities. Tailwind's preflight is left out on purpose so the app keeps its look; the landing page
+   gets its own small reset under .landing instead. Utilities come only from the landing files (source(none) plus
+   @source), so no app class name turns into a utility. */
+
+@layer theme, app, base, components, utilities;
+
+@import "./styles.css" layer(app);
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@source "./Landing.tsx";
+@source "./components/ui";
+
+/* Self-hosted (the strict CSP allows fonts from this origin only). Licence: ./fonts/OFL-IBMPlexSans.txt */
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url("./fonts/ibm-plex-sans-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* shadcn tokens, scoped to the landing page so the app's :root variables (--radius, --border…) stay as they are. */
+.landing {
+  --radius: 0.5rem;
+  --background: #f7f7f5;
+  --foreground: #0b0b0c;
+  --card: #ffffff;
+  --card-foreground: #0b0b0c;
+  --popover: #ffffff;
+  --popover-foreground: #0b0b0c;
+  --primary: #0b0b0c;
+  --primary-foreground: #ffffff;
+  --secondary: #ececE8;
+  --secondary-foreground: #0b0b0c;
+  --muted: #ececE8;
+  --muted-foreground: #55555b;
+  --accent: #ececE8;
+  --accent-foreground: #0b0b0c;
+  --destructive: #b42318;
+  --border: #dcdcd6;
+  --input: #dcdcd6;
+  --ring: #0b0b0c;
+  /* The one signal colour: a lime field, always under ink text. */
+  --signal: #d8f65a;
+  --signal-foreground: #0b0b0c;
+  /* The hero band stays dark in both modes. */
+  --band: #0b0b0c;
+  --band-foreground: #f4f4f1;
+  --band-muted: #a7a7ad;
+  --band-border: #2a2a2e;
+
+  --ok-bg: #e2f3e7;
+  --ok-fg: #14532d;
+  --warn-bg: #fbefd5;
+  --warn-fg: #6b3d0a;
+  --gap-bg: #fbe3df;
+  --gap-fg: #7f1d1d;
+}
+
+@media (prefers-color-scheme: dark) {
+  .landing {
+    --background: #0b0b0c;
+    --foreground: #f2f2ef;
+    --card: #151517;
+    --card-foreground: #f2f2ef;
+    --popover: #151517;
+    --popover-foreground: #f2f2ef;
+    --primary: #f2f2ef;
+    --primary-foreground: #0b0b0c;
+    --secondary: #1f1f22;
+    --secondary-foreground: #f2f2ef;
+    --muted: #1f1f22;
+    --muted-foreground: #a7a7ad;
+    --accent: #1f1f22;
+    --accent-foreground: #f2f2ef;
+    --border: #2a2a2e;
+    --input: #2a2a2e;
+    --ring: #f2f2ef;
+    --band: #141416;
+
+    --ok-bg: #10291a;
+    --ok-fg: #8ee3ad;
+    --warn-bg: #2d220c;
+    --warn-fg: #f6cd78;
+    --gap-bg: #331513;
+    --gap-fg: #f8a9a0;
+  }
+}
+
+@theme inline {
+  --font-plex: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-signal: var(--signal);
+  --color-signal-foreground: var(--signal-foreground);
+  --color-band: var(--band);
+  --color-band-foreground: var(--band-foreground);
+  --color-band-muted: var(--band-muted);
+  --color-band-border: var(--band-border);
+  --color-ok: var(--ok-bg);
+  --color-ok-foreground: var(--ok-fg);
+  --color-warn: var(--warn-bg);
+  --color-warn-foreground: var(--warn-fg);
+  --color-gap: var(--gap-bg);
+  --color-gap-foreground: var(--gap-fg);
+
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --animate-accordion-down: accordion-down 200ms var(--ease-out-strong);
+  --animate-accordion-up: accordion-up 160ms var(--ease-out-strong);
+  --animate-rise: rise 640ms var(--ease-out-strong) both;
+}
+
+@keyframes accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
+}
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Scoped reset in place of Tailwind's preflight. */
+@layer base {
+  .landing {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-plex);
+    font-size: 1rem;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100svh;
+  }
+  .landing *,
+  .landing *::before,
+  .landing *::after {
+    border: 0 solid var(--border);
+  }
+  .landing :where(h1, h2, h3, h4, p, ul, ol, li, figure, blockquote, dl, dd) {
+    margin: 0;
+    padding: 0;
+  }
+  .landing :where(ul, ol) {
+    list-style: none;
+  }
+  .landing :where(h1, h2, h3) {
+    text-wrap: balance;
+  }
+  .landing p {
+    text-wrap: pretty;
+  }
+  .landing :where(svg) {
+    display: block;
+  }
+  .landing :where(button) {
+    background: transparent;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  .landing :where(a, button) {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .landing a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .landing :where(table) {
+    border-collapse: collapse;
+  }
+  .landing :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  .landing [id] {
+    scroll-margin-top: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing *,
+  .landing *::before,
+  .landing *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

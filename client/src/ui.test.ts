@@ -18,6 +18,7 @@ import type { ExplainState } from "./Buyer.tsx";
 import { AI_WORDING_OFF, FAILED_CHECKS, buyerGuidance, rulesExplanation, toBuyerRecord } from "../../server/src/buyer.ts";
 import type { SandboxLoad } from "./App.tsx";
 import { DisputeDetail } from "./DisputeDetail.tsx";
+import { Landing } from "./Landing.tsx";
 import { Login } from "./Login.tsx";
 import { SIGNED_OUT_EVENT, serverError } from "./sandbox.ts";
 import extraDemos from "../../demo-disputes.json" with { type: "json" };
@@ -132,6 +133,53 @@ test("the sign-in form is labeled, says the accounts are synthetic, and holds no
   assert.match(text(out), /Never enter a real password here/);
   assert.match(out, /role="status">Your session has ended/);
   assert.doesNotMatch(out, /value=|demo-(admin|merchant|buyer)-/, "no prefilled or listed passwords");
+});
+
+// ---- Landing page (signed out) ----
+
+const landing = () => html(createElement(Landing, { onSignIn: noop }));
+
+test("the landing page has one h1, a heading on every section, and sign-in buttons instead of a sign-up", () => {
+  const out = landing();
+  assert.equal(out.match(/<h1[ >]/g)?.length, 1);
+  assert.match(text(out), /Every dispute, checked against the record\./);
+  for (const id of ["hero-h", "how-h", "roles-h", "safeguards-h", "faq-h", "close-h"]) {
+    assert.match(out, new RegExp(`aria-labelledby="${id}"[\\s\\S]*?<h[12] id="${id}"`), id);
+  }
+  for (const anchor of ["how", "roles", "safeguards", "faq"]) assert.match(out, new RegExp(`id="${anchor}"`), anchor);
+  assert.ok((out.match(/<button[^>]*>Sign in( to the demo)?<\/button>/g) ?? []).length >= 3);
+  assert.doesNotMatch(text(out), /get started|register|sign up|create an account/i, "no sign-up flow exists");
+  const levels = [...out.matchAll(/<h([1-6])/g)].map((m) => Number(m[1]));
+  assert.ok(levels.every((l, i) => i === 0 || l <= levels[i - 1] + 1), `headings skip a level: ${levels.join(",")}`);
+});
+
+test("every product fragment on the landing page is labelled illustrative and holds no demo records or secrets", () => {
+  const out = landing();
+  const fragments = out.match(/data-ui="true"/g)?.length ?? 0;
+  assert.ok(fragments >= 5, `${fragments} fragments`);
+  assert.ok((text(out).match(/Illustrative example/g)?.length ?? 0) >= fragments);
+  assert.doesNotMatch(out, /DEMO-\d|MOCK-|TRK-|@demo\.disputedesk|demo-(admin|merchant|buyer)-/, "no demo records, accounts or passwords");
+  for (const fragment of out.match(/<figure data-ui="true"[\s\S]*?<\/figure>/g) ?? []) {
+    assert.doesNotMatch(fragment, /style="/, "no inline styles in fragments, so the strict production CSP holds");
+  }
+});
+
+test("the landing page makes no unsupported claims", () => {
+  const page = text(landing());
+  for (const claim of [/certified|compliant|guarantee|bank-grade|military/i, /prevent|win rate|\d+\s?%/i, /trusted by|customers/i]) {
+    assert.doesNotMatch(page, claim, String(claim));
+  }
+  assert.match(page, /never submits/i);
+  assert.match(page, /Not affiliated with or endorsed by PayPal or Google/);
+});
+
+test("the landing page's live draft starts undrafted and never offers a submission", () => {
+  const out = landing();
+  assert.match(out, /<button[^>]*type="button"[^>]*>Draft a response<\/button>/);
+  assert.match(text(out), /Nothing is sent\. You send any response yourself\./);
+  assert.doesNotMatch(text(out), /Submit (to|response)/i);
+  assert.match(out, /aria-expanded="false" aria-controls="l-nav"/, "the phone menu starts closed");
+  assert.ok([...out.matchAll(/<button[^>]*>/g)].every((b) => /type="button"/.test(b[0])), "no button submits a form");
 });
 
 test("the admin view is read-only: no sandbox switch is hidden, but there is no AI draft button", () => {

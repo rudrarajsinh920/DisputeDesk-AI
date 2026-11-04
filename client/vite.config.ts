@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { DEV_HEADERS, PREVIEW_HEADERS } from "./src/security-headers.ts";
 
 // One hostname (localhost) and fixed ports, so the host-only session cookie and the server's Origin check always
@@ -7,7 +8,9 @@ import { DEV_HEADERS, PREVIEW_HEADERS } from "./src/security-headers.ts";
 const proxy = { "/api": { target: "http://127.0.0.1:3001", changeOrigin: false } };
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  // "@/" is the shadcn/ui import alias (also in tsconfig.json and test/tsx-hooks.mjs).
+  resolve: { alias: { "@": "/src" } },
   preview: { host: "localhost", port: 4173, strictPort: true, headers: PREVIEW_HEADERS, proxy },
   server: {
     host: "localhost",
