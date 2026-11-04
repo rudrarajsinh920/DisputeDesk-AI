@@ -6,10 +6,13 @@ export function DisputeList({
   disputes,
   selectedId,
   onSelect,
+  owners,
 }: {
   disputes: Dispute[];
   selectedId: string | undefined;
   onSelect: (id: string) => void;
+  // Admin only: the merchant account each dispute belongs to.
+  owners?: Map<string, string>;
 }) {
   return (
     <ul className="dispute-list">
@@ -29,6 +32,7 @@ export function DisputeList({
               <span className="muted">{labelFor(REASON_LABELS, d.reason)}</span>
               <StatusBadge status={d.status} />
             </span>
+            {owners && <span className="row-owner">{owners.get(d.dispute_id) ?? "Owner not listed"}</span>}
           </button>
         </li>
       ))}

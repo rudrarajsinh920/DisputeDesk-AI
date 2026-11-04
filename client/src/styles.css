@@ -528,6 +528,7 @@ code,
 @media (hover: hover) and (pointer: fine) {
   .chip:hover,
   .dispute-row:not([aria-current="true"]):hover,
+  .status-count:hover,
   .rail-nav button:not([aria-pressed="true"]):hover {
     background: var(--surface-2);
   }
@@ -1263,6 +1264,257 @@ details summary {
   scroll-margin-top: 16px;
 }
 
+/* Admin views. Read-only and denser: tabular figures, ruled tables, no cards inside cards. */
+
+.admin {
+  display: grid;
+  gap: 16px;
+}
+
+.admin .summary {
+  margin-bottom: 0;
+}
+
+.admin-grid {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 900px) {
+  .admin-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.status-counts {
+  list-style: none;
+  margin: 0 -16px;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.status-count {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: transparent;
+  text-align: left;
+  transition: background-color 150ms ease;
+}
+
+.status-count-value {
+  font-size: 1.125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.link-button {
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.config {
+  display: grid;
+  margin: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.config > div {
+  display: grid;
+  gap: 2px 24px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+@media (min-width: 640px) {
+  .config > div {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+}
+
+.config dt {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.config dd {
+  margin: 0;
+  font-weight: 500;
+}
+
+.config-note {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.admin-system .steps {
+  max-width: 72ch;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table th,
+.data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.data-table :is(th, td):first-child {
+  padding-left: 0;
+}
+
+.data-table :is(th, td):last-child {
+  padding-right: 0;
+}
+
+.data-table thead th {
+  border-bottom-color: var(--border);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.data-table tbody th {
+  font-weight: 600;
+}
+
+.data-table .num {
+  text-align: right;
+}
+
+.data-table .cell-action {
+  padding-right: 0;
+  text-align: right;
+}
+
+.button-sm {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 0.8125rem;
+}
+
+/* Narrow: each row stacks into labelled fields, so no column is dropped. */
+@media (max-width: 639px) {
+  .data-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .data-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .data-table th,
+  .data-table td {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0;
+    border: 0;
+    grid-column: 1;
+  }
+
+  .data-table [data-label]::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-weight: 400;
+    font-family: var(--font-sans);
+  }
+
+  .data-table .num {
+    text-align: left;
+  }
+
+  .data-table .cell-action {
+    grid-column: 2;
+    grid-row: 1 / span 5;
+    align-self: center;
+  }
+}
+
+.row-name {
+  font-weight: 600;
+}
+
+.row-email {
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.row-owner {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.dispute-row[aria-current="true"] .row-owner {
+  color: var(--signal-text);
+}
+
+.wrap {
+  overflow-wrap: anywhere;
+}
+
+.admin-detail {
+  padding-top: 20px;
+}
+
+.admin-detail .facts {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.field-label {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
 /* States */
 
 .state-panel {
@@ -1564,6 +1816,8 @@ details summary {
   .rail-nav button,
   .button,
   .search,
+  .select,
+  .link-button,
   .case-nav a {
     min-height: 44px;
   }

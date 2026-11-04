@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { AdminAccounts, AdminOverview, AdminSystem, Loaded, fetchAdminAccounts, fetchHealth, ownerNames, useLoad } from "./Admin.tsx";
 import { BuyerDisputes } from "./Buyer.tsx";
 import type { BuyerLoad } from "./Buyer.tsx";
 import { DisputeDetail } from "./DisputeDetail.tsx";
@@ -33,6 +34,17 @@ const SOURCES: { id: Source; label: string }[] = [
 ];
 
 const ROLE_LABELS: Record<Role, string> = { merchant: "Merchant", buyer: "Buyer", admin: "Admin (read-only)" };
+
+type View = "overview" | "disputes" | "merchants" | "buyers" | "insights" | "system";
+const VIEW_LABELS: Record<View, string> = {
+  overview: "Overview",
+  disputes: "Disputes",
+  merchants: "Merchants",
+  buyers: "Buyers",
+  insights: "Insights",
+  system: "System",
+};
+const ADMIN_VIEWS: View[] = ["overview", "disputes", "merchants", "buyers", "insights", "system"];
 
 // Signed-out, checking and signed-in states. Who is signed in always comes from the server.
 export default function App() {
@@ -157,14 +169,28 @@ function AccountBar({ account, onSignOut, children }: { account: AccountInfo; on
 }
 
 // Merchants and admin. Admin sees every demo dispute and the sandbox, read-only.
-export function Dashboard({ account, onSignOut }: { account: AccountInfo; onSignOut: () => void }) {
+export function Dashboard({ account, onSignOut, initialView }: { account: AccountInfo; onSignOut: () => void; initialView?: View }) {
+  const isAdmin = account.role === "admin";
   const sources = SOURCES.filter((s) => s.id === "demo" || account.role === "admin" || account.paypal_sandbox);
   const [source, setSource] = useState<Source>("demo");
   const [load, setLoad] = useState<SandboxLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [filter, setFilter] = useState("ALL");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<"disputes" | "insights">("disputes");
+  const [view, setView] = useState<View>(initialView ?? (isAdmin ? "overview" : "disputes"));
+  // Admin only: accounts, the demo records and the server's configuration, for the admin views and the account filter.
+  const [accounts, retryAccounts] = useLoad(fetchAdminAccounts, isAdmin);
+  const [demo, retryDemo] = useLoad(fetchDemoDisputes, isAdmin);
+  const [health, retryHealth] = useLoad(fetchHealth, isAdmin);
+  const owners = isAdmin && source === "demo" && accounts.status === "ready" ? ownerNames(accounts.value) : undefined;
+
+  // Opens the Disputes view on the demo records, at one dispute or one status.
+  function showDisputes(selected: string | null, status = "ALL") {
+    setSource("demo");
+    setFilter(status);
+    setSelectedId(selected);
+    setView("disputes");
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -182,9 +208,9 @@ export function Dashboard({ account, onSignOut }: { account: AccountInfo; onSign
     <>
       <nav className="rail-group" aria-label="Views">
         <div className="rail-nav">
-          {(["disputes", "insights"] as const).map((v) => (
+          {(isAdmin ? ADMIN_VIEWS : (["disputes", "insights"] as View[])).map((v) => (
             <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
-              {v === "disputes" ? "Disputes" : "Insights"}
+              {VIEW_LABELS[v]}
             </button>
           ))}
         </div>
@@ -217,7 +243,15 @@ export function Dashboard({ account, onSignOut }: { account: AccountInfo; onSign
 
   return (
     <Shell rail={rail}>
-      {view === "insights" ? (
+      {view === "system" ? null : view === "overview" || view === "merchants" || view === "buyers" ? (
+        <div className="banner banner-demo" role="note">
+          <strong>DEMO DATA — NOT REAL ACCOUNTS OR PAYPAL DISPUTES</strong>
+          <span>
+            Synthetic accounts from demo-accounts.json and the synthetic demo disputes. PayPal sandbox disputes are not included, and
+            nothing here is connected to PayPal.
+          </span>
+        </div>
+      ) : view === "insights" ? (
         <div className="banner banner-demo" role="note">
           <strong>DEMO DATA — NOT A REAL PAYPAL DISPUTE</strong>
           <span>
@@ -242,9 +276,45 @@ export function Dashboard({ account, onSignOut }: { account: AccountInfo; onSign
 
       <main className="main">
         <header className="page-head">
-          <h1>{view === "disputes" ? "Disputes" : "Insights"}</h1>
+          <h1>{VIEW_LABELS[view]}</h1>
         </header>
-        {view === "insights" ? (
+        {view === "overview" ? (
+          <Loaded loads={[accounts, demo, health]} onRetry={() => (retryAccounts(), retryDemo(), retryHealth())} what="the overview">
+            {() =>
+              accounts.status === "ready" &&
+              demo.status === "ready" &&
+              health.status === "ready" && (
+                <AdminOverview
+                  accounts={accounts.value}
+                  disputes={demo.value}
+                  health={health.value}
+                  onOpen={(id) => showDisputes(id)}
+                  onStatus={(status) => showDisputes(null, status)}
+                  onSystem={() => setView("system")}
+                />
+              )
+            }
+          </Loaded>
+        ) : view === "merchants" || view === "buyers" ? (
+          <Loaded loads={[accounts, demo]} onRetry={() => (retryAccounts(), retryDemo())} what="accounts">
+            {() =>
+              accounts.status === "ready" &&
+              demo.status === "ready" && (
+                <AdminAccounts
+                  key={view}
+                  role={view === "merchants" ? "merchant" : "buyer"}
+                  accounts={accounts.value}
+                  disputes={demo.value}
+                  onOpen={(id) => showDisputes(id)}
+                />
+              )
+            }
+          </Loaded>
+        ) : view === "system" ? (
+          <Loaded loads={[health]} onRetry={retryHealth} what="the system configuration">
+            {() => health.status === "ready" && <AdminSystem health={health.value} onRetry={retryHealth} />}
+          </Loaded>
+        ) : view === "insights" ? (
           <Insights canExplain={account.role === "merchant"} />
         ) : (
           <DisputesView
@@ -257,6 +327,7 @@ export function Dashboard({ account, onSignOut }: { account: AccountInfo; onSign
             selectedId={selectedId}
             onSelect={setSelectedId}
             canDraft={account.role === "merchant"}
+            owners={owners}
           />
         )}
       </main>
@@ -298,6 +369,7 @@ export function DisputesView({
   selectedId: string | null;
   onSelect: (id: string) => void;
   canDraft?: boolean;
+  owners?: Map<string, string>;
 }) {
   const t = LIST_TEXT[source];
   return disputes === null ? (
@@ -331,6 +403,7 @@ export function Workspace({
   selectedId,
   onSelect,
   canDraft = true,
+  owners,
 }: {
   disputes: Dispute[];
   filter: string;
@@ -338,14 +411,19 @@ export function Workspace({
   selectedId: string | null;
   onSelect: (id: string) => void;
   canDraft?: boolean;
+  // Admin, demo data only: dispute ID to the merchant account it belongs to.
+  owners?: Map<string, string>;
 }) {
   const [query, setQuery] = useState("");
+  const [owner, setOwner] = useState("ALL");
   const summary = summarize(disputes);
   const counts = countByStatus(disputes);
   // Search only narrows what is already loaded: dispute ID, reason label or reason code.
   const q = query.trim().toLowerCase();
   const visible = filterByStatus(disputes, filter).filter(
-    (d) => !q || [d.dispute_id, d.reason, labelFor(REASON_LABELS, d.reason)].some((s) => s.toLowerCase().includes(q)),
+    (d) =>
+      (!owners || owner === "ALL" || owners.get(d.dispute_id) === owner) &&
+      (!q || [d.dispute_id, d.reason, labelFor(REASON_LABELS, d.reason)].some((s) => s.toLowerCase().includes(q))),
   );
   const selected = visible.find((d) => d.dispute_id === selectedId) ?? visible[0];
   const detail = useRef<HTMLElement>(null);
@@ -378,6 +456,19 @@ export function Workspace({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          {owners && (
+            <label className="field">
+              <span className="field-label">Account</span>
+              <select className="select" value={owner} onChange={(e) => setOwner(e.target.value)}>
+                <option value="ALL">All accounts</option>
+                {[...new Set(owners.values())].map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="filters" role="group" aria-label="Filter by status">
             {STATUS_FILTERS.map((f) => (
               <button key={f} type="button" className="chip" aria-pressed={filter === f} onClick={() => onFilter(f)}>
@@ -387,7 +478,7 @@ export function Workspace({
             ))}
           </div>
           {visible.length > 0 ? (
-            <DisputeList disputes={visible} selectedId={selected?.dispute_id} onSelect={select} />
+            <DisputeList disputes={visible} selectedId={selected?.dispute_id} onSelect={select} owners={owners} />
           ) : q ? (
             <div className="empty-inline">
               <p>No disputes match “{query.trim()}”.</p>

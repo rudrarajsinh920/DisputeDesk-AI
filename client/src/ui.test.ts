@@ -12,6 +12,8 @@ import { VALIDATION_EXAMPLE_MODEL, validationExampleAnswer } from "../../server/
 import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
 import { AiResult, AiSectionView, AnalysisView, DISCARD_EDITS, DraftEditor, ValidationExampleView } from "./AnalysisPanel.tsx";
 import type { AiState, ExampleState } from "./AnalysisPanel.tsx";
+import { AdminAccounts, AdminOverview, AdminSystem, ownerNames } from "./Admin.tsx";
+import type { AdminAccount, Health } from "./Admin.tsx";
 import App, { Dashboard, DisputesView } from "./App.tsx";
 import { BuyerDisputes, ExplainView } from "./Buyer.tsx";
 import type { ExplainState } from "./Buyer.tsx";
@@ -21,6 +23,7 @@ import { DisputeDetail } from "./DisputeDetail.tsx";
 import { Landing } from "./Landing.tsx";
 import { Login } from "./Login.tsx";
 import { SIGNED_OUT_EVENT, serverError } from "./sandbox.ts";
+import accountsFile from "../../demo-accounts.json" with { type: "json" };
 import extraDemos from "../../demo-disputes.json" with { type: "json" };
 import sample from "../../sample-dispute.json" with { type: "json" };
 import type { AccountInfo, AiAssist, BuyerDispute, Dispute } from "../../shared/types.ts";
@@ -182,8 +185,80 @@ test("the landing page's live draft starts undrafted and never offers a submissi
   assert.ok([...out.matchAll(/<button[^>]*>/g)].every((b) => /type="button"/.test(b[0])), "no button submits a form");
 });
 
-test("the admin view is read-only: no sandbox switch is hidden, but there is no AI draft button", () => {
+// ---- Admin views: read-only, from the accounts, demo records and server configuration only ----
+
+const demoAccounts = accountsFile.accounts.map(({ id, email, role, display_name, paypal_sandbox, dispute_ids }) => ({
+  id,
+  email,
+  role,
+  display_name,
+  paypal_sandbox,
+  dispute_ids,
+})) as AdminAccount[];
+const checkedAt = new Date(Date.UTC(2026, 10, 4, 9, 30));
+const healthOn: Health = { checked_at: checkedAt, paypal_configured: true, ai: { on: true, model: "gemini-test-model" } };
+const healthOff: Health = { checked_at: checkedAt, paypal_configured: false, ai: { on: false, reason: AI_OFF_BAD_MODEL } };
+const CHANGING = /\b(Delete|Edit|Disable|Enable|Save|Suspend|Reset|Sync|Clear cache)\b/;
+
+test("the admin dashboard opens on an overview, and merchants keep only Disputes and Insights", () => {
   const page = text(html(createElement(Dashboard, { account: admin, onSignOut: noop })));
+  assert.match(page, /Overview Disputes Merchants Buyers Insights System/);
+  assert.match(page, /Loading the overview…/);
+  const merchantPage = text(html(createElement(Dashboard, { account: merchant, onSignOut: noop })));
+  assert.doesNotMatch(merchantPage, /Overview|Merchants|Buyers|System/);
+});
+
+test("the admin overview counts the real demo records, with no percentages and nothing that changes data", () => {
+  const markup = html(createElement(AdminOverview, { accounts: demoAccounts, disputes: demoDisputes, health: healthOn, onOpen: noop, onStatus: noop, onSystem: noop }));
+  const out = text(markup);
+  assert.match(out, /Merchant accounts 3 Buyer accounts 2 Demo disputes 17 Unresolved 13/);
+  assert.match(out, /Open 3 : show in Disputes Awaiting seller 4 : show in Disputes Awaiting buyer 2 : show in Disputes Under review 4 : show in Disputes Resolved 4/);
+  assert.match(out, /Waiting for a response 6 demo disputes/);
+  assert.match(out, /Credentials configured/);
+  assert.doesNotMatch(out, /%|uptime|Healthy|incident/i);
+  assert.doesNotMatch(out, CHANGING);
+  assert.ok([...markup.matchAll(/<button[^>]*>/g)].every((b) => /type="button"/.test(b[0])));
+  const levels = headingLevels(markup);
+  assert.ok(levels.every((l, i) => i === 0 || l <= levels[i - 1] + 1), `headings skip a level: ${levels.join(",")}`);
+});
+
+test("admin account views list one role, show each account's disputes, and offer no account actions", () => {
+  const merchants = text(html(createElement(AdminAccounts, { role: "merchant", accounts: demoAccounts, disputes: demoDisputes, onOpen: noop })));
+  assert.match(merchants, /Merchant accounts 3 shown/);
+  assert.match(merchants, /Demo Merchant A .*Demo Merchant B .*Demo Merchant C/);
+  assert.doesNotMatch(merchants, /Demo Buyer|Demo Admin/);
+  assert.match(merchants, /PayPal sandbox access Yes/);
+  assert.match(merchants, /Read-only\. Accounts come from demo-accounts\.json/);
+  assert.doesNotMatch(merchants, CHANGING);
+  const buyers = text(html(createElement(AdminAccounts, { role: "buyer", accounts: demoAccounts, disputes: demoDisputes, onOpen: noop })));
+  assert.match(buyers, /Buyer accounts 2 shown/);
+  assert.doesNotMatch(buyers, /PayPal sandbox access|Demo Merchant/);
+});
+
+test("the system page reports only the server's configuration, and says it is not monitoring", () => {
+  const on = text(html(createElement(AdminSystem, { health: healthOn, onRetry: noop })));
+  assert.match(on, /Credentials configured/);
+  assert.match(on, /On · gemini-test-model/);
+  assert.match(on, /does not contact PayPal or Gemini, and there is no uptime or performance monitoring/);
+  assert.match(on, /There is no screen for it yet/);
+  assert.doesNotMatch(on, /Healthy|\d+(\.\d+)?%|\d+ ms/);
+  const off = text(html(createElement(AdminSystem, { health: healthOff, onRetry: noop })));
+  assert.match(off, /Credentials not configured/);
+  assert.match(off, /AI wording \(Gemini\) Off/);
+  assert.ok(off.includes(AI_OFF_BAD_MODEL));
+});
+
+test("admin disputes can be narrowed by account, and a dispute with no listed owner says so", () => {
+  const owners = ownerNames(demoAccounts);
+  const markup = html(createElement(DisputesView, { disputes: [...demoDisputes, sandbox[1]], sandbox: { status: "loading" }, onRetry: noop, filter: "ALL", onFilter: noop, selectedId: null, onSelect: noop, owners }));
+  const out = text(markup);
+  assert.match(out, /Account All accounts Demo Merchant A Demo Merchant B Demo Merchant C/);
+  assert.match(out, /Owner not listed/);
+  assert.doesNotMatch(text(view(demoDisputes, { status: "loading" })), /All accounts|Owner not listed/, "merchants see no account filter");
+});
+
+test("the admin view is read-only: no sandbox switch is hidden, but there is no AI draft button", () => {
+  const page = text(html(createElement(Dashboard, { account: admin, onSignOut: noop, initialView: "disputes" })));
   assert.match(page, /Admin \(read-only\)/);
   assert.match(page, /Demo data PayPal sandbox/, "admin can read both sources");
 
@@ -488,8 +563,8 @@ test("the client calls only DisputeDesk's own read and analysis endpoints", () =
     .map((f) => readFileSync(new URL(f, dir), "utf8"))
     .join("\n");
   const urls = [...new Set([...sources.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(urls, ["/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
-  assert.equal((sources.match(/fetch\(/g) ?? []).length, 10, "each fetch call uses one of the endpoints above");
+  assert.deepEqual(urls, ["/api/admin/accounts", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
+  assert.equal((sources.match(/fetch\(/g) ?? []).length, 12, "each fetch call uses one of the endpoints above");
   assert.doesNotMatch(sources, /paypal\.com|generativelanguage|method:\s*"(PUT|PATCH|DELETE)"/i);
 });
 
