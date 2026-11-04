@@ -177,6 +177,20 @@ test("every product fragment on the landing page is labelled illustrative and ho
   }
 });
 
+test("the landing pane shows both sides the same facts, and the buyer's side never shows merchant evidence", () => {
+  const out = landing();
+  const faces = (side: string) => [...out.matchAll(new RegExp(`<div class="pane-face[^"]*" data-side="${side}"[^>]*>([\\s\\S]*?)Illustrative example\\. Not a real dispute\\.`, "g"))].map((m) => m[0]);
+  const [merchant, buyer] = [faces("merchant"), faces("buyer")];
+  assert.ok(merchant.length >= 2 && buyer.length === merchant.length, "every pane has both sides");
+  const facts = (face: string) => text(face.match(/<dl[\s\S]*?<\/dl>/)?.[0] ?? "");
+  for (let i = 0; i < merchant.length; i++) {
+    assert.ok(facts(merchant[i]).includes("Awaiting seller"));
+    assert.equal(facts(buyer[i]), facts(merchant[i]), "the shared lines are word for word the same");
+    assert.doesNotMatch(text(buyer[i]), /Order confirmation|Shipping tracking|Proof of delivery|Customer communication/, "no merchant evidence");
+    assert.match(buyer[i], /aria-hidden="true" inert=""/, "the side facing away starts hidden from assistive tech");
+  }
+});
+
 test("the landing page makes no unsupported claims", () => {
   const page = text(landing());
   for (const claim of [/certified|compliant|guarantee|bank-grade|military/i, /prevent|win rate|\d+\s?%/i, /trusted by|customers/i]) {

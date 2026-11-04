@@ -1,34 +1,45 @@
 import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
-import { ArrowRight, Check, Menu, X } from "lucide-react";
+import type { ReactNode, RefObject } from "react";
+import { ArrowDown, Check, CircleDashed, Menu, TriangleAlert, X } from "lucide-react";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { useGSAP } from "@gsap/react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
+gsap.registerPlugin(useGSAP, ScrollTrigger);
+
 // Signed-out landing page. Static copy only: it fetches nothing and holds no demo records (those reach the browser
 // only through the server, after sign-in). Every product fragment here is illustrative and labelled so.
+//
+// The page's one object is a pane of smoked glass with a single example dispute etched into it. The merchant reads
+// one side, the buyer the other: the reason, status and stage are the same lines on both, and merchant-only evidence
+// is frosted on the buyer's side. GSAP turns the pane (a button in the hero, the scroll in "How it works"). All
+// animation is added by script from a fully visible default, so the page reads the same without it, and GSAP only
+// writes styles through the CSSOM, which the strict CSP allows.
 
-type Status = "available" | "unverified" | "missing";
-const STATUS: Record<Status, { word: string; className: string }> = {
-  available: { word: "Available", className: "bg-ok text-ok-foreground" },
-  unverified: { word: "Unverified", className: "bg-warn text-warn-foreground" },
-  missing: { word: "Missing", className: "bg-gap text-gap-foreground" },
-};
+type Side = "merchant" | "buyer";
+type Kind = "present" | "missing" | "cracked";
 
-function Chip({ status }: { status: Status }) {
-  return <Badge className={cn("rounded-md border-transparent font-medium", STATUS[status].className)}>{STATUS[status].word}</Badge>;
-}
-
-// The four evidence items the engine checks on every dispute, with the engine's own labels.
-const EVIDENCE: { label: string; status: Status; note: string }[] = [
-  { label: "Order confirmation", status: "available", note: "On record." },
-  { label: "Shipping tracking", status: "unverified", note: "On record, but another record disagrees." },
-  { label: "Proof of delivery", status: "missing", note: "Not in the records. That alone doesn't show it didn't happen." },
-  { label: "Customer communication", status: "available", note: "On record." },
+// The four evidence items the engine checks on every dispute, with the engine's own status words.
+const EVIDENCE: { label: string; kind: Kind; word: string; note: string }[] = [
+  { label: "Order confirmation", kind: "present", word: "Available", note: "On record." },
+  { label: "Shipping tracking", kind: "cracked", word: "Unverified", note: "Another record disagrees with it." },
+  { label: "Proof of delivery", kind: "missing", word: "Missing", note: "Not on record. That alone doesn’t show it didn’t happen." },
+  { label: "Customer communication", kind: "present", word: "Available", note: "On record." },
 ];
+
+// The lines both sides read, word for word.
+const FACTS: [string, string][] = [
+  ["Reason", "Item not received"],
+  ["Status", "Awaiting seller"],
+  ["Stage", "2 of 4 · Seller and buyer respond"],
+  ["Decided by", "A person, never automatically"],
+];
+
+const STAGES = ["Opened", "Seller and buyer respond", "Payment provider review", "Closed"];
 
 const LINKS = [
   { href: "#how", label: "How it works" },
@@ -37,43 +48,139 @@ const LINKS = [
   { href: "#faq", label: "Questions" },
 ];
 
-// A product fragment: always a figure, always labelled illustrative.
-function Fragment({ label, title, sub, children, className }: { label: string; title: string; sub?: string; children: ReactNode; className?: string }) {
+const REDUCED = "(prefers-reduced-motion: reduce)";
+const reduced = () => typeof window !== "undefined" && window.matchMedia(REDUCED).matches;
+
+const MARK_ICON = { present: Check, missing: CircleDashed, cracked: TriangleAlert };
+
+// One etched line of evidence: present is etched solid, missing is a dashed outline, a contradiction is cracked.
+function Mark({ item }: { item: (typeof EVIDENCE)[number] }) {
+  const Icon = MARK_ICON[item.kind];
   return (
-    <figure data-ui aria-label={label} className={cn("rounded-xl border bg-card text-card-foreground", className)}>
+    <li data-etch className={cn("gl-mark", `gl-mark-${item.kind}`)}>
+      {item.kind === "cracked" && (
+        <svg className="crack" viewBox="0 0 200 40" preserveAspectRatio="xMaxYMin meet" aria-hidden="true">
+          <path pathLength={1} d="M112 0 L126 8 L121 14 L141 20 L136 27 L160 31 L200 40" />
+        </svg>
+      )}
+      <p className="text-sm text-muted-foreground">{item.label}</p>
+      <p className="mark-word mt-1 flex items-center gap-1.5 font-medium">
+        <Icon aria-hidden="true" className="size-4 shrink-0" />
+        {item.word}
+      </p>
+      <p className="mt-1 text-sm text-muted-foreground">{item.note}</p>
+    </li>
+  );
+}
+
+function Facts() {
+  return (
+    <dl className="gl-facts">
+      {FACTS.map(([term, value]) => (
+        <div key={term} data-etch>
+          <dt className="text-sm text-muted-foreground">{term}</dt>
+          <dd className="etch mt-0.5 font-medium">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function Face({ side, shown, children }: { side: Side; shown: boolean; children: ReactNode }) {
+  return (
+    <div className={cn("pane-face glass", side === "buyer" && "pane-back")} data-side={side} aria-hidden={!shown} inert={!shown}>
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4 md:px-7">
+        <div className="min-w-0">
+          <p className="etch text-lg font-semibold tracking-tight md:text-xl">Item not received</p>
+          <p className="text-sm text-muted-foreground">Example dispute · synthetic record</p>
+        </div>
+        <p className="side-tag">{side === "merchant" ? "Merchant’s side" : "Buyer’s side"}</p>
+      </div>
+      <Facts />
+      {children}
+      <p className="border-t px-5 py-3 text-sm text-muted-foreground md:px-7">Illustrative example. Not a real dispute.</p>
+    </div>
+  );
+}
+
+function MerchantBody() {
+  return (
+    <div className="px-5 pb-5 md:px-7">
+      <ul className="gl-marks">
+        {EVIDENCE.map((e) => (
+          <Mark key={e.label} item={e} />
+        ))}
+      </ul>
+      <p data-etch className="etch mt-4 text-sm">
+        Next step: add proof of delivery from a carrier record, if you have one.
+      </p>
+    </div>
+  );
+}
+
+function BuyerBody() {
+  return (
+    <div className="px-5 pb-5 md:px-7">
+      <ol className="gl-stages">
+        {STAGES.map((stage, i) => (
+          <li key={stage} data-etch aria-current={i === 1 ? "step" : undefined}>
+            <span className="text-sm text-muted-foreground">Stage {i + 1}</span>
+            <span className="block font-medium">{stage}</span>
+          </li>
+        ))}
+      </ol>
+      {/* The merchant's evidence slots, frosted over: present on the glass, unreadable from this side. No text. */}
+      <ul aria-hidden="true" className="gl-marks mt-4">
+        {EVIDENCE.map((e) => (
+          <li key={e.label} className="frost-slot">
+            <span />
+            <span />
+            <span />
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-sm text-muted-foreground">
+        <span className="font-medium text-foreground">Merchant evidence and drafts:</span> not shown to buyers.
+      </p>
+    </div>
+  );
+}
+
+// The glass pane: both readings of one record, back to back. `face` decides which side is readable.
+function Pane({ label, face, turnRef, className }: { label: string; face: Side; turnRef: RefObject<HTMLDivElement | null>; className?: string }) {
+  return (
+    <figure data-ui aria-label={label} className={cn("pane-stage", className)}>
+      <div ref={turnRef} className="pane-turn">
+        <Face side="merchant" shown={face === "merchant"}>
+          <MerchantBody />
+        </Face>
+        <Face side="buyer" shown={face === "buyer"}>
+          <BuyerBody />
+        </Face>
+      </div>
+    </figure>
+  );
+}
+
+// A smaller glass plate for the other product fragments.
+function Plate({ label, title, sub, children, className }: { label: string; title: string; sub?: string; children: ReactNode; className?: string }) {
+  return (
+    <figure data-ui aria-label={label} className={cn("plate glass", className)}>
       <div className="flex items-start justify-between gap-3 border-b px-4 py-3">
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{title}</p>
+          <p className="etch truncate text-sm font-semibold">{title}</p>
           {sub && <p className="truncate text-xs text-muted-foreground">{sub}</p>}
         </div>
-        <Badge variant="outline" className="shrink-0 rounded-md text-muted-foreground">
-          Illustrative example
-        </Badge>
+        <span className="shrink-0 rounded-md border px-2 py-0.5 text-xs text-muted-foreground">Illustrative example</span>
       </div>
       {children}
     </figure>
   );
 }
 
-function EvidenceRows({ notes }: { notes?: boolean }) {
-  return (
-    <ul className="divide-y">
-      {EVIDENCE.map((e) => (
-        <li key={e.label} className="flex items-start justify-between gap-4 px-4 py-3">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">{e.label}</p>
-            {notes && <p className="text-xs text-muted-foreground">{e.note}</p>}
-          </div>
-          <Chip status={e.status} />
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 function SignIn({ onSignIn, className, children = "Sign in", variant }: { onSignIn: () => void; className?: string; children?: string; variant?: "default" | "outline" }) {
   return (
-    <Button type="button" variant={variant} onClick={onSignIn} className={cn("active:scale-[0.97] transition-[transform,background-color]", className)}>
+    <Button type="button" variant={variant} onClick={onSignIn} className={cn("press", className)}>
       {children}
     </Button>
   );
@@ -82,20 +189,20 @@ function SignIn({ onSignIn, className, children = "Sign in", variant }: { onSign
 function Header({ onSignIn }: { onSignIn: () => void }) {
   const [open, setOpen] = useState(false);
   return (
-    <header className="mx-auto flex w-full max-w-[88rem] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-4 md:px-8 lg:px-16">
-      <a href="#top" className="flex items-center gap-2 text-base font-semibold tracking-tight" translate="no">
-        <span aria-hidden="true" className="grid size-7 place-items-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
+    <header className="mx-auto flex w-full max-w-[90rem] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-4 md:px-8 lg:px-12">
+      <a href="#top" className="flex min-h-11 items-center gap-2.5 text-base font-semibold tracking-tight" translate="no">
+        <span aria-hidden="true" className="logo-mark">
           DD
         </span>
         DisputeDesk
       </a>
       <div className="flex items-center gap-2 md:order-last">
-        <SignIn onSignIn={onSignIn} variant="outline" className="h-10 md:h-9" />
+        <SignIn onSignIn={onSignIn} variant="outline" className="h-11 md:h-10" />
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="size-10 md:hidden"
+          className="size-11 md:hidden"
           aria-expanded={open}
           aria-controls="l-nav"
           aria-label={open ? "Close menu" : "Open menu"}
@@ -105,14 +212,10 @@ function Header({ onSignIn }: { onSignIn: () => void }) {
         </Button>
       </div>
       <nav id="l-nav" aria-label="Sections" className={cn("w-full md:flex md:w-auto", open ? "block" : "hidden")}>
-        <ul className="flex flex-col gap-1 md:flex-row md:gap-6">
+        <ul className="flex flex-col gap-1 md:flex-row md:gap-7">
           {LINKS.map((l) => (
             <li key={l.href}>
-              <a
-                href={l.href}
-                onClick={() => setOpen(false)}
-                className="block rounded-md py-2 text-sm text-muted-foreground transition-colors hover:text-foreground md:py-0"
-              >
+              <a href={l.href} onClick={() => setOpen(false)} className="nav-link block py-2.5 text-sm md:py-1">
                 {l.label}
               </a>
             </li>
@@ -123,45 +226,46 @@ function Header({ onSignIn }: { onSignIn: () => void }) {
   );
 }
 
-const FACTS = ["Read-only with PayPal", "A person reviews every draft", "Synthetic demo data, labelled"];
-
-function Hero({ onSignIn }: { onSignIn: () => void }) {
+function SideToggle({ face, onFace }: { face: Side; onFace: (side: Side) => void }) {
   return (
-    <section aria-labelledby="hero-h" className="px-2 md:px-4">
-      <div className="mx-auto grid max-w-[88rem] gap-12 rounded-3xl bg-band px-6 py-14 text-band-foreground md:px-12 md:py-20 lg:grid-cols-12 lg:gap-8 lg:py-24">
-        <div className="flex flex-col justify-center lg:col-span-6">
-          <h1 id="hero-h" className="motion-safe:animate-rise text-[2.6rem] leading-[1.02] font-semibold tracking-[-0.035em] sm:text-6xl lg:text-[4.5rem]">
+    <div role="group" aria-label="Read the record as" className="side-toggle">
+      {(["merchant", "buyer"] as const).map((side) => (
+        <button key={side} type="button" data-side={side} aria-pressed={face === side} onClick={() => onFace(side)} className="press">
+          {side === "merchant" ? "Merchant’s side" : "Buyer’s side"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Hero({ onSignIn, face, onFace, turnRef }: { onSignIn: () => void; face: Side; onFace: (side: Side) => void; turnRef: RefObject<HTMLDivElement | null> }) {
+  return (
+    <section aria-labelledby="hero-h">
+      <div className="mx-auto grid max-w-[90rem] gap-12 px-4 pt-10 pb-20 md:px-8 md:pt-14 lg:px-12 lg:pb-28 xl:grid-cols-12 xl:items-center xl:gap-10">
+        <div className="xl:col-span-5">
+          <h1 id="hero-h" className="motion-safe:animate-rise text-[2.75rem] leading-[1] font-semibold tracking-[-0.04em] sm:text-6xl xl:text-[4.25rem]">
             Every dispute, checked against the record.
           </h1>
-          <p className="mt-6 max-w-xl text-lg text-band-muted motion-safe:animate-rise motion-safe:[animation-delay:90ms]">
-            DisputeDesk reviews PayPal disputes for merchants and buyers. It shows the same facts to both sides, marks gaps as gaps, and leaves every decision to a person.
-          </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3 motion-safe:animate-rise motion-safe:[animation-delay:160ms]">
-            <SignIn onSignIn={onSignIn} className="h-11 bg-signal px-5 text-signal-foreground hover:bg-signal/90">
-              Sign in to the demo
-            </SignIn>
-            <a href="#how" className="inline-flex h-11 items-center gap-2 rounded-md px-4 text-sm font-medium text-band-foreground transition-colors hover:bg-white/10">
-              See how it works <ArrowRight aria-hidden="true" className="size-4" />
-            </a>
-          </div>
-          <ul className="mt-10 flex flex-col gap-2 text-sm text-band-muted sm:flex-row sm:flex-wrap sm:gap-x-6">
-            {FACTS.map((f) => (
-              <li key={f} className="flex items-center gap-2">
-                <Check aria-hidden="true" className="size-4 text-signal" />
-                {f}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="lg:col-span-6 lg:pl-6">
-          <Fragment label="Illustrative example of a checked dispute" title="Item not received" sub="Awaiting seller · example dispute" className="border-band-border shadow-2xl">
-            <EvidenceRows notes />
-            <div className="m-4 rounded-lg bg-warn px-3 py-2.5 text-sm text-warn-foreground">
-              <p className="font-semibold">Records disagree</p>
-              <p>The shipping status says delivered, but no proof of delivery is on record.</p>
+          <div className="mt-6">
+            <p className="max-w-md text-lg">
+              DisputeDesk reviews PayPal disputes for merchants and buyers. Both sides read the same facts, gaps stay marked as gaps, and a person makes every decision.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center gap-2">
+              <SignIn onSignIn={onSignIn} className="cta h-12 px-6 text-base">
+                Sign in to the demo
+              </SignIn>
+              <a href="#how" className="nav-link inline-flex h-12 items-center gap-2 px-3 text-sm font-medium">
+                How it works <ArrowDown aria-hidden="true" className="size-4" />
+              </a>
             </div>
-            <p className="border-t px-4 py-3 text-sm text-muted-foreground">Next step: add proof of delivery from a carrier record, if you have one.</p>
-          </Fragment>
+          </div>
+        </div>
+        <div className="xl:col-span-7">
+          <Pane label="Illustrative example of one dispute record, read from the merchant’s and the buyer’s side" face={face} turnRef={turnRef} className="hero-pane" />
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <SideToggle face={face} onFace={onFace} />
+            <p className="text-sm text-muted-foreground">Turn the pane: the reason, status and stage don’t change.</p>
+          </div>
         </div>
       </div>
     </section>
@@ -171,10 +275,10 @@ function Hero({ onSignIn }: { onSignIn: () => void }) {
 function SectionHead({ id, title, lead }: { id: string; title: string; lead: string }) {
   return (
     <div className="grid gap-4 md:grid-cols-12 md:gap-8">
-      <h2 id={id} className="text-3xl leading-[1.08] font-semibold tracking-[-0.03em] md:col-span-6 md:text-5xl">
+      <h2 id={id} className="text-[2rem] leading-[1.06] font-semibold tracking-[-0.035em] md:col-span-7 md:text-5xl lg:text-[3.5rem]">
         {title}
       </h2>
-      <p className="max-w-xl text-lg text-muted-foreground md:col-span-5 md:col-start-8 md:self-end">{lead}</p>
+      <p className="max-w-xl text-lg text-muted-foreground md:col-span-5 md:self-end">{lead}</p>
     </div>
   );
 }
@@ -195,7 +299,7 @@ function DraftFragment() {
   };
 
   return (
-    <Fragment label="Illustrative example of a checked draft" title="Response draft" sub={drafted ? "Drafted · waiting for your review" : "Evidence checked"}>
+    <Plate label="Illustrative example of a checked draft" title="Response draft" sub={drafted ? "Drafted · waiting for your review" : "Evidence checked"}>
       <div aria-live="polite" className="px-4 py-4 text-sm">
         {drafted ? (
           <ul className="space-y-2.5">
@@ -221,108 +325,102 @@ function DraftFragment() {
       <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
         <p className="text-xs text-muted-foreground">Nothing is sent. You send any response yourself.</p>
         {drafted ? (
-          <Button ref={againButton} type="button" size="sm" variant="outline" onClick={() => toggle(false)} className="h-10 active:scale-[0.97] md:h-8">
+          <Button ref={againButton} type="button" size="sm" variant="outline" onClick={() => toggle(false)} className="press h-11 md:h-9">
             Start again
           </Button>
         ) : (
-          <Button ref={draftButton} type="button" size="sm" onClick={() => toggle(true)} className="h-10 active:scale-[0.97] md:h-8">
+          <Button ref={draftButton} type="button" size="sm" onClick={() => toggle(true)} className="press h-11 md:h-9">
             Draft a response
           </Button>
         )}
       </div>
-    </Fragment>
+    </Plate>
   );
 }
 
-const STEPS: { step: string; title: string; body: string; fragment: ReactNode }[] = [
+const STEPS: { title: string; body: string; extra?: ReactNode }[] = [
   {
-    step: "Step 1",
-    title: "Check every record",
-    body: "Fixed rules read the order, shipping, delivery and message records, then mark each one available, unverified or missing.",
-    fragment: (
-      <Fragment label="Illustrative example of evidence statuses" title="Evidence" sub="4 items checked">
-        <EvidenceRows />
-      </Fragment>
-    ),
+    title: "Read every record",
+    body: "Fixed rules read the order, shipping, delivery and message records, and etch each one onto the record as available, unverified or missing.",
   },
   {
-    step: "Step 2",
-    title: "Flag what disagrees",
-    body: "Where two records contradict each other, DisputeDesk says so. A missing record is shown as a gap, never as proof.",
-    fragment: (
-      <Fragment label="Illustrative example of a contradiction" title="Contradictions" sub="1 found">
-        <div className="space-y-3 px-4 py-4 text-sm">
-          <div className="rounded-lg border px-3 py-2.5">
-            <p className="text-xs text-muted-foreground">Shipping tracking</p>
-            <p className="font-medium">Says delivered</p>
-          </div>
-          <div className="rounded-lg border border-dashed px-3 py-2.5">
-            <p className="text-xs text-muted-foreground">Proof of delivery</p>
-            <p className="font-medium">Not on record</p>
-          </div>
-          <p className="text-muted-foreground">Gap, not proof. Add a carrier record if you have one.</p>
-        </div>
-      </Fragment>
-    ),
+    title: "Crack what disagrees, outline what’s missing",
+    body: "When two records contradict each other, the line cracks and says so. A missing record stays an empty outline: a gap, never proof.",
   },
   {
-    step: "Step 3",
     title: "Draft, check, then you decide",
     body: "Gemini words a draft. The server checks every line against the records and drops what they don’t support. Try it.",
-    fragment: <DraftFragment />,
+    extra: <DraftFragment />,
+  },
+  {
+    title: "The buyer reads the same lines",
+    body: "On the other side of the pane, the buyer sees the same reason, status and stage, in plain words, and never the merchant’s evidence or drafts.",
   },
 ];
 
-function HowItWorks() {
+function HowItWorks({ step, turnRef }: { step: number; turnRef: RefObject<HTMLDivElement | null> }) {
   return (
-    <section id="how" aria-labelledby="how-h" className="mx-auto max-w-6xl px-4 py-24 md:px-8 md:py-32">
-      <SectionHead id="how-h" title="From scattered records to a draft you can check." lead="Three steps, in the same order every time. The rules decide the facts; the AI only puts them into words." />
-      <ol className="mt-14 grid gap-10 md:grid-cols-3 md:gap-6">
-        {STEPS.map((s) => (
-          <li key={s.step} className="flex flex-col gap-5">
-            <div>
-              <p className="text-sm font-medium text-muted-foreground">{s.step}</p>
-              <h3 className="mt-1 text-xl font-semibold tracking-tight">{s.title}</h3>
-              <p className="mt-2 text-muted-foreground">{s.body}</p>
-            </div>
-            {s.fragment}
-          </li>
-        ))}
-      </ol>
+    <section id="how" aria-labelledby="how-h" className="how mx-auto max-w-[90rem] px-4 py-24 md:px-8 md:py-36 lg:px-12">
+      <SectionHead id="how-h" title="One record, checked in four steps." lead="The same order every time. The rules decide the facts; the AI only puts them into words." />
+      <div className="mt-14 grid gap-12 lg:mt-20 lg:grid-cols-12 lg:gap-12">
+        <div className="lg:sticky lg:top-24 lg:col-span-6 lg:self-start">
+          <Pane label="Illustrative example of the record as each step changes it" face={step === 3 ? "buyer" : "merchant"} turnRef={turnRef} />
+        </div>
+        <ol id="how-steps" className="gl-steps lg:col-span-6">
+          {STEPS.map((s, i) => (
+            <li key={s.title} data-step data-active={step === i || undefined} className="step">
+              <span aria-hidden="true" className="step-num">
+                {i + 1}
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-2xl font-semibold tracking-tight">{s.title}</h3>
+                <p className="mt-3 max-w-lg text-muted-foreground">{s.body}</p>
+                {s.extra && <div className="mt-6 max-w-lg">{s.extra}</div>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
     </section>
   );
 }
 
-const ROLES: { id: string; tab: string; title: string; body: string; points: string[]; fragment: ReactNode }[] = [
+const ROLES: { id: string; tab: string; side?: Side; title: string; body: string; points: string[]; fragment: ReactNode }[] = [
   {
     id: "merchants",
     tab: "Merchants",
+    side: "merchant",
     title: "Know what you can prove before you reply.",
     body: "See which evidence is on record, what is missing and where records disagree. Then review a checked draft before you send anything yourself.",
     points: ["Status for each evidence item", "Contradictions flagged", "Drafts that need your review"],
     fragment: (
-      <Fragment label="Illustrative example of the merchant view" title="Item not received" sub="Awaiting seller · example dispute">
-        <EvidenceRows />
-      </Fragment>
+      <Plate label="Illustrative example of the merchant view" title="Item not received" sub="Awaiting seller · example dispute">
+        <ul className="gl-marks p-4">
+          {EVIDENCE.map((e) => (
+            <Mark key={e.label} item={e} />
+          ))}
+        </ul>
+      </Plate>
     ),
   },
   {
     id: "buyers",
     tab: "Buyers",
+    side: "buyer",
     title: "Plain answers about where your dispute stands.",
     body: "Guidance built only from what a buyer can see: what the status means, the usual stages and what to have ready. Never the merchant’s evidence or drafts.",
     points: ["What the status means", "The usual stages", "What to have ready"],
     fragment: (
-      <Fragment label="Illustrative example of the buyer view" title="Your dispute" sub="Awaiting seller">
-        <ol className="space-y-1 px-4 py-4 text-sm">
-          {["Opened", "Seller and buyer respond", "Payment provider review", "Closed"].map((stage, i) => (
-            <li key={stage} className={cn("flex items-center justify-between rounded-md px-3 py-2", i === 1 ? "bg-signal font-medium text-signal-foreground" : "text-muted-foreground")}>
-              {stage}
-              {i === 1 && <span className="text-xs">Current status</span>}
+      <Plate label="Illustrative example of the buyer view" title="Your dispute" sub="Awaiting seller">
+        <ol className="gl-stages p-4">
+          {STAGES.map((stage, i) => (
+            <li key={stage} aria-current={i === 1 ? "step" : undefined}>
+              <span className="text-sm text-muted-foreground">Stage {i + 1}</span>
+              <span className="block font-medium">{stage}</span>
             </li>
           ))}
         </ol>
-      </Fragment>
+      </Plate>
     ),
   },
   {
@@ -332,15 +430,12 @@ const ROLES: { id: string; tab: string; title: string; body: string; points: str
     body: "Fixed rules over the evidence checks: counts and dispute IDs only. No predictions, causes or averages.",
     points: ["Counts, not guesses", "The disputes behind each count", "For merchants and admin"],
     fragment: (
-      <Fragment label="Illustrative example of an insight" title="Proof of delivery missing" sub="Across this account’s disputes">
+      <Plate label="Illustrative example of an insight" title="Proof of delivery missing" sub="Across this account’s disputes">
         <div className="px-4 py-5">
-          <p className="text-3xl font-semibold tracking-tight tabular-nums">6 of 7</p>
-          <p className="text-sm text-muted-foreground">disputes have no proof of delivery on record</p>
-          <div className="mt-4 h-2 rounded-full bg-muted" aria-hidden="true">
-            <div className="h-2 w-6/7 rounded-full bg-foreground" />
-          </div>
+          <p className="etch text-4xl font-semibold tracking-tight tabular-nums">6 of 7</p>
+          <p className="mt-1 text-sm text-muted-foreground">disputes have no proof of delivery on record</p>
         </div>
-      </Fragment>
+      </Plate>
     ),
   },
   {
@@ -350,12 +445,12 @@ const ROLES: { id: string; tab: string; title: string; body: string; points: str
     body: "Admin reads across accounts to check the work. It can’t draft, edit or send. One account never sees another’s disputes.",
     points: ["Read across accounts", "No drafting or editing", "Each account kept apart"],
     fragment: (
-      <Fragment label="Illustrative example of the admin view" title="All accounts" sub="Read-only">
+      <Plate label="Illustrative example of the admin view" title="All accounts" sub="Read-only">
         <ul className="divide-y text-sm">
           {[
-            ["Merchant account", "4 disputes"],
-            ["Second merchant account", "2 disputes"],
-            ["Buyer account", "2 disputes"],
+            ["Merchant account", "Merchant"],
+            ["Second merchant account", "Merchant"],
+            ["Buyer account", "Buyer"],
           ].map(([name, count]) => (
             <li key={name} className="flex justify-between gap-4 px-4 py-3">
               <span>{name}</span>
@@ -363,20 +458,20 @@ const ROLES: { id: string; tab: string; title: string; body: string; points: str
             </li>
           ))}
         </ul>
-      </Fragment>
+      </Plate>
     ),
   },
 ];
 
 function Roles() {
   return (
-    <section id="roles" aria-labelledby="roles-h" className="border-y bg-card">
-      <div className="mx-auto max-w-6xl px-4 py-24 md:px-8 md:py-32">
+    <section id="roles" aria-labelledby="roles-h" className="roles">
+      <div className="mx-auto max-w-[90rem] px-4 py-24 md:px-8 md:py-36 lg:px-12">
         <SectionHead id="roles-h" title="One set of facts, four views." lead="Each account sees only its own disputes, and only the parts its role needs." />
         <Tabs defaultValue="merchants" className="mt-12 gap-10">
-          <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-muted p-1 sm:w-fit">
+          <TabsList className="role-tabs h-auto w-full flex-wrap justify-start gap-1 p-1 sm:w-fit">
             {ROLES.map((r) => (
-              <TabsTrigger key={r.id} value={r.id} className="h-10 flex-none px-4 md:h-9">
+              <TabsTrigger key={r.id} value={r.id} data-side={r.side} className="role-tab h-11 flex-none px-4 md:h-10">
                 {r.tab}
               </TabsTrigger>
             ))}
@@ -384,18 +479,18 @@ function Roles() {
           {ROLES.map((r) => (
             <TabsContent key={r.id} value={r.id} className="grid gap-10 md:grid-cols-12 md:gap-8">
               <div className="md:col-span-5">
-                <h3 className="text-2xl font-semibold tracking-tight">{r.title}</h3>
+                <h3 className="text-2xl font-semibold tracking-tight md:text-3xl">{r.title}</h3>
                 <p className="mt-3 text-muted-foreground">{r.body}</p>
-                <ul className="mt-6 space-y-2">
+                <ul className="mt-6 space-y-2.5">
                   {r.points.map((p) => (
-                    <li key={p} className="flex items-center gap-2 text-sm">
+                    <li key={p} className="flex items-center gap-2.5">
                       <Check aria-hidden="true" className="size-4 shrink-0" />
                       {p}
                     </li>
                   ))}
                 </ul>
               </div>
-              <div className="md:col-span-6 md:col-start-7">{r.fragment}</div>
+              <div className="md:col-span-7 lg:col-span-6 lg:col-start-7">{r.fragment}</div>
             </TabsContent>
           ))}
         </Tabs>
@@ -415,19 +510,25 @@ const SAFEGUARDS: { title: string; body: string }[] = [
 
 function Safeguards() {
   return (
-    <section id="safeguards" aria-labelledby="safeguards-h" className="mx-auto max-w-6xl px-4 py-24 md:px-8 md:py-32">
-      <SectionHead id="safeguards-h" title="What DisputeDesk will and won’t do." lead="These rules are built into the code, not just written on this page." />
-      <ul className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <section id="safeguards" aria-labelledby="safeguards-h" className="mx-auto grid max-w-[90rem] gap-14 px-4 py-24 md:px-8 md:py-36 lg:grid-cols-12 lg:gap-12 lg:px-12">
+      <div className="lg:col-span-5">
+        <h2 id="safeguards-h" className="text-[2rem] leading-[1.06] font-semibold tracking-[-0.035em] md:text-5xl lg:text-[3.5rem]">
+          What DisputeDesk will and won’t do.
+        </h2>
+        <p className="mt-5 max-w-md text-lg text-muted-foreground">These rules are built into the code, not just written on this page. The record shows each one the same way.</p>
+        <Plate label="Illustrative example of how the record marks evidence" title="How evidence is marked" className="mt-10">
+          <ul className="gl-marks marks-stack p-4">
+            {EVIDENCE.slice(0, 3).map((e) => (
+              <Mark key={e.label} item={e} />
+            ))}
+          </ul>
+        </Plate>
+      </div>
+      <ul className="rules lg:col-span-7">
         {SAFEGUARDS.map((s) => (
           <li key={s.title}>
-            <Card className="h-full gap-2 py-6 shadow-none">
-              <CardHeader>
-                <h3 className="text-lg font-semibold tracking-tight">{s.title}</h3>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">{s.body}</p>
-              </CardContent>
-            </Card>
+            <h3 className="text-lg font-semibold tracking-tight">{s.title}</h3>
+            <p className="mt-2 text-muted-foreground">{s.body}</p>
           </li>
         ))}
       </ul>
@@ -445,14 +546,14 @@ const FAQ: { q: string; a: string }[] = [
 
 function Questions() {
   return (
-    <section id="faq" aria-labelledby="faq-h" className="mx-auto grid max-w-6xl gap-10 px-4 pb-24 md:grid-cols-12 md:gap-8 md:px-8 md:pb-32">
-      <h2 id="faq-h" className="text-3xl leading-[1.08] font-semibold tracking-[-0.03em] md:col-span-4 md:text-5xl">
+    <section id="faq" aria-labelledby="faq-h" className="mx-auto grid max-w-[90rem] gap-10 px-4 pb-24 md:grid-cols-12 md:gap-8 md:px-8 md:pb-36 lg:px-12">
+      <h2 id="faq-h" className="text-[2rem] leading-[1.06] font-semibold tracking-[-0.035em] md:col-span-4 md:text-5xl">
         Questions
       </h2>
       <Accordion type="single" collapsible className="border-t md:col-span-8">
         {FAQ.map((f, i) => (
           <AccordionItem key={f.q} value={`q${i}`}>
-            <AccordionTrigger className="py-5 text-base">{f.q}</AccordionTrigger>
+            <AccordionTrigger className="py-5 text-base md:text-lg">{f.q}</AccordionTrigger>
             <AccordionContent className="max-w-2xl pb-5 text-base text-muted-foreground">{f.a}</AccordionContent>
           </AccordionItem>
         ))}
@@ -464,14 +565,14 @@ function Questions() {
 function Close({ onSignIn }: { onSignIn: () => void }) {
   return (
     <section aria-labelledby="close-h" className="px-2 md:px-4">
-      <div className="mx-auto flex max-w-[88rem] flex-col items-start gap-8 rounded-3xl bg-signal px-6 py-16 text-signal-foreground md:flex-row md:items-end md:justify-between md:px-12 md:py-20">
+      <div className="close glass mx-auto flex max-w-[90rem] flex-col items-start gap-8 px-6 py-16 md:flex-row md:items-end md:justify-between md:px-12 md:py-24">
         <div>
-          <h2 id="close-h" className="max-w-3xl text-4xl leading-[1.04] font-semibold tracking-[-0.035em] md:text-6xl">
+          <h2 id="close-h" className="etch max-w-3xl text-4xl leading-[1.02] font-semibold tracking-[-0.04em] md:text-6xl">
             See a dispute checked against its records.
           </h2>
-          <p className="mt-4 max-w-xl text-lg">Sign in with a synthetic demo account to see the merchant, buyer and admin views.</p>
+          <p className="mt-4 max-w-xl text-lg text-muted-foreground">Sign in with a synthetic demo account to read the merchant’s side, the buyer’s side and the admin view.</p>
         </div>
-        <SignIn onSignIn={onSignIn} className="h-11 shrink-0 bg-signal-foreground px-5 text-signal hover:bg-signal-foreground/90">
+        <SignIn onSignIn={onSignIn} className="cta h-12 shrink-0 px-6 text-base">
           Sign in to the demo
         </SignIn>
       </div>
@@ -481,15 +582,15 @@ function Close({ onSignIn }: { onSignIn: () => void }) {
 
 function Footer() {
   return (
-    <footer className="mx-auto max-w-6xl px-4 py-12 md:px-8">
+    <footer className="mx-auto max-w-[90rem] px-4 py-12 md:px-8 lg:px-12">
       <div className="flex flex-col gap-6 border-b pb-8 md:flex-row md:items-center md:justify-between">
         <p className="text-base font-semibold tracking-tight" translate="no">
           DisputeDesk
         </p>
-        <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
+        <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
           {LINKS.map((l) => (
             <li key={l.href}>
-              <a href={l.href} className="transition-colors hover:text-foreground">
+              <a href={l.href} className="nav-link">
                 {l.label}
               </a>
             </li>
@@ -504,15 +605,84 @@ function Footer() {
 }
 
 export function Landing({ onSignIn }: { onSignIn: () => void }) {
+  const root = useRef<HTMLDivElement>(null);
+  const heroTurn = useRef<HTMLDivElement>(null);
+  const howTurn = useRef<HTMLDivElement>(null);
+  const [heroFace, setHeroFace] = useState<Side>("merchant");
+  const [step, setStep] = useState(0);
+
+  const { contextSafe } = useGSAP(
+    () => {
+      const mm = gsap.matchMedia();
+      mm.add({ motion: "(prefers-reduced-motion: no-preference)", wide: "(min-width: 1024px)" }, (ctx) => {
+        const { motion, wide } = ctx.conditions as { motion: boolean; wide: boolean };
+        const hero = heroTurn.current;
+        const how = howTurn.current;
+        const section = document.getElementById("how");
+        if (!hero || !how || !section) return;
+
+        // Arrival: the pane clears out of the smoke, then its lines are etched in, then the crack runs.
+        if (motion) {
+          gsap
+            .timeline({ delay: 0.15 })
+            // Fade and blur go on the frame: a filter on the turning layer would flatten its 3D faces mid-turn.
+            .from(hero.parentElement, { opacity: 0, filter: "blur(18px)", duration: 1.2, ease: "expo.out", clearProps: "opacity,filter" })
+            .from(hero, { y: 36, rotationX: 12, duration: 1.2, ease: "expo.out" }, 0)
+            .from(hero.querySelectorAll('[data-side="merchant"] [data-etch]'), { clipPath: "inset(0 100% 0 0)", duration: 0.7, stagger: 0.06, ease: "expo.out", clearProps: "clipPath" }, 0.35)
+            .from(hero.querySelector('[data-side="merchant"] .crack path'), { strokeDashoffset: 1, duration: 0.6, ease: "power2.out" }, 0.95);
+        }
+
+        if (!wide) return;
+        section.dataset.crank = "on";
+        gsap.utils.toArray<HTMLElement>("[data-step]", section).forEach((el, i) =>
+          ScrollTrigger.create({
+            trigger: el,
+            start: "top 55%",
+            end: "bottom 55%",
+            onToggle: (self) => {
+              if (!self.isActive) return;
+              setStep(i);
+              if (!motion) gsap.set(how, { rotationY: i === 3 ? 180 : 0 });
+            },
+          }),
+        );
+
+        // One scrubbed timeline over the four steps etches the record, cracks and outlines it, holds for
+        // the draft, then turns the pane to the buyer's side.
+        if (motion) {
+          const front = how.querySelector('[data-side="merchant"]')!;
+          gsap
+            .timeline({ scrollTrigger: { trigger: "#how-steps", start: "top 60%", end: "bottom 75%", scrub: 0.8 }, defaults: { ease: "none" } })
+            .fromTo(front.querySelectorAll("[data-etch]"), { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", stagger: 0.12, duration: 0.5 })
+            .fromTo(front.querySelector(".crack path"), { strokeDashoffset: 1 }, { strokeDashoffset: 0, duration: 0.5 })
+            .fromTo(front.querySelector(".gl-mark-missing"), { "--outline": 0 }, { "--outline": 1, duration: 0.4 }, "<")
+            .to({}, { duration: 0.9 })
+            .fromTo(how, { rotationY: 0, "--spec": "0%" }, { rotationY: 180, "--spec": "100%", duration: 1, ease: "power2.inOut" });
+        }
+
+        return () => {
+          delete section.dataset.crank;
+          setStep(0);
+        };
+      });
+    },
+    { scope: root },
+  );
+
+  const turnHero = contextSafe((side: Side) => {
+    setHeroFace(side);
+    gsap.to(heroTurn.current, { rotationY: side === "buyer" ? 180 : 0, "--spec": side === "buyer" ? "100%" : "0%", duration: reduced() ? 0 : 0.9, ease: "expo.inOut", overwrite: true });
+  });
+
   return (
-    <div className="landing" id="top">
+    <div className="landing lattice" id="top" ref={root}>
       <a href="#main" className="sr-only rounded-md bg-primary px-4 py-2 text-primary-foreground focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-10">
         Skip to content
       </a>
       <Header onSignIn={onSignIn} />
       <main id="main">
-        <Hero onSignIn={onSignIn} />
-        <HowItWorks />
+        <Hero onSignIn={onSignIn} face={heroFace} onFace={turnHero} turnRef={heroTurn} />
+        <HowItWorks step={step} turnRef={howTurn} />
         <Roles />
         <Safeguards />
         <Questions />

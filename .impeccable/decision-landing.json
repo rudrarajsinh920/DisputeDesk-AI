@@ -1,0 +1,112 @@
+{
+  "title": "Choose the landing page's visual world",
+  "question": "The roll assigned The Two-Sided Glass Record. Keep it, take an alternate, or re-roll.",
+  "options": [
+    {
+      "id": "assigned",
+      "kind": "assigned",
+      "label": "The Two-Sided Glass Record",
+      "kicker": "THE ROLL",
+      "lineage": "etched glass case records, read from both sides of the counter",
+      "thesis": "One dispute record etched into a pane of smoked glass: the merchant reads it from one side, the buyer from the other, and the facts are the same lines.",
+      "palette": ["#dfe6e3", "#10181b", "#e9a23b", "#5aa9d8", "#d8f65a"],
+      "materials": ["smoked glass", "laser etch", "refraction"],
+      "viewport": "A large glass pane holds a synthetic dispute record; as you scroll it turns on its axis from the merchant's side (amber) to the buyer's side (blue), and every etched fact stays put. Present, missing and contradictory evidence are etched, dashed and cracked. Sign in sits on the pane's frame.",
+      "risk": "Glass can read as a decorative effect if the record on it isn't legible, full-size content.",
+      "raised": [
+        { "from": "challenger-automata", "raise": "Scroll is one shared crank: a single GSAP timeline turns the pane and advances the dispute's stages, with a text step list beside it for keyboard and reduced motion." },
+        { "from": "challenger-hoffmann", "raise": "Every section sits on one strict square unit, so the glass panes, ledger rows and controls share a ruled lattice." }
+      ]
+    },
+    {
+      "id": "model-pick",
+      "kind": "pick",
+      "label": "The Evidence Scanner",
+      "kicker": "IMPECCABLE’S PICK",
+      "lineage": "airport X-ray baggage scanners",
+      "thesis": "The dispute passes through a scanner and the engine shows what is inside: present evidence lit, missing evidence an empty outline, contradictions flagged.",
+      "palette": ["#0f2430", "#7fd1c7", "#f2b84b", "#e8584b", "#f4f1ea"],
+      "materials": ["false-colour X-ray", "conveyor belt"],
+      "viewport": "A parcel rides a belt through a scanner as you scroll; its contents resolve into the evidence ledger.",
+      "risk": "Familiar 'scan' metaphor, and the dark ground leans toward the neon-on-black look."
+    },
+    {
+      "id": "challenger-automata",
+      "kind": "challenger",
+      "catalogId": "kinetic-sculpture-automata-crank-paper-menagerie",
+      "label": "Paper Automata",
+      "verdict": "competitive",
+      "lineage": "hand-cranked paper automata",
+      "thesis": "Scroll turns a crank; each dispute stage is a paper figure that opens in sequence.",
+      "palette": ["#f4efe6", "#c69c6d", "#2b2b2b", "#c8102e"],
+      "materials": ["cut paper", "kraft board"],
+      "viewport": "A crank-driven procession of the four dispute stages.",
+      "case": "Clear stage story, but handmade paper fights the futuristic brief.",
+      "risk": "Reads as craft, not fintech.",
+      "hero": "https://impeccable.style/worlds/cards/kinetic-sculpture-automata-crank-paper-menagerie-hero.webp"
+    },
+    {
+      "id": "challenger-hoffmann",
+      "kind": "challenger",
+      "catalogId": "design-canon-hoffmann-gridsmith-showroom",
+      "label": "Gridsmith Showroom",
+      "verdict": "declined",
+      "lineage": "Wiener Werkstätte metalwork",
+      "palette": ["#ffffff", "#111111", "#b8b8b8"],
+      "materials": ["pierced silver", "black lacquer"],
+      "case": "Luxury showroom; neither side of a dispute sees themselves in it.",
+      "kept": "A strict square unit across the page."
+    },
+    {
+      "id": "challenger-generative",
+      "kind": "challenger",
+      "catalogId": "generative-parametric-identity",
+      "label": "Parametric Identity",
+      "verdict": "declined",
+      "lineage": "generative brand systems",
+      "palette": ["#3b5bdb", "#f8f9fa"],
+      "materials": ["flat vector"],
+      "case": "A reseeding logo says nothing about evidence or fairness.",
+      "kept": "Tokens derived from one source, so the whole page shifts together."
+    },
+    {
+      "id": "challenger-plankton",
+      "kind": "challenger",
+      "catalogId": "reefs-bioluminescent-nocturnal-plankton-wake-stars",
+      "label": "Bioluminescent Wake",
+      "verdict": "declined",
+      "lineage": "night sea plankton",
+      "palette": ["#02040a", "#2ad4ff"],
+      "materials": ["living light"],
+      "case": "Glow on black is the generic AI look you asked to avoid.",
+      "kept": "Traces that fade: past stages dim rather than vanish."
+    },
+    {
+      "id": "challenger-phosphor",
+      "kind": "challenger",
+      "catalogId": "signals-instruments-phosphor-terminal-midnight",
+      "label": "Phosphor Terminal",
+      "verdict": "declined",
+      "lineage": "green-screen terminals",
+      "palette": ["#050805", "#39ff6a"],
+      "materials": ["scanlines"],
+      "case": "Shuts out buyers; reads as a developer tool.",
+      "kept": "System states print as text, not chrome."
+    },
+    {
+      "id": "challenger-onebit",
+      "kind": "challenger",
+      "catalogId": "medium-native-one-bit-desktop",
+      "label": "One-Bit Desktop",
+      "verdict": "declined",
+      "lineage": "early one-bit desktops",
+      "palette": ["#ffffff", "#000000"],
+      "materials": ["dither"],
+      "case": "Nostalgia, the opposite of futuristic.",
+      "kept": "Selection is unmistakable: one inverted state."
+    }
+  ],
+  "reroll": { "registers": ["safer", "bolder"] },
+  "buildPath": { "value": "code", "toggle": false },
+  "canon": true
+}
