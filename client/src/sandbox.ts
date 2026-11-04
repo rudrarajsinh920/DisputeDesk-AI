@@ -6,7 +6,9 @@ export const SIGNED_OUT_EVENT = "disputedesk:signed-out";
 // Turns a non-2xx server reply into an error carrying the server's own message and error code.
 export function serverError(response: Response, body: unknown): Error & { code?: string } {
   const error = (body as { error?: { message?: unknown; code?: unknown } } | null)?.error;
-  const message = typeof error?.message === "string" ? error.message : "The DisputeDesk server is not responding.";
+  // No server message: the dev proxy answered for a server that isn't running, so say how to start it.
+  const message =
+    typeof error?.message === "string" ? error.message : "The DisputeDesk server is not responding. Start it with npm --prefix server start, then try again.";
   const code = typeof error?.code === "string" ? error.code : undefined;
   if (code === "not_signed_in" && typeof window !== "undefined") window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
   return Object.assign(new Error(`${message} (HTTP ${response.status})`), { code });

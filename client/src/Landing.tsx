@@ -377,13 +377,17 @@ const STEPS: { title: string; body: string; extra?: ReactNode }[] = [
   },
 ];
 
-function HowItWorks({ step, turnRef }: { step: number; turnRef: RefObject<HTMLDivElement | null> }) {
+function HowItWorks({ step, turnRef, face, onFace }: { step: number; turnRef: RefObject<HTMLDivElement | null>; face: Side; onFace: (side: Side) => void }) {
   return (
-    <section id="how" aria-labelledby="how-h" className="how mx-auto max-w-[90rem] px-4 py-24 md:px-8 md:py-36 lg:px-12">
+    <section id="how" aria-labelledby="how-h" className="how mx-auto max-w-[90rem] px-4 py-20 md:px-8 md:py-24 lg:px-12">
       <SectionHead id="how-h" title="One record, checked in four steps." lead="The same order every time. The rules decide the facts; the AI only puts them into words." />
       <div className="mt-14 grid gap-12 lg:mt-20 lg:grid-cols-12 lg:gap-12">
         <div className="lg:sticky lg:top-24 lg:col-span-6 lg:self-start">
-          <Pane label="Illustrative example of the record as each step changes it" face={step === 3 ? "buyer" : "merchant"} turnRef={turnRef} />
+          <Pane label="Illustrative example of the record as each step changes it" face={step === 3 ? "buyer" : face} turnRef={turnRef} />
+          {/* Below 1024 the scroll doesn't turn this pane, so the reader turns it. */}
+          <div className="mt-5 lg:hidden">
+            <SideToggle face={face} onFace={onFace} />
+          </div>
         </div>
         <ol id="how-steps" className="gl-steps lg:col-span-6">
           {STEPS.map((s, i) => (
@@ -485,7 +489,7 @@ const ROLES: { id: string; tab: string; side?: Side; title: string; body: string
 function Roles() {
   return (
     <section id="roles" aria-labelledby="roles-h" className="roles">
-      <div className="mx-auto max-w-[90rem] px-4 py-24 md:px-8 md:py-36 lg:px-12">
+      <div className="mx-auto max-w-[90rem] px-4 py-20 md:px-8 md:py-24 lg:px-12">
         <SectionHead id="roles-h" title="One set of facts, four views." lead="Each account sees only its own disputes, and only the parts its role needs." />
         <Tabs defaultValue="merchants" className="mt-12 gap-10">
           <TabsList className="role-tabs h-auto w-full flex-wrap justify-start gap-1 p-1 sm:w-fit">
@@ -529,7 +533,7 @@ const SAFEGUARDS: { title: string; body: string }[] = [
 
 function Safeguards() {
   return (
-    <section id="safeguards" aria-labelledby="safeguards-h" className="mx-auto grid max-w-[90rem] gap-14 px-4 py-24 md:px-8 md:py-36 lg:grid-cols-12 lg:gap-12 lg:px-12">
+    <section id="safeguards" aria-labelledby="safeguards-h" className="mx-auto grid max-w-[90rem] gap-14 px-4 py-20 md:px-8 md:py-24 lg:grid-cols-12 lg:gap-12 lg:px-12">
       <div className="lg:col-span-5">
         <h2 id="safeguards-h" data-reveal className="text-[2rem] leading-[1.06] font-semibold tracking-[-0.035em] md:text-5xl lg:text-[3.5rem]">
           What DisputeDesk will and won’t do.
@@ -565,7 +569,7 @@ const FAQ: { q: string; a: string }[] = [
 
 function Questions() {
   return (
-    <section id="faq" aria-labelledby="faq-h" className="mx-auto grid max-w-[90rem] gap-10 px-4 pb-24 md:grid-cols-12 md:gap-8 md:px-8 md:pb-36 lg:px-12">
+    <section id="faq" aria-labelledby="faq-h" className="mx-auto grid max-w-[90rem] gap-10 px-4 pb-20 md:grid-cols-12 md:gap-8 md:px-8 md:pb-24 lg:px-12">
       <h2 id="faq-h" data-reveal className="text-[2rem] leading-[1.06] font-semibold tracking-[-0.035em] md:col-span-4 md:text-5xl">
         Questions
       </h2>
@@ -628,6 +632,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
   const heroTurn = useRef<HTMLDivElement>(null);
   const howTurn = useRef<HTMLDivElement>(null);
   const [heroFace, setHeroFace] = useState<Side>("merchant");
+  const [howFace, setHowFace] = useState<Side>("merchant");
   const [step, setStep] = useState(0);
   const [active, setActive] = useState("");
 
@@ -725,7 +730,19 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
           });
         }
 
-        if (!wide) return () => cleanups.forEach((fn) => fn());
+        if (!wide) {
+          // On phones the record is etched in once as it scrolls into view; the toggle under it turns it.
+          if (motion) {
+            const front = how.querySelector('[data-side="merchant"]')!;
+            gsap
+              .timeline({ scrollTrigger: { trigger: how, start: "top 80%", once: true } })
+              .from(front.querySelectorAll("[data-etch]"), { clipPath: "inset(0 100% 0 0)", duration: 0.7, stagger: 0.07, ease: "expo.out", clearProps: "clipPath" })
+              .from(front.querySelector(".crack path"), { strokeDashoffset: 1, duration: 0.6, ease: "power2.out" }, "-=0.2");
+          }
+          return () => cleanups.forEach((fn) => fn());
+        }
+        // The scroll drives this pane on wide screens, so the phone toggle's choice is dropped.
+        setHowFace("merchant");
         section.dataset.crank = "on";
         gsap.utils.toArray<HTMLElement>("[data-step]", section).forEach((el, i) =>
           ScrollTrigger.create({
@@ -764,9 +781,15 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
     { scope: root },
   );
 
+  const turn = (el: HTMLDivElement | null, side: Side) =>
+    gsap.to(el, { rotationY: side === "buyer" ? 180 : 0, "--spec": side === "buyer" ? "100%" : "0%", duration: reduced() ? 0 : 0.9, ease: "expo.inOut", overwrite: true });
   const turnHero = contextSafe((side: Side) => {
     setHeroFace(side);
-    gsap.to(heroTurn.current, { rotationY: side === "buyer" ? 180 : 0, "--spec": side === "buyer" ? "100%" : "0%", duration: reduced() ? 0 : 0.9, ease: "expo.inOut", overwrite: true });
+    turn(heroTurn.current, side);
+  });
+  const turnHow = contextSafe((side: Side) => {
+    setHowFace(side);
+    turn(howTurn.current, side);
   });
 
   return (
@@ -777,7 +800,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
       <Header onSignIn={onSignIn} active={active} />
       <main id="main">
         <Hero onSignIn={onSignIn} face={heroFace} onFace={turnHero} turnRef={heroTurn} />
-        <HowItWorks step={step} turnRef={howTurn} />
+        <HowItWorks step={step} turnRef={howTurn} face={howFace} onFace={turnHow} />
         <Roles />
         <Safeguards />
         <Questions />

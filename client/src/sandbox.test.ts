@@ -37,7 +37,7 @@ test("server errors surface the server's message", async () => {
 
 test("no server (empty proxy reply) gives a plain message", async () => {
   respond(502, "");
-  await assert.rejects(fetchSandboxDisputes(), /not responding\. \(HTTP 502\)/);
+  await assert.rejects(fetchSandboxDisputes(), /not responding\. Start it with npm --prefix server start, then try again\. \(HTTP 502\)/);
 });
 
 test("a reply that is not a sandbox list is rejected", async () => {
