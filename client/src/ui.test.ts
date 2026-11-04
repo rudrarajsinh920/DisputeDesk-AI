@@ -158,7 +158,7 @@ const buyerReady = (disputes: BuyerDispute[]) => html(createElement(BuyerDispute
 const headingLevels = (markup: string) => [...markup.matchAll(/<h([1-6])/g)].map((m) => Number(m[1]));
 
 test("buyers see their own disputes with guidance labelled by source, and nothing of the merchant's", () => {
-  const markup = buyerReady(demoDisputes.slice(1).map(buyerView));
+  const markup = buyerReady(demoDisputes.slice(1, 3).map(buyerView));
   const out = text(markup);
   assert.match(out, /Your disputes 2 on this account/);
   assert.match(out, /DEMO-1002 .*DEMO-1003/);
@@ -440,8 +440,8 @@ test("the client calls only DisputeDesk's own read and analysis endpoints", () =
     .map((f) => readFileSync(new URL(f, dir), "utf8"))
     .join("\n");
   const urls = [...new Set([...sources.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(urls, ["/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/sandbox/disputes"]);
-  assert.equal((sources.match(/fetch\(/g) ?? []).length, 8, "each fetch call uses one of the endpoints above");
+  assert.deepEqual(urls, ["/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
+  assert.equal((sources.match(/fetch\(/g) ?? []).length, 10, "each fetch call uses one of the endpoints above");
   assert.doesNotMatch(sources, /paypal\.com|generativelanguage|method:\s*"(PUT|PATCH|DELETE)"/i);
 });
 
@@ -459,7 +459,8 @@ test("the demo set shows a gaps case, a contradiction case and a complete case, 
   assert.ok(byId["DEMO-1003"].evidence.every((e) => e.status === "available"));
   assert.equal(byId["DEMO-1003"].contradictions.length, 0);
 
-  const list = text(view(demoDisputes, { status: "loading" }));
+  // The first three are the Merchant A and B examples; DEMO-2001 to DEMO-2014 are the insights set for Merchant C.
+  const list = text(view(demoDisputes.slice(0, 3), { status: "loading" }));
   assert.match(list, /Total disputes 3/);
   assert.match(list, /DEMO-1001 .*DEMO-1002 .*DEMO-1003/);
 });
@@ -497,4 +498,100 @@ test("the validation example is labeled as not Gemini and shows every planted mi
   assert.match(markup, /<details open="">/, "the unused text shows without an extra click");
   assert.doesNotMatch(markup, /<textarea/, "the example never becomes a draft");
   assert.match(out, /Hide validation example/);
+});
+
+// ---- Phase 5: dispute insights ----
+
+const { buildIntelligence, rulesIntelligenceExplanation } = await import("../../server/src/intelligence.ts");
+const { InsightsExplainView, InsightsState, InsightsView } = await import("./Intelligence.tsx");
+const NOV_4 = Date.UTC(2026, 10, 4);
+const insightsOf = (ids: string[] | null, scope: "account" | "all" = "account") =>
+  buildIntelligence(ids ? demoDisputes.filter((d) => ids.includes(d.dispute_id)) : demoDisputes, NOV_4, scope);
+const merchantCIds = demoDisputes.filter((d) => d.dispute_id.startsWith("DEMO-20")).map((d) => d.dispute_id);
+const insightsHtml = (ids: string[] | null, canExplain = true, scope: "account" | "all" = "account") =>
+  html(createElement(InsightsView, { insights: insightsOf(ids, scope), canExplain }));
+// Every "(N%)" must follow "of T" with T at or above the percentage minimum.
+const percentDenominators = (out: string) => [...out.matchAll(/of (\d+) \(\d+%\)/g)].map((m) => Number(m[1]));
+
+test("the dashboard offers an Insights view, and the buyer home does not", () => {
+  const page = text(html(createElement(Dashboard, { account: merchant, onSignOut: noop })));
+  assert.match(page, /Disputes Insights/);
+  const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+  const buyerHome = app.slice(app.indexOf("export function BuyerHome"));
+  assert.doesNotMatch(buyerHome.slice(0, buyerHome.indexOf("\n}\n")), /Insights|intelligence/i);
+  assert.doesNotMatch(readFileSync(new URL("./Buyer.tsx", import.meta.url), "utf8"), /\/api\/intelligence|Intelligence/);
+});
+
+test("Merchant C's insights show every suggestion with what was found, its records, why, an action and its limits", () => {
+  const out = text(insightsHtml(merchantCIds));
+  for (const h of ["About this data", "Suggestions to check", "Patterns found", "Evidence completeness", "Status", "Reasons", "By month opened", "Plain-language summary"]) {
+    assert.match(out, new RegExp(h));
+  }
+  for (const title of ["Improve delivery confirmation records", "Keep a tracking record for every shipment", "Keep clearer customer communication records", "Keep transaction and refund records organized", "Resolve conflicting records", "Review unresolved disputes"]) {
+    assert.match(out, new RegExp(`${title} (Moderate confidence|Limited data) What was detected .+? Supporting records DEMO-.+? Why it matters .+? Practical action .+? Limitation `), title);
+  }
+  assert.match(out, /Proof of delivery is missing or unverified in 6 of 7 item-not-received disputes/);
+  assert.match(out, /DEMO-2003, DEMO-2005, DEMO-2007, DEMO-2009, DEMO-2011, DEMO-2013/);
+  assert.match(out, /2026-05 .*2 disputes · 7 of 8 evidence items available/);
+  assert.match(out, /They do not predict or change any dispute's outcome/);
+  assert.ok(percentDenominators(out).every((n) => n >= 10), "percentages only with at least 10 disputes behind them");
+  assert.match(out, /Unresolved 10 of 14 \(71%\)/);
+  assert.match(out, /6 of 7 Recurring|Recurring .*6 of 7/, "a share of 7 is shown as a count");
+  assert.doesNotMatch(out, /6 of 7 \(/);
+});
+
+test("with too little data the insights say so: counts only, no monthly view, limited confidence", () => {
+  const a = text(insightsHtml(["DEMO-1001", "DEMO-1002"]));
+  assert.doesNotMatch(a, /%/, "no percentage from two disputes");
+  assert.match(a, /With fewer than 10 disputes, shares are shown as counts only/);
+  assert.match(a, /Not enough dated disputes for a monthly view/);
+  assert.match(a, /Below pattern minimum/);
+  assert.match(a, /Review unresolved disputes Limited data/);
+  assert.doesNotMatch(a, /Improve delivery confirmation records/, "two gaps are not a pattern");
+
+  const b = text(insightsHtml(["DEMO-1003"]));
+  assert.match(b, /Nothing to suggest yet/);
+  assert.match(b, /No gaps, conflicts or waiting disputes were found/);
+});
+
+test("admin sees all demo merchants read-only, with no AI summary button", () => {
+  const out = text(insightsHtml(null, false, "all"));
+  assert.match(out, /All demo merchants \(read-only\)/);
+  assert.doesNotMatch(out, /Summarize these insights|Plain-language summary/);
+  const merchantView = text(insightsHtml(merchantCIds));
+  assert.match(merchantView, /Your demo disputes/);
+  assert.match(merchantView, /Summarize these insights/);
+});
+
+test("insights loading, error and empty states", () => {
+  const state = (load: Parameters<typeof InsightsState>[0]["load"]) => text(html(createElement(InsightsState, { load, onRetry: noop, canExplain: true })));
+  assert.match(state({ status: "loading" }), /Loading insights…/);
+  assert.match(state({ status: "error", message: "Sign in to continue. (HTTP 401)" }), /Couldn't load insights Sign in to continue\. \(HTTP 401\) Try again/);
+  assert.match(state({ status: "ready", insights: insightsOf([]) }), /No demo disputes on this account/);
+});
+
+test("the insights summary is labelled as checked AI wording or the standard summary, and says why", () => {
+  const i = insightsOf(merchantCIds);
+  const ready = (explanation: ReturnType<typeof rulesIntelligenceExplanation>) =>
+    text(html(createElement(InsightsExplainView, { state: { status: "ready", explanation }, onRun: noop })));
+  const standard = ready(rulesIntelligenceExplanation(i, "The AI wording did not pass DisputeDesk's checks, so this is the standard explanation.", ["claims a cause; the rules find gaps, not causes"]));
+  assert.match(standard, /Standard explanation/);
+  assert.match(standard, /did not pass DisputeDesk's checks/);
+  assert.match(standard, /Checks the AI wording failed: claims a cause/);
+  const ai = ready({ origin: "ai", model: "gemini-test-model", paragraphs: ["Checked wording."], fallback_reason: null, flags: [] });
+  assert.match(ai, /AI wording \(checked\)/);
+  const busy = html(createElement(InsightsExplainView, { state: { status: "loading" }, onRun: noop }));
+  assert.match(busy, /aria-disabled="true"/);
+  assert.match(busy, /aria-live="polite"/);
+});
+
+test("insights headings keep order, and every bar states its count in text", () => {
+  const markup = insightsHtml(merchantCIds);
+  const levels = headingLevels(markup);
+  assert.ok(levels.every((l) => l === 2 || l === 3), "panels are h2, suggestion cards h3");
+  const bars = [...markup.matchAll(/<li class="bar-row[^"]*">(.*?)<\/li>/g)].map((m) => text(m[1]));
+  assert.ok(bars.length > 10);
+  for (const bar of bars) assert.match(bar, /\d+ (of \d+|disputes?)/, bar);
+  assert.match(markup, /<table class="evidence-table">/);
+  assert.match(markup, /<th scope="col">Available<\/th>/);
 });

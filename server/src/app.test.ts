@@ -324,7 +324,8 @@ test("analysis endpoint rejects bad lookups, bad JSON and oversized bodies", asy
 });
 
 test("the server's demo set is the validated demo fixture", () => {
-  assert.deepEqual(DEMO_DISPUTES.map((d) => d.dispute_id), ["DEMO-1001", "DEMO-1002", "DEMO-1003"]);
+  const insights = Array.from({ length: 14 }, (_, i) => `DEMO-${2001 + i}`);
+  assert.deepEqual(DEMO_DISPUTES.map((d) => d.dispute_id), ["DEMO-1001", "DEMO-1002", "DEMO-1003", ...insights]);
   assert.ok(DEMO_DISPUTES.every((d) => d.source === "demo"));
   // Demo IDs and tracking numbers are marked synthetic so they can't pass for real PayPal or carrier data.
   assert.ok(DEMO_DISPUTES.every((d) => /^DEMO-/.test(d.dispute_id) && (!d.order?.tracking_number || /^DEMO-TRK-/.test(d.order.tracking_number))));
@@ -590,6 +591,8 @@ test("the validation example rejects bad lookups like the other analysis routes"
 
 const ROLES_OF: Record<string, string> = { admin: "admin", "merchant-a": "merchant", "merchant-b": "merchant", "buyer-a": "buyer", "buyer-b": "buyer" };
 const ALL = Object.keys(ROLES_OF);
+// Every demo account, in file order. Merchant C holds the larger insights demo set and is left out of the role matrix.
+const ACCOUNT_IDS = ["admin", "merchant-a", "merchant-b", "merchant-c", "buyer-a", "buyer-b"];
 
 async function withServer<T>(app: App, run: (base: string) => Promise<T>): Promise<T> {
   const server = app.listen(0, "127.0.0.1");
@@ -706,6 +709,8 @@ const PROTECTED: [string, string][] = [
   ["POST", "/api/analysis/ai"],
   ["POST", "/api/analysis/ai/example"],
   ["GET", "/api/health"],
+  ["GET", "/api/intelligence"],
+  ["POST", "/api/intelligence/explain"],
 ];
 // Sign-in and sign-out are the only routes without a session check.
 const PUBLIC_ROUTES = ["POST /api/auth/login", "POST /api/auth/logout"];
@@ -761,6 +766,8 @@ test("each route allows exactly the intended roles", async () => {
     ["validation example of DEMO-1003", "/api/analysis/ai/example", body("DEMO-1003"), [200, 404, 200, 403, 403]],
     ["sandbox analysis", "/api/analysis", lookup("paypal_sandbox", "PP-D-1"), [200, 200, 403, 403, 403]],
     ["health", "/api/health", undefined, [200, 200, 200, 403, 403]],
+    ["insights", "/api/intelligence", undefined, [200, 200, 200, 403, 403]],
+    ["insights explanation (admin is read-only)", "/api/intelligence/explain", { method: "POST" }, [403, 200, 200, 403, 403]],
   ];
   assert.deepEqual([...new Set(matrix.map((m) => m[1]))].sort(), PROTECTED.map((p) => p[1]).sort(), "every protected route is in the matrix");
   for (const [label, path, init, expected] of matrix) {
@@ -779,7 +786,9 @@ test("each route allows exactly the intended roles", async () => {
 test("each account sees only its own disputes, and buyers see no merchant records", async () => {
   const app = makeApp(null);
   const ids = async (path: string, as: string) => (await get(app, path, {}, as)).body.disputes.map((d: { dispute_id: string }) => d.dispute_id);
-  assert.deepEqual(await ids("/api/disputes", "admin"), ["DEMO-1001", "DEMO-1002", "DEMO-1003"]);
+  const insights = Array.from({ length: 14 }, (_, i) => `DEMO-${2001 + i}`);
+  assert.deepEqual(await ids("/api/disputes", "admin"), ["DEMO-1001", "DEMO-1002", "DEMO-1003", ...insights]);
+  assert.deepEqual(await ids("/api/disputes", "merchant-c"), insights);
   assert.deepEqual(await ids("/api/disputes", "merchant-a"), ["DEMO-1001", "DEMO-1002"]);
   assert.deepEqual(await ids("/api/disputes", "merchant-b"), ["DEMO-1003"]);
   assert.deepEqual(await ids("/api/buyer/disputes", "buyer-a"), ["DEMO-1001"]);
@@ -817,7 +826,7 @@ test("no account can analyse another account's dispute, whatever the request cla
 test("admin can read every account but never sees password hashes", async () => {
   const res = await get(makeApp(null), "/api/admin/accounts", {}, "admin");
   assert.equal(res.status, 200);
-  assert.deepEqual(res.body.accounts.map((a: { id: string }) => a.id), ALL);
+  assert.deepEqual(res.body.accounts.map((a: { id: string }) => a.id), ACCOUNT_IDS);
   assert.ok(!res.text.includes("password"));
   assert.ok(!res.text.includes("scrypt$"));
   // Admin is read-only: there is no route that changes an account or a dispute.
@@ -850,7 +859,7 @@ test("the demo account file is synthetic, hashed, and matches the demo disputes"
     assert.match(a.password_hash, /^scrypt\$/);
     assert.ok(a.dispute_ids.every((id) => ids.includes(id)));
   }
-  assert.deepEqual(DEMO_ACCOUNTS.map((a) => a.id), ALL);
+  assert.deepEqual(DEMO_ACCOUNTS.map((a) => a.id), ACCOUNT_IDS);
 });
 
 // ---- Phase 2.1 regression tests ----
@@ -1158,4 +1167,125 @@ test("a buyer can't get an explanation of another account's dispute, and Gemini 
   assert.equal((await get(app, "/api/buyer/explain", lookup("paypal_sandbox", "PP-D-1"), "buyer-a")).status, 403);
   assert.equal((await get(app, "/api/buyer/explain", lookup("demo", "../x"), "buyer-a")).status, 400);
   assert.equal(ai.calls.length, 0);
+});
+
+// ---- Phase 5: Dispute Prevention & Resolution Intelligence ----
+
+const NOV_4 = () => Date.UTC(2026, 10, 4);
+const INSIGHTS_IDS = Array.from({ length: 14 }, (_, i) => `DEMO-${2001 + i}`);
+const idsIn = (body: { status: { dispute_ids: string[] }[] }) => body.status.flatMap((s) => s.dispute_ids).sort();
+const explain = { method: "POST" } as const;
+
+test("each merchant's insights come only from that merchant's own disputes", async () => {
+  const app = makeApp(null, null, undefined, NOV_4);
+  const owned: Record<string, string[]> = {
+    "merchant-a": ["DEMO-1001", "DEMO-1002"],
+    "merchant-b": ["DEMO-1003"],
+    "merchant-c": INSIGHTS_IDS,
+  };
+  for (const [id, ids] of Object.entries(owned)) {
+    const res = await get(app, "/api/intelligence", {}, id);
+    assert.equal(res.status, 200, id);
+    assert.equal(res.body.source, "demo");
+    assert.equal(res.body.scope, "account");
+    assert.equal(res.body.total, ids.length);
+    assert.deepEqual(idsIn(res.body), ids, id);
+    const others = DEMO_DISPUTES.filter((d) => !ids.includes(d.dispute_id));
+    for (const d of others) assert.ok(!res.text.includes(`"${d.dispute_id}"`), `${id} saw ${d.dispute_id}`);
+    for (const d of DEMO_DISPUTES) {
+      assert.ok(!res.text.includes(d.customer_message!), "no buyer message in insights");
+      assert.ok(!res.text.includes(d.order!.item!), "no order item in insights");
+    }
+  }
+  const admin = await get(app, "/api/intelligence", {}, "admin");
+  assert.equal(admin.body.scope, "all");
+  assert.equal(admin.body.total, DEMO_DISPUTES.length);
+});
+
+test("no request field or query can widen a merchant's insights", async () => {
+  const app = makeApp(null, null, undefined, NOV_4);
+  const plain = await get(app, "/api/intelligence", {}, "merchant-b");
+  for (const path of ["/api/intelligence?account_id=merchant-c", "/api/intelligence?scope=all", "/api/intelligence?role=admin"]) {
+    const res = await get(app, path, {}, "merchant-b");
+    assert.deepEqual(idsIn(res.body), ["DEMO-1003"], path);
+    assert.equal(res.body.scope, "account");
+    assert.equal(res.body.total, plain.body.total);
+  }
+  const forged = await get(app, "/api/intelligence/explain", postJson(JSON.stringify({ account_id: "merchant-c", scope: "all" })), "merchant-b");
+  assert.equal(forged.status, 200);
+  assert.match(forged.body.paragraphs[0], /checked 1 demo dispute on this account/);
+});
+
+test("buyers get no merchant insights, and admin cannot ask for AI wording", async () => {
+  const ai = mockAi();
+  const app = makeApp(null, ai.client, undefined, NOV_4);
+  for (const buyer of ["buyer-a", "buyer-b"]) {
+    for (const [path, init] of [["/api/intelligence", {}], ["/api/intelligence/explain", explain]] as const) {
+      const res = await get(app, path, init, buyer);
+      assert.equal(res.status, 403, `${buyer} ${path}`);
+      assert.equal(res.body.error.code, "forbidden");
+      assert.ok(!/DEMO-\d+/.test(res.text), "a refusal names no dispute");
+    }
+  }
+  assert.equal((await get(app, "/api/intelligence/explain", explain, "admin")).status, 403);
+  assert.equal(ai.calls.length, 0);
+});
+
+test("PayPal sandbox disputes are never part of the insights", async () => {
+  const paypal = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }) });
+  const res = await get(makeApp(paypal.client, null, undefined, NOV_4), "/api/intelligence", {}, "merchant-a");
+  assert.equal(res.body.total, 2);
+  assert.ok(!res.text.includes("PP-D-1"));
+  assert.equal(paypal.calls.length, 0, "insights never call PayPal");
+});
+
+test("insights explanation: checked AI wording, or the labelled standard explanation, never the failed text", async () => {
+  const good = {
+    paragraphs: [
+      "DisputeDesk found that proof of delivery is missing or unverified in 6 of 7 item-not-received disputes on this account.",
+      "Saving the carrier's delivery confirmation with each order may help when you respond. DEMO-2011 is waiting for your response.",
+    ],
+  };
+  const ok = mockAi(() => aiAnswer(good));
+  const res = await get(makeApp(null, ok.client, undefined, NOV_4), "/api/intelligence/explain", explain, "merchant-c");
+  assert.equal(res.status, 200);
+  assert.equal(res.body.origin, "ai");
+  assert.equal(res.body.model, "gemini-test-model");
+  assert.equal(ok.calls.length, 1);
+  const sent = ok.calls[0].body;
+  for (const d of DEMO_DISPUTES) {
+    if (!INSIGHTS_IDS.includes(d.dispute_id)) assert.ok(!sent.includes(d.dispute_id), `prompt leaked ${d.dispute_id}`);
+    assert.ok(!sent.includes(d.customer_message!), "prompt holds no buyer message");
+  }
+  assertNoAiKey(res.text);
+
+  const failing = "Missing delivery proof caused most of these disputes, and saving it will prevent future disputes.";
+  const bad = await get(makeApp(null, mockAi(() => aiAnswer({ paragraphs: [failing] })).client, undefined, NOV_4), "/api/intelligence/explain", explain, "merchant-c");
+  assert.equal(bad.body.origin, "rules");
+  assert.match(bad.body.fallback_reason, /did not pass/);
+  assert.ok(bad.body.flags.some((f: string) => /cause/.test(f)));
+  assert.ok(!bad.text.includes(failing), "the failed wording is never returned");
+
+  const down = await get(makeApp(null, mockAi(() => json(500, {})).client, undefined, NOV_4), "/api/intelligence/explain", explain, "merchant-c");
+  assert.equal(down.status, 200);
+  assert.equal(down.body.origin, "rules");
+  assert.match(down.body.fallback_reason, /unavailable/);
+
+  const off = await get(makeApp(null, null, undefined, NOV_4), "/api/intelligence/explain", explain, "merchant-c");
+  assert.equal(off.body.origin, "rules");
+  assert.match(off.body.fallback_reason, /off on this server/);
+});
+
+test("viewing insights and asking for an explanation are audited, without any record text", async () => {
+  const db = openDatabase(":memory:");
+  const app = createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, db, now: NOV_4 });
+  await get(app, "/api/intelligence", {}, "merchant-c");
+  await get(app, "/api/intelligence", {}, "admin");
+  await get(app, "/api/intelligence/explain", explain, "merchant-c");
+  const rows = auditRows(db).filter((r) => String(r.event).startsWith("intelligence_"));
+  assert.deepEqual(rows, [
+    { event: "intelligence_viewed", account_id: "merchant-c", dispute_id: null, detail: "account, 14 demo disputes" },
+    { event: "intelligence_viewed", account_id: "admin", dispute_id: null, detail: `all, ${DEMO_DISPUTES.length} demo disputes` },
+    { event: "intelligence_explanation_generated", account_id: "merchant-c", dispute_id: null, detail: "rules" },
+  ]);
 });

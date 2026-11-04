@@ -23,7 +23,9 @@ test("demo disputes and their evidence read back exactly as the fixture files", 
   assert.deepEqual(asJson(loadDisputes(db)), asJson(DEMO_DISPUTES));
   for (const d of loadDisputes(db)) assert.equal(d.source, "demo", "every stored record stays labelled demo");
   // DEMO-1001 has no opened date in its file; it stays absent, never filled in.
-  assert.deepEqual(loadDisputes(db).map((d) => d.create_time), [undefined, "2026-10-18T09:30:00Z", "2026-10-22T14:05:00Z"]);
+  assert.deepEqual(loadDisputes(db).slice(0, 3).map((d) => d.create_time), [undefined, "2026-10-18T09:30:00Z", "2026-10-22T14:05:00Z"]);
+  // DEMO-2014 also has none.
+  assert.equal(loadDisputes(db).find((d) => d.dispute_id === "DEMO-2014")!.create_time, undefined);
 });
 
 test("missing evidence stays missing; it is never stored as false", () => {
@@ -62,8 +64,8 @@ test("a created account and its access survive closing and reopening the databas
     const first = openDatabase(path);
     seedDemo(first, [], DEMO_DISPUTES, 1);
     const account: Account = {
-      id: "merchant-c",
-      email: "merchant-c@demo.disputedesk.test",
+      id: "merchant-x",
+      email: "merchant-x@demo.disputedesk.test",
       role: "merchant",
       display_name: "Demo Merchant C",
       paypal_sandbox: false,
@@ -73,7 +75,7 @@ test("a created account and its access survive closing and reopening the databas
     createAccount(first, account, 1);
     first.close();
     const second = openDatabase(path);
-    assert.deepEqual(getAccount(second, "merchant-c"), account);
+    assert.deepEqual(getAccount(second, "merchant-x"), account);
     second.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -82,9 +84,9 @@ test("a created account and its access survive closing and reopening the databas
 
 test("creating an account is all or nothing", () => {
   const db = seeded();
-  const bad: Account = { ...DEMO_ACCOUNTS[1], id: "merchant-c", email: "merchant-c@demo.disputedesk.test", dispute_ids: ["DEMO-1001", "DEMO-404"] };
+  const bad: Account = { ...DEMO_ACCOUNTS[1], id: "merchant-x", email: "merchant-x@demo.disputedesk.test", dispute_ids: ["DEMO-1001", "DEMO-404"] };
   assert.throws(() => createAccount(db, bad, 1), /FOREIGN KEY/);
-  assert.equal(getAccount(db, "merchant-c"), null, "the account row was rolled back with its access");
+  assert.equal(getAccount(db, "merchant-x"), null, "the account row was rolled back with its access");
   assert.throws(() => createAccount(db, { ...bad, email: DEMO_ACCOUNTS[0].email, dispute_ids: [] }, 1), /UNIQUE/);
 });
 
@@ -97,7 +99,7 @@ test("seeding again mirrors the demo files: changes apply, removed records go, s
   assert.equal(at("SELECT COUNT(*) AS n FROM sessions")!.n, 2, "an unchanged seed keeps sessions");
 
   const accounts = DEMO_ACCOUNTS.filter((a) => a.id !== "buyer-a")
-    .map((a) => ({ ...a, dispute_ids: a.dispute_ids.filter((id) => id !== "DEMO-1003") }))
+    .map((a) => ({ ...a, dispute_ids: a.dispute_ids.filter((id) => id === "DEMO-1001" || id === "DEMO-1002") }))
     .map((a) => (a.id === "merchant-a" ? { ...a, password_hash: OTHER_HASH, dispute_ids: ["DEMO-1001"] } : a));
   seedDemo(db, accounts, DEMO_DISPUTES.slice(0, 2), 3);
   assert.equal(getAccount(db, "buyer-a"), null);

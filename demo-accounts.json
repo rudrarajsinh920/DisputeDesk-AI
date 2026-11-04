@@ -34,6 +34,30 @@
       "password_hash": "scrypt$16384$8$1$P+gIFOtikvJqbKcT0VmOCA==$pirxpfPEb1L7gIjwWO2sAxQSdpdfvjjkMVg0cP+j9qw="
     },
     {
+      "id": "merchant-c",
+      "email": "merchant-c@demo.disputedesk.test",
+      "role": "merchant",
+      "display_name": "Demo Merchant C",
+      "paypal_sandbox": false,
+      "dispute_ids": [
+        "DEMO-2001",
+        "DEMO-2002",
+        "DEMO-2003",
+        "DEMO-2004",
+        "DEMO-2005",
+        "DEMO-2006",
+        "DEMO-2007",
+        "DEMO-2008",
+        "DEMO-2009",
+        "DEMO-2010",
+        "DEMO-2011",
+        "DEMO-2012",
+        "DEMO-2013",
+        "DEMO-2014"
+      ],
+      "password_hash": "scrypt$16384$8$1$7T/lQAE7KpH1lkTgCCakmA==$p+eCtNVRgjaXhqsrUEPlbqFqFBF5XvnqmKBmj20yDrw="
+    },
+    {
       "id": "buyer-a",
       "email": "buyer-a@demo.disputedesk.test",
       "role": "buyer",

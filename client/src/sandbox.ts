@@ -1,4 +1,4 @@
-import type { BuyerDispute, BuyerExplanation, Dispute, Source } from "../../shared/types.ts";
+import type { BuyerDispute, BuyerExplanation, Dispute, Intelligence, IntelligenceExplanation, Source } from "../../shared/types.ts";
 
 // Fired when the server says the session is gone, so the app can return to sign-in from any screen.
 export const SIGNED_OUT_EVENT = "disputedesk:signed-out";
@@ -52,6 +52,33 @@ export async function fetchBuyerExplanation(dispute: BuyerDispute, signal?: Abor
   if (
     body?.dispute_id !== dispute.dispute_id ||
     (body.origin !== "ai" && body.origin !== "rules") ||
+    !Array.isArray(body.paragraphs) ||
+    !body.paragraphs.every((p) => typeof p === "string") ||
+    !Array.isArray(body.flags)
+  ) {
+    throw new Error("The DisputeDesk server sent an unexpected explanation.");
+  }
+  return body;
+}
+
+// Insights for the signed-in merchant's own demo disputes (admin: all). The server decides the scope.
+export async function fetchIntelligence(signal?: AbortSignal): Promise<Intelligence> {
+  const response = await fetch("/api/intelligence", { signal });
+  const body = (await response.json().catch(() => null)) as Intelligence | null;
+  if (!response.ok) throw serverError(response, body);
+  const lists = [body?.status, body?.reasons, body?.evidence, body?.patterns, body?.recommendations, body?.notes];
+  if (body?.source !== "demo" || typeof body.total !== "number" || !lists.every(Array.isArray) || typeof body.trend?.shown !== "boolean") {
+    throw new Error("The DisputeDesk server sent unexpected insights.");
+  }
+  return body;
+}
+
+export async function fetchIntelligenceExplanation(signal?: AbortSignal): Promise<IntelligenceExplanation> {
+  const response = await fetch("/api/intelligence/explain", { method: "POST", signal });
+  const body = (await response.json().catch(() => null)) as IntelligenceExplanation | null;
+  if (!response.ok) throw serverError(response, body);
+  if (
+    (body?.origin !== "ai" && body?.origin !== "rules") ||
     !Array.isArray(body.paragraphs) ||
     !body.paragraphs.every((p) => typeof p === "string") ||
     !Array.isArray(body.flags)

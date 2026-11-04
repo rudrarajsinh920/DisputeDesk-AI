@@ -67,17 +67,30 @@ password here.
 | Demo Admin | admin | `admin@demo.disputedesk.test` | `demo-admin-89HLaG83` | all (read-only) |
 | Demo Merchant A | merchant | `merchant-a@demo.disputedesk.test` | `demo-merchant-a-C9Y-jSMY` | DEMO-1001, DEMO-1002, PayPal sandbox |
 | Demo Merchant B | merchant | `merchant-b@demo.disputedesk.test` | `demo-merchant-b-rHa959Nf` | DEMO-1003 |
+| Demo Merchant C | merchant | `merchant-c@demo.disputedesk.test` | `demo-merchant-c-ot4_dVoM` | DEMO-2001 to DEMO-2014 (insights demo) |
 | Demo Buyer A | buyer | `buyer-a@demo.disputedesk.test` | `demo-buyer-a-wF8iuKjc` | DEMO-1001 |
 | Demo Buyer B | buyer | `buyer-b@demo.disputedesk.test` | `demo-buyer-b-rrkFQMjo` | DEMO-1002, DEMO-1003 |
 
 - **Merchants** see and analyse only the demo disputes on their own account. Merchant A also has the PayPal sandbox.
+  Merchant C holds a larger synthetic set (DEMO-2001 to DEMO-2014) so the Insights view has enough records to show
+  patterns; Merchants A and B show what Insights says when there is too little data.
+- **Insights** (merchants and admin) turns the account's demo disputes into counts: status, reason, evidence
+  completeness, missing and unverified evidence, conflicting records, disputes waiting for the seller or open more than
+  30 days, and disputes by month opened. Fixed rules in `server/src/intelligence.ts` decide everything, on top of the
+  evidence engine. A gap is a pattern only in at least 3 disputes; a share gets a percentage only with at least 10
+  disputes behind it; the monthly view needs at least 6 dated disputes across 3 months. Each suggestion lists what was
+  detected, the disputes and record fields behind it, why it matters, a practical action and its limits. Suggestions
+  never claim to prevent disputes or change outcomes. "Summarize these insights" (merchants only) lets Gemini reword
+  the findings; every paragraph is checked for invented numbers, percentages, causes, predictions, trends, dates and
+  names, and the standard summary is shown, labelled, if any check fails. PayPal sandbox disputes are never included.
 - **Buyers** see their own disputes only, without the merchant's order, evidence, messages or drafts. Each dispute shows
   what its status usually means, the usual stages (not a recorded history), next steps, information worth having,
   safe ways to talk to the seller, and what the record does not contain. Every block is labelled "From the record",
   "General guidance" or "Not on record". "Explain in plain language" asks the server for a rewording: Gemini may word it,
   every paragraph is checked (no promises, predictions, blame, legal claims, or dates, amounts, names or carriers that
   aren't on record), and the standard rule-based explanation is shown, labelled, whenever AI is off, fails or a check fails.
-- **Admin** reads every demo dispute, the sandbox and the account list, and changes nothing. Admin cannot generate AI drafts.
+- **Admin** reads every demo dispute, the sandbox, the account list and Insights for all demo merchants, and changes
+  nothing. Admin cannot generate AI drafts or AI summaries.
 
 Sessions end after 30 minutes without activity, 8 hours after sign-in, or on sign-out. They are kept in the database,
 so restarting the server keeps everyone signed in. After
@@ -106,9 +119,10 @@ gitignored: it holds password hashes and session hashes, never passwords or sess
   that account's sessions. PayPal sandbox disputes are never stored: they are read live, so the two never mix.
 - **Tables.** `accounts`, `disputes` (demo only), `dispute_evidence` (one row per supplied flag; no row means "not
   supplied", never "false"), `dispute_access`, `sessions` (keyed by a hash of the token) and `audit_log`. Migration 2
-  adds each dispute's opened date and the buyer explanation audit event; an existing database is upgraded in place.
+  adds each dispute's opened date and the buyer explanation audit event; migration 3 adds the insights audit events. An
+  existing database is upgraded in place.
 - **Audit log.** Sign-in (succeeded, failed, locked out), sign-out, a refused request for another account's dispute,
-  analysis, AI drafts, the validation example and buyer explanations. Entries name the account and dispute, never a password, token, hash or
+  analysis, AI drafts, the validation example, buyer explanations, insights views and insights summaries. Entries name the account and dispute, never a password, token, hash or
   an unknown email. The log cannot be changed or deleted from the app.
 - To start over, stop the server and delete the `server/data` folder.
 
@@ -150,8 +164,12 @@ Before you start: both terminals running, and the server log says `AI drafting: 
 9. **Sign in as Demo Buyer B.** The buyer sees DEMO-1002 and DEMO-1003, no merchant records. DEMO-1002 marks
    "Seller and buyer respond" as the current stage; the response deadline is listed as not on record. "Explain in plain
    language" shows checked AI wording, or the labelled standard explanation when AI is off.
-10. **Sign in as Demo Admin.** Every dispute, read-only: no AI draft button.
-11. Close on the footnote: DisputeDesk never submits responses to PayPal.
+10. **Sign in as Demo Merchant C, open Insights.** 14 synthetic disputes and six suggestions, each with the disputes behind
+    it: for example, proof of delivery is missing or unverified in 6 of 7 item-not-received disputes. A share of 7 is shown
+    as "6 of 7", never as a percentage. "Summarize these insights" gives checked AI wording or the labelled standard summary.
+    Then sign in as Merchant B: one dispute, "Nothing to suggest yet", and no percentages.
+11. **Sign in as Demo Admin.** Every dispute and Insights for all demo merchants, read-only: no AI draft or summary button.
+12. Close on the footnote: DisputeDesk never submits responses to PayPal.
 
 The demo can be repeated as often as needed: nothing is saved, and reloading the page resets every draft.
 
@@ -163,7 +181,7 @@ The demo can be repeated as often as needed: nothing is saved, and reloading the
 | "AI drafting is off on this server" | Check the server log for the reason (missing key or invalid `GEMINI_MODEL`). Fix `.env`, restart the server. Everything else still works; use step 5 to show the checks. |
 | AI error: rate limit or "did not answer in time" | Wait a few seconds and press Try again. Otherwise show step 5 instead; it never calls Gemini. |
 | "Couldn't load PayPal sandbox disputes" | PayPal's sandbox is unreachable or slow. Press Try again, or skip step 7. Demo data is unaffected. |
-| No network at the venue | Steps 1–3, 5, 6 and 8–11 work offline. Only steps 4 and 7 need the internet. |
+| No network at the venue | Steps 1–3, 5, 6 and 8–12 work offline. Only steps 4 and 7 need the internet. |
 
 Keep screenshots or a screen recording of a successful run as a backup.
 
@@ -174,7 +192,10 @@ Keep screenshots or a screen recording of a successful run as a backup.
   why merchant review stays mandatory.
 - The PayPal integration only reads (an access token and the dispute list). It never creates, changes or answers a
   dispute.
-- Drafts are not saved. Accounts are five synthetic demo accounts with no sign-up. The server answers only on this
+- Drafts are not saved. Accounts are six synthetic demo accounts with no sign-up. The server answers only on this
   machine (127.0.0.1).
 - One server process per database. The sign-in limit is still kept in memory, so a restart lifts a lockout.
 - The audit log has no retention limit yet; it grows until the database is deleted.
+- Insights rest on a handful of synthetic records and four evidence flags per dispute. No outcome or resolved date is on
+  record, so there are no outcome rates or time-to-resolution figures. The AI number check confirms that each number
+  appears in the findings, not that it is paired with the right finding.

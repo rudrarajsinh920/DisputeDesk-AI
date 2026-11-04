@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { BuyerDisputes } from "./Buyer.tsx";
 import type { BuyerLoad } from "./Buyer.tsx";
 import { DisputeDetail } from "./DisputeDetail.tsx";
+import { Insights } from "./Intelligence.tsx";
 import { DisputeList } from "./DisputeList.tsx";
 import { Login } from "./Login.tsx";
 import { fetchMe, signOut } from "./auth.ts";
@@ -129,6 +130,7 @@ export function Dashboard({ account, onSignOut }: { account: AccountInfo; onSign
   const [attempt, setAttempt] = useState(0);
   const [filter, setFilter] = useState("ALL");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [view, setView] = useState<"disputes" | "insights">("disputes");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -144,7 +146,7 @@ export function Dashboard({ account, onSignOut }: { account: AccountInfo; onSign
 
   const bar = (
     <AccountBar account={account} onSignOut={onSignOut}>
-      {sources.length > 1 && (
+      {sources.length > 1 && view === "disputes" && (
         <div className="segmented" role="group" aria-label="Data source">
           {sources.map((s) => (
             <button
@@ -166,7 +168,15 @@ export function Dashboard({ account, onSignOut }: { account: AccountInfo; onSign
 
   return (
     <Shell bar={bar}>
-      {source === "demo" ? (
+      {view === "insights" ? (
+        <div className="banner banner-demo" role="note">
+          <strong>DEMO DATA — NOT A REAL PAYPAL DISPUTE</strong>
+          <span>
+            Insights use only the synthetic demo disputes {account.role === "admin" ? "of every demo merchant" : "on this account"}. PayPal
+            sandbox disputes are not included, and nothing here is connected to PayPal.
+          </span>
+        </div>
+      ) : source === "demo" ? (
         <div className="banner banner-demo" role="note">
           <strong>DEMO DATA — NOT A REAL PAYPAL DISPUTE</strong>
           <span>
@@ -182,17 +192,28 @@ export function Dashboard({ account, onSignOut }: { account: AccountInfo; onSign
       )}
 
       <main className="main">
-        <DisputesView
-          source={source}
-          disputes={load.status === "ready" ? load.disputes : null}
-          sandbox={load}
-          onRetry={() => setAttempt((n) => n + 1)}
-          filter={filter}
-          onFilter={setFilter}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          canDraft={account.role === "merchant"}
-        />
+        <div className="segmented view-switch" role="group" aria-label="View">
+          {(["disputes", "insights"] as const).map((v) => (
+            <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
+              {v === "disputes" ? "Disputes" : "Insights"}
+            </button>
+          ))}
+        </div>
+        {view === "insights" ? (
+          <Insights canExplain={account.role === "merchant"} />
+        ) : (
+          <DisputesView
+            source={source}
+            disputes={load.status === "ready" ? load.disputes : null}
+            sandbox={load}
+            onRetry={() => setAttempt((n) => n + 1)}
+            filter={filter}
+            onFilter={setFilter}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            canDraft={account.role === "merchant"}
+          />
+        )}
       </main>
     </Shell>
   );

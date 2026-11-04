@@ -44,5 +44,312 @@
       "order_confirmation": true,
       "customer_communication": true
     }
+  },
+  {
+    "dispute_id": "DEMO-2001",
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    "status": "RESOLVED",
+    "amount": {
+      "currency_code": "USD",
+      "value": "64.00"
+    },
+    "create_time": "2026-05-04T10:15:00Z",
+    "customer_message": "My lamp has not arrived yet.",
+    "order": {
+      "order_id": "ORDER-2001",
+      "item": "Desk lamp",
+      "shipping_status": "DELIVERED",
+      "tracking_number": "DEMO-TRK-2001"
+    },
+    "evidence": {
+      "order_confirmation": true,
+      "shipping_tracking": true,
+      "proof_of_delivery": true,
+      "customer_communication": true
+    }
+  },
+  {
+    "dispute_id": "DEMO-2002",
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+    "status": "RESOLVED",
+    "amount": {
+      "currency_code": "USD",
+      "value": "38.50"
+    },
+    "create_time": "2026-05-19T16:40:00Z",
+    "customer_message": "The mugs are a different colour from the photos.",
+    "order": {
+      "order_id": "ORDER-2002",
+      "item": "Ceramic mug set",
+      "shipping_status": "DELIVERED",
+      "tracking_number": "DEMO-TRK-2002"
+    },
+    "evidence": {
+      "order_confirmation": true,
+      "shipping_tracking": true,
+      "proof_of_delivery": true,
+      "customer_communication": false
+    }
+  },
+  {
+    "dispute_id": "DEMO-2003",
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    "status": "RESOLVED",
+    "amount": {
+      "currency_code": "USD",
+      "value": "112.00"
+    },
+    "create_time": "2026-06-02T08:05:00Z",
+    "customer_message": "I never received my boots.",
+    "order": {
+      "order_id": "ORDER-2003",
+      "item": "Hiking boots",
+      "shipping_status": "SHIPPED",
+      "tracking_number": null
+    },
+    "evidence": {
+      "order_confirmation": true,
+      "shipping_tracking": false,
+      "proof_of_delivery": false,
+      "customer_communication": true
+    }
+  },
+  {
+    "dispute_id": "DEMO-2004",
+    "reason": "CREDIT_NOT_PROCESSED",
+    "status": "RESOLVED",
+    "amount": {
+      "currency_code": "USD",
+      "value": "45.00"
+    },
+    "create_time": "2026-06-21T12:30:00Z",
+    "customer_message": "I returned the case but have not seen a refund.",
+    "order": {
+      "order_id": "ORDER-2004",
+      "item": "Phone case",
+      "shipping_status": "DELIVERED",
+      "tracking_number": "DEMO-TRK-2004"
+    },
+    "evidence": {
+      "order_confirmation": true,
+      "shipping_tracking": true,
+      "proof_of_delivery": true,
+      "customer_communication": true
+    }
+  },
+  {
+    "dispute_id": "DEMO-2005",
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    "status": "UNDER_REVIEW",
+    "amount": {
+      "currency_code": "USD",
+      "value": "89.99"
+    },
+    "create_time": "2026-07-08T09:50:00Z",
+    "customer_message": "The order shows delivered but I do not have it.",
+    "order": {
+      "order_id": "ORDER-2005",
+      "item": "Coffee grinder",
+      "shipping_status": "DELIVERED",
+      "tracking_number": "DEMO-TRK-2005"
+    },
+    "evidence": {
+      "order_confirmation": true,
+      "shipping_tracking": true,
+      "proof_of_delivery": false,
+      "customer_communication": true
+    }
+  },
+  {
+    "dispute_id": "DEMO-2006",
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+    "status": "UNDER_REVIEW",
+    "amount": {
+      "currency_code": "USD",
+      "value": "150.00"
+    },
+    "create_time": "2026-07-15T14:20:00Z",
+    "customer_message": "The chair is smaller than the listing said.",
+    "order": {
+      "order_id": "ORDER-2006",
+      "item": "Office chair",
+      "shipping_status": "DELIVERED",
+      "tracking_number": "DEMO-TRK-2006"
+    },
+    "evidence": {
+      "order_confirmation": false,
+      "shipping_tracking": true,
+      "proof_of_delivery": true,
+      "customer_communication": false
+    }
+  },
+  {
+    "dispute_id": "DEMO-2007",
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    "status": "WAITING_FOR_BUYER_RESPONSE",
+    "amount": {
+      "currency_code": "USD",
+      "value": "27.00"
+    },
+    "create_time": "2026-07-30T11:00:00Z",
+    "customer_message": "Still waiting for my notebooks.",
+    "order": {
+      "order_id": "ORDER-2007",
+      "item": "Notebook bundle",
+      "shipping_status": "SHIPPED",
+      "tracking_number": null
+    },
+    "evidence": {
+      "order_confirmation": true,
+      "shipping_tracking": true,
+      "customer_communication": true
+    }
+  },
+  {
+    "dispute_id": "DEMO-2008",
+    "reason": "UNAUTHORISED",
+    "status": "WAITING_FOR_BUYER_RESPONSE",
+    "amount": {
+      "currency_code": "USD",
+      "value": "210.00"
+    },
+    "create_time": "2026-08-12T17:45:00Z",
+    "customer_message": "I do not recognise this payment.",
+    "order": {
+      "order_id": "ORDER-2008",
+      "item": "Gift card"
+    },
+    "evidence": {
+      "order_confirmation": true
+    }
+  },
+  {
+    "dispute_id": "DEMO-2009",
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    "status": "UNDER_REVIEW",
+    "amount": {
+      "currency_code": "USD",
+      "value": "74.25"
+    },
+    "create_time": "2026-08-27T07:30:00Z",
+    "customer_message": "Nothing arrived.",
+    "order": {
+      "order_id": "ORDER-2009",
+      "item": "Bike lights",
+      "shipping_status": "DELIVERED",
+      "tracking_number": "DEMO-TRK-2009"
+    },
+    "evidence": {
+      "order_confirmation": true,
+      "shipping_tracking": true,
+      "proof_of_delivery": false,
+      "customer_communication": false
+    }
+  },
+  {
+    "dispute_id": "DEMO-2010",
+    "reason": "CREDIT_NOT_PROCESSED",
+    "status": "OPEN",
+    "amount": {
+      "currency_code": "USD",
+      "value": "59.00"
+    },
+    "create_time": "2026-09-09T13:10:00Z",
+    "customer_message": "I was promised a refund for the scarf.",
+    "order": {
+      "order_id": "ORDER-2010",
+      "item": "Wool scarf"
+    },
+    "evidence": {
+      "order_confirmation": false,
+      "customer_communication": true
+    }
+  },
+  {
+    "dispute_id": "DEMO-2011",
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    "status": "WAITING_FOR_SELLER_RESPONSE",
+    "amount": {
+      "currency_code": "USD",
+      "value": "99.00"
+    },
+    "create_time": "2026-09-24T15:55:00Z",
+    "customer_message": "My earbuds never came.",
+    "order": {
+      "order_id": "ORDER-2011",
+      "item": "Wireless earbuds",
+      "shipping_status": "SHIPPED",
+      "tracking_number": null
+    },
+    "evidence": {
+      "order_confirmation": true,
+      "shipping_tracking": false,
+      "proof_of_delivery": false,
+      "customer_communication": true
+    }
+  },
+  {
+    "dispute_id": "DEMO-2012",
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED",
+    "status": "WAITING_FOR_SELLER_RESPONSE",
+    "amount": {
+      "currency_code": "USD",
+      "value": "42.00"
+    },
+    "create_time": "2026-10-06T10:25:00Z",
+    "customer_message": "The tablecloth has a stain.",
+    "order": {
+      "order_id": "ORDER-2012",
+      "item": "Linen tablecloth",
+      "shipping_status": "DELIVERED",
+      "tracking_number": "DEMO-TRK-2012"
+    },
+    "evidence": {
+      "order_confirmation": true,
+      "shipping_tracking": true,
+      "proof_of_delivery": true,
+      "customer_communication": false
+    }
+  },
+  {
+    "dispute_id": "DEMO-2013",
+    "reason": "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    "status": "OPEN",
+    "amount": {
+      "currency_code": "USD",
+      "value": "130.00"
+    },
+    "create_time": "2026-10-20T09:05:00Z",
+    "customer_message": "The backpack has not arrived.",
+    "order": {
+      "order_id": "ORDER-2013",
+      "item": "Backpack",
+      "shipping_status": "SHIPPED",
+      "tracking_number": "DEMO-TRK-2013"
+    },
+    "evidence": {
+      "order_confirmation": true,
+      "shipping_tracking": true,
+      "proof_of_delivery": false,
+      "customer_communication": true
+    }
+  },
+  {
+    "dispute_id": "DEMO-2014",
+    "reason": "DUPLICATE_TRANSACTION",
+    "status": "WAITING_FOR_SELLER_RESPONSE",
+    "amount": {
+      "currency_code": "USD",
+      "value": "18.00"
+    },
+    "customer_message": "I was charged twice.",
+    "order": {
+      "order_id": "ORDER-2014",
+      "item": "Sticker pack"
+    },
+    "evidence": {
+      "order_confirmation": true,
+      "customer_communication": true
+    }
   }
 ]

@@ -63,6 +63,14 @@ export function formatDate(iso: string): string {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleDateString("en-US", { dateStyle: "medium" });
 }
 
+// Below this many disputes a percentage would overstate a handful of records, so only "3 of 7" is shown.
+export const MIN_FOR_PERCENT = 10;
+
+export function formatShare(count: number, total: number): string {
+  if (total < MIN_FOR_PERCENT) return `${count} of ${total}`;
+  return `${count} of ${total} (${Math.round((count / total) * 100)}%)`;
+}
+
 export interface Summary {
   total: number;
   unresolved: number;

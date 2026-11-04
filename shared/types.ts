@@ -163,6 +163,103 @@ export interface BuyerExplanation {
   flags: string[];
 }
 
+// ---- Dispute Prevention & Resolution Intelligence (server/src/intelligence.ts). Rule-based, counts only. ----
+
+// A count and the IDs behind it. Percentages are never sent; the browser shows one only when the total is large enough
+// (formatShare in shared/disputes.ts).
+export interface CountRow {
+  key: string;
+  label: string;
+  count: number;
+  dispute_ids: string[];
+}
+
+// One evidence type across the merchant's disputes, using the evidence engine's statuses.
+export interface EvidenceTally {
+  id: EvidenceKey;
+  label: string;
+  available: number;
+  missing: number;
+  unverified: number;
+  missing_ids: string[];
+  unverified_ids: string[];
+}
+
+export interface MonthRow {
+  // "2026-07", from the opened date (UTC).
+  month: string;
+  disputes: number;
+  evidence_available: number;
+  // Four evidence types per dispute.
+  evidence_total: number;
+}
+
+export type Trend =
+  | { shown: true; months: MonthRow[]; dated: number; undated: number }
+  | { shown: false; reason: string; dated: number; undated: number };
+
+export type PatternId =
+  | "delivery_proof_gap"
+  | "tracking_gap"
+  | "communication_gap"
+  | "order_record_gap"
+  | "credit_disputes"
+  | "conflicting_records"
+  | "awaiting_seller"
+  | "open_over_30_days";
+
+// Something the rules found. "of" is how many disputes it was checked against.
+export interface Pattern {
+  id: PatternId;
+  title: string;
+  count: number;
+  of: number;
+  dispute_ids: string[];
+  // Record fields the finding comes from, like "evidence.proof_of_delivery".
+  records: string[];
+  // Seen in at least the recurring minimum of disputes.
+  recurring: boolean;
+}
+
+export interface Recommendation {
+  id: "delivery_confirmation" | "tracking_records" | "customer_communication" | "transaction_records" | "conflicting_records" | "unresolved_review";
+  title: string;
+  detected: string;
+  supporting: { pattern_ids: PatternId[]; dispute_ids: string[]; records: string[] };
+  why: string;
+  action: string;
+  // Never "high": the data is a handful of synthetic records and evidence flags.
+  confidence: "limited" | "moderate";
+  limitation: string;
+}
+
+export interface Intelligence {
+  source: "demo";
+  // "account" for a merchant's own disputes; "all" for the read-only admin view.
+  scope: "account" | "all";
+  // The day ages are measured to (UTC, YYYY-MM-DD).
+  as_of: string;
+  total: number;
+  // Plain-language limits of this data set, always shown.
+  notes: string[];
+  status: CountRow[];
+  reasons: CountRow[];
+  resolution: { resolved: number; unresolved: number };
+  evidence: EvidenceTally[];
+  patterns: Pattern[];
+  trend: Trend;
+  recommendations: Recommendation[];
+  thresholds: { percent_min: number; recurring_min: number; trend_min_dated: number; trend_min_months: number; open_days: number };
+}
+
+export interface IntelligenceExplanation {
+  origin: "ai" | "rules";
+  model: string | null;
+  paragraphs: string[];
+  fallback_reason: string | null;
+  flags: string[];
+}
+
 // From /api/health: whether the server can write AI drafts, and why not.
 export type AiStatus = { on: true; model: string } | { on: false; reason: string };
 

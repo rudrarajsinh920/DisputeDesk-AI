@@ -23,7 +23,33 @@ const V1_AUDIT_EVENTS = [
   "ai_draft_generated",
   "ai_example_viewed",
 ] as const;
-export const AUDIT_EVENTS = [...V1_AUDIT_EVENTS, "buyer_explanation_generated"] as const;
+// Version 2's list, frozen with that migration.
+const V2_AUDIT_EVENTS = [...V1_AUDIT_EVENTS, "buyer_explanation_generated"] as const;
+// Version 3's list, frozen with that migration. A new event needs a new migration and a new list.
+const V3_AUDIT_EVENTS = [...V2_AUDIT_EVENTS, "intelligence_viewed", "intelligence_explanation_generated"] as const;
+export const AUDIT_EVENTS = V3_AUDIT_EVENTS;
+
+// SQLite can't change a CHECK constraint, so a longer event list means copying the audit log into a new table.
+// Rows keep their ids; the indexes and append-only triggers are recreated on the new table.
+const rebuildAuditLog = (events: readonly string[]) => `
+      CREATE TABLE audit_log_next (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        at INTEGER NOT NULL,
+        event TEXT NOT NULL CHECK (event IN (${events.map((e) => `'${e}'`).join(", ")})),
+        account_id TEXT,
+        dispute_id TEXT,
+        detail TEXT CHECK (detail IS NULL OR length(detail) <= 200)
+      ) STRICT;
+      INSERT INTO audit_log_next (id, at, event, account_id, dispute_id, detail) SELECT id, at, event, account_id, dispute_id, detail FROM audit_log;
+      DROP TRIGGER audit_log_no_update;
+      DROP TRIGGER audit_log_no_delete;
+      DROP TABLE audit_log;
+      ALTER TABLE audit_log_next RENAME TO audit_log;
+      CREATE INDEX idx_audit_account_at ON audit_log (account_id, at);
+      CREATE INDEX idx_audit_event_at ON audit_log (event, at);
+      CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+      CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+    `;
 
 // Forward-only and never edited once released: a change to the schema is a new migration at the end.
 export const MIGRATIONS: Migration[] = [
@@ -110,7 +136,7 @@ export const MIGRATIONS: Migration[] = [
       CREATE TABLE audit_log_v2 (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         at INTEGER NOT NULL,
-        event TEXT NOT NULL CHECK (event IN (${AUDIT_EVENTS.map((e) => `'${e}'`).join(", ")})),
+        event TEXT NOT NULL CHECK (event IN (${V2_AUDIT_EVENTS.map((e) => `'${e}'`).join(", ")})),
         account_id TEXT,
         dispute_id TEXT,
         detail TEXT CHECK (detail IS NULL OR length(detail) <= 200)
@@ -125,6 +151,11 @@ export const MIGRATIONS: Migration[] = [
       CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
       CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
     `,
+  },
+  {
+    version: 3,
+    name: "insights audit events",
+    sql: rebuildAuditLog(V3_AUDIT_EVENTS),
   },
 ];
 

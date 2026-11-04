@@ -162,10 +162,10 @@ export function buildBuyerAiRequest(r: BuyerRecord, g: BuyerGuidance): JsonReque
   return { system: SYSTEM, prompt, schema: SCHEMA };
 }
 
-const PROMISE =
+export const PROMISE =
   /\b(guarantee\w*|promis\w*|assur(e|ed|ance)|certain(ly)?|definitely|surely|likely|unlikely|probabl[ey]|chances?|odds)\b|\bin\s+your\s+favou?r\b|\b(will|shall|going\s+to|should|can\s+expect\s+to)\s+(\w+\s+){0,3}?(refund\w*|reimburs\w*|win|won|succeed\w*|(get|receive)\s+(your\s+|a\s+)?(money|refund))\b/i;
-const LEGAL = /\b(lawyers?|attorneys?|sue|suing|lawsuit|court|liab(le|ility)|legally|entitled|your\s+(legal\s+)?rights|legal\s+(right|claim|action)s?)\b/i;
-const BLAME =
+export const LEGAL = /\b(lawyers?|attorneys?|sue|suing|lawsuit|court|liab(le|ility)|legally|entitled|your\s+(legal\s+)?rights|legal\s+(right|claim|action)s?)\b/i;
+export const BLAME =
   /\b(at\s+fault|to\s+blame|blame\w*|guilty|lie[sd]|lying|liar|dishonest\w*|fraud\w*|scam\w*|cheat\w*|negligen\w*|misled|deceiv\w*)\b|\b(seller|merchant|buyer|you|they)\s+(is|are|was|were)\s+(wrong|responsible)\b/i;
 const SELLER_RECORDS =
   /\b(seller|merchant)(['’]s)?\s+(\w+\s+){0,2}?(has|have|had|provided|submitted|sent|uploaded|shows?|showed|holds?)\b.{0,60}\b(evidence|proof|tracking|records?|documents?|receipts?|photos?)\b/i;

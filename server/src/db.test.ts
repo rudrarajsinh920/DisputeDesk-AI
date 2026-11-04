@@ -136,6 +136,28 @@ test("the audit log can be added to but never changed or emptied", () => {
 test("a released migration's SQL never changes", () => {
   const v1 = createHash("sha256").update(MIGRATIONS[0].sql).digest("hex");
   assert.equal(v1, "eb652aac866aa9c6745af4b36c048c5fdd1d0dfd51f1e7aa61e19b4f5d3a7fea", "add a new migration instead of editing version 1");
+  const v2 = createHash("sha256").update(MIGRATIONS[1].sql).digest("hex");
+  assert.equal(v2, "0855325b25f2d23729b386a21d9205a1ab8454acaa187690d352fb929524933b", "add a new migration instead of editing version 2");
+});
+
+test("upgrading a version 2 database adds the insights audit events and keeps every entry", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec("PRAGMA foreign_keys = ON");
+  migrate(db, MIGRATIONS.slice(0, 2));
+  db.prepare("INSERT INTO audit_log (at, event, account_id, dispute_id, detail) VALUES (1, 'buyer_explanation_generated', 'buyer-b', 'DEMO-1002', 'rules')").run();
+  const before = db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r }));
+  assert.throws(() => db.prepare("INSERT INTO audit_log (at, event) VALUES (2, 'intelligence_viewed')").run(), /constraint/);
+
+  migrate(db);
+  assert.equal(schemaVersion(db), 3);
+  assert.deepEqual(db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r })), before, "entries copied unchanged");
+  for (const event of ["intelligence_viewed", "intelligence_explanation_generated"]) db.prepare("INSERT INTO audit_log (at, event) VALUES (2, ?)").run(event);
+  assert.equal(db.prepare("SELECT MAX(id) AS id FROM audit_log").get()!.id, 3, "ids keep counting after the copied rows");
+  assert.throws(() => db.prepare("UPDATE audit_log SET event = 'logout'").run(), /append-only/);
+  assert.throws(() => db.prepare("DELETE FROM audit_log").run(), /append-only/);
+  assert.throws(() => db.prepare("INSERT INTO audit_log (at, event) VALUES (4, 'made_up')").run(), /constraint/);
+  const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'audit_log' AND name LIKE 'idx_%'").all().map((r) => r.name);
+  assert.deepEqual(indexes.sort(), ["idx_audit_account_at", "idx_audit_event_at"]);
 });
 
 test("upgrading a version 1 database keeps every audit entry and the append-only rule", () => {

@@ -36,6 +36,7 @@ import { AI_OFF_NO_KEY } from "./config.ts";
 import { openDatabase, transaction } from "./db.ts";
 import { analyzeDispute } from "./evidence.ts";
 import { AiError } from "./gemini.ts";
+import { buildIntelligence, buildIntelligenceAiRequest, composeIntelligenceExplanation, rulesIntelligenceExplanation } from "./intelligence.ts";
 import type { GeminiClient } from "./gemini.ts";
 import { PayPalError } from "./paypal.ts";
 import type { PayPalClient } from "./paypal.ts";
@@ -297,6 +298,47 @@ export function createApp(
     }
     const detail = result.origin === "ai" ? `ai, ${result.model}` : "rules";
     audit(db, now(), "buyer_explanation_generated", { account_id: signedIn(res).id, dispute_id: dispute.dispute_id, detail });
+    res.json(result);
+  });
+
+  // Insights for the signed-in merchant's own demo disputes; admin reads all of them. Built on the server from the
+  // account's access rows, so no request field can widen it. PayPal sandbox disputes are never included.
+  const insightsFor = (account: Account) =>
+    buildIntelligence(loadDisputes(db).filter((d) => canAccess(account, d)), now(), account.role === "admin" ? "all" : "account");
+
+  app.get("/api/intelligence", requireRole("merchant", "admin"), (_req, res) => {
+    const account = signedIn(res);
+    const insights = insightsFor(account);
+    audit(db, now(), "intelligence_viewed", { account_id: account.id, detail: `${insights.scope}, ${insights.total} demo disputes` });
+    res.json(insights);
+  });
+
+  // Merchants only, like AI drafts. Gemini may only reword what the rules found, and every paragraph is checked.
+  app.post("/api/intelligence/explain", requireRole("merchant"), async (_req, res) => {
+    const account = signedIn(res);
+    const insights = insightsFor(account);
+    let result = rulesIntelligenceExplanation(insights, AI_WORDING_OFF);
+    if (ai) {
+      const key = `insights:${account.id}`;
+      if (aiInFlight.has(key)) {
+        res.status(409).json({
+          error: { code: "ai_in_progress", message: "An explanation is already being written.", upstream_status: null },
+        });
+        return;
+      }
+      aiInFlight.add(key);
+      try {
+        result = composeIntelligenceExplanation(insights, await ai.generateJson(buildIntelligenceAiRequest(insights)), ai.model);
+      } catch (error) {
+        if (!(error instanceof AiError)) throw error;
+        console.error(`Gemini request failed: ${error.code}${error.upstreamStatus ? ` (HTTP ${error.upstreamStatus})` : ""}`);
+        result = rulesIntelligenceExplanation(insights, AI_WORDING_UNAVAILABLE);
+      } finally {
+        aiInFlight.delete(key);
+      }
+    }
+    const detail = result.origin === "ai" ? `ai, ${result.model}` : "rules";
+    audit(db, now(), "intelligence_explanation_generated", { account_id: account.id, detail });
     res.json(result);
   });
 
