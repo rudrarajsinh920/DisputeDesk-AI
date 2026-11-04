@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { AccountView } from "./Account.tsx";
 import { AdminAccounts, AdminOverview, AdminSystem, Loaded, fetchAdminAccounts, fetchHealth, ownerNames, useLoad } from "./Admin.tsx";
 import { BuyerDisputes } from "./Buyer.tsx";
 import type { BuyerLoad } from "./Buyer.tsx";
@@ -35,7 +36,7 @@ const SOURCES: { id: Source; label: string }[] = [
 
 const ROLE_LABELS: Record<Role, string> = { merchant: "Merchant", buyer: "Buyer", admin: "Admin (read-only)" };
 
-type View = "overview" | "disputes" | "merchants" | "buyers" | "insights" | "system";
+type View = "overview" | "disputes" | "merchants" | "buyers" | "insights" | "system" | "account";
 const VIEW_LABELS: Record<View, string> = {
   overview: "Overview",
   disputes: "Disputes",
@@ -43,8 +44,17 @@ const VIEW_LABELS: Record<View, string> = {
   buyers: "Buyers",
   insights: "Insights",
   system: "System",
+  account: "Account",
 };
-const ADMIN_VIEWS: View[] = ["overview", "disputes", "merchants", "buyers", "insights", "system"];
+const ADMIN_VIEWS: View[] = ["overview", "disputes", "merchants", "buyers", "insights", "system", "account"];
+const MERCHANT_VIEWS: View[] = ["disputes", "insights", "account"];
+
+const accountBanner = (
+  <div className="banner banner-demo" role="note">
+    <strong>DEMO ACCOUNT — SYNTHETIC</strong>
+    <span>A demo account from demo-accounts.json. It is not a real person or a PayPal account.</span>
+  </div>
+);
 
 // Signed-out, checking and signed-in states. Who is signed in always comes from the server.
 export default function App() {
@@ -208,7 +218,7 @@ export function Dashboard({ account, onSignOut, initialView }: { account: Accoun
     <>
       <nav className="rail-group" aria-label="Views">
         <div className="rail-nav">
-          {(isAdmin ? ADMIN_VIEWS : (["disputes", "insights"] as View[])).map((v) => (
+          {(isAdmin ? ADMIN_VIEWS : MERCHANT_VIEWS).map((v) => (
             <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
               {VIEW_LABELS[v]}
             </button>
@@ -243,7 +253,9 @@ export function Dashboard({ account, onSignOut, initialView }: { account: Accoun
 
   return (
     <Shell rail={rail}>
-      {view === "system" ? null : view === "overview" || view === "merchants" || view === "buyers" ? (
+      {view === "system" ? null : view === "account" ? (
+        accountBanner
+      ) : view === "overview" || view === "merchants" || view === "buyers" ? (
         <div className="banner banner-demo" role="note">
           <strong>DEMO DATA — NOT REAL ACCOUNTS OR PAYPAL DISPUTES</strong>
           <span>
@@ -278,7 +290,9 @@ export function Dashboard({ account, onSignOut, initialView }: { account: Accoun
         <header className="page-head">
           <h1>{VIEW_LABELS[view]}</h1>
         </header>
-        {view === "overview" ? (
+        {view === "account" ? (
+          <AccountView account={account} onSignOut={onSignOut} />
+        ) : view === "overview" ? (
           <Loaded loads={[accounts, demo, health]} onRetry={() => (retryAccounts(), retryDemo(), retryHealth())} what="the overview">
             {() =>
               accounts.status === "ready" &&
@@ -504,7 +518,16 @@ export function Workspace({
 }
 
 // Buyers see the status of their own disputes only, without the merchant's records.
-export function BuyerHome({ account, onSignOut }: { account: AccountInfo; onSignOut: () => void }) {
+export function BuyerHome({
+  account,
+  onSignOut,
+  initialView = "disputes",
+}: {
+  account: AccountInfo;
+  onSignOut: () => void;
+  initialView?: "disputes" | "account";
+}) {
+  const [view, setView] = useState<"disputes" | "account">(initialView);
   const [load, setLoad] = useState<BuyerLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -521,16 +544,39 @@ export function BuyerHome({ account, onSignOut }: { account: AccountInfo; onSign
   }, [attempt]);
 
   return (
-    <Shell rail={<AccountBar account={account} onSignOut={onSignOut} />}>
-      <div className="banner banner-demo" role="note">
-        <strong>DEMO DATA — NOT A REAL PAYPAL DISPUTE</strong>
-        <span>Synthetic disputes on this demo buyer account. Nothing here is connected to PayPal.</span>
-      </div>
+    <Shell
+      rail={
+        <>
+          <nav className="rail-group" aria-label="Views">
+            <div className="rail-nav">
+              {(["disputes", "account"] as const).map((v) => (
+                <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
+                  {VIEW_LABELS[v]}
+                </button>
+              ))}
+            </div>
+          </nav>
+          <AccountBar account={account} onSignOut={onSignOut} />
+        </>
+      }
+    >
+      {view === "account" ? (
+        accountBanner
+      ) : (
+        <div className="banner banner-demo" role="note">
+          <strong>DEMO DATA — NOT A REAL PAYPAL DISPUTE</strong>
+          <span>Synthetic disputes on this demo buyer account. Nothing here is connected to PayPal.</span>
+        </div>
+      )}
       <main className="main">
         <header className="page-head">
-          <h1>Disputes</h1>
+          <h1>{VIEW_LABELS[view]}</h1>
         </header>
-        <BuyerDisputes load={load} onRetry={() => setAttempt((n) => n + 1)} />
+        {view === "account" ? (
+          <AccountView account={account} onSignOut={onSignOut} />
+        ) : (
+          <BuyerDisputes load={load} onRetry={() => setAttempt((n) => n + 1)} />
+        )}
       </main>
     </Shell>
   );

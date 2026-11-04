@@ -1223,17 +1223,20 @@ details summary {
   }
 }
 
-.buyer .steps.not-recorded {
+.buyer .steps.not-recorded,
+.account .steps.not-recorded {
   list-style: none;
   padding-left: 0;
 }
 
-.buyer .not-recorded li {
+.buyer .not-recorded li,
+.account .not-recorded li {
   position: relative;
   padding-left: 22px;
 }
 
-.buyer .not-recorded li::before {
+.buyer .not-recorded li::before,
+.account .not-recorded li::before {
   content: "";
   position: absolute;
   left: 2px;
@@ -1361,6 +1364,78 @@ details summary {
   color: var(--muted);
   font-size: 0.8125rem;
   font-weight: 400;
+}
+
+/* Account: one read-only page per signed-in account. Title and description beside each section from 900px. */
+
+.account {
+  max-width: 960px;
+}
+
+.account-identity {
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.account-display-name {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+
+.account-section {
+  display: grid;
+  gap: 12px;
+  padding: 28px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.account-section:last-child {
+  border-bottom: 0;
+}
+
+.account-section-intro h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.account-section-intro p {
+  font-size: 0.875rem;
+  max-width: 40ch;
+}
+
+.account-section-body {
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .account .config > div {
+    grid-template-columns: 140px minmax(0, 1fr);
+  }
+}
+
+.account .config > div:last-child {
+  border-bottom: 0;
+}
+
+.account-section .steps {
+  max-width: 64ch;
+}
+
+.account-session-text {
+  max-width: 64ch;
+  margin-bottom: 16px;
+}
+
+/* Same two-column widths as .workspace: from 1024px the rail takes 232px, so 1024-1199px stacks. */
+@media (min-width: 900px) and (max-width: 1023px), (min-width: 1200px) {
+  .account-section {
+    grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+    gap: 32px;
+  }
 }
 
 .admin-system .steps {

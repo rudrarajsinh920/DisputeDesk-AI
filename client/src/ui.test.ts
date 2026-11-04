@@ -12,9 +12,10 @@ import { VALIDATION_EXAMPLE_MODEL, validationExampleAnswer } from "../../server/
 import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
 import { AiResult, AiSectionView, AnalysisView, DISCARD_EDITS, DraftEditor, ValidationExampleView } from "./AnalysisPanel.tsx";
 import type { AiState, ExampleState } from "./AnalysisPanel.tsx";
+import { AccountView } from "./Account.tsx";
 import { AdminAccounts, AdminOverview, AdminSystem, ownerNames } from "./Admin.tsx";
 import type { AdminAccount, Health } from "./Admin.tsx";
-import App, { Dashboard, DisputesView } from "./App.tsx";
+import App, { BuyerHome, Dashboard, DisputesView } from "./App.tsx";
 import { BuyerDisputes, ExplainView } from "./Buyer.tsx";
 import type { ExplainState } from "./Buyer.tsx";
 import { AI_WORDING_OFF, FAILED_CHECKS, buyerGuidance, rulesExplanation, toBuyerRecord } from "../../server/src/buyer.ts";
@@ -634,6 +635,50 @@ const merchantCIds = demoDisputes.filter((d) => d.dispute_id.startsWith("DEMO-20
 const insightsHtml = (ids: string[] | null, canExplain = true, scope: "account" | "all" = "account") =>
   html(createElement(InsightsView, { insights: insightsOf(ids, scope), canExplain }));
 // Every "(N%)" must follow "of T" with T at or above the percentage minimum.
+const buyer: AccountInfo = { id: "buyer-a", email: "buyer-a@demo.disputedesk.test", role: "buyer", display_name: "Demo Buyer A", paypal_sandbox: false };
+
+test("every role gets an Account view in its rail, and buyers still open on Disputes", () => {
+  assert.match(text(html(createElement(Dashboard, { account: admin, onSignOut: noop }))), /Overview Disputes Merchants Buyers Insights System Account/);
+  assert.match(text(html(createElement(Dashboard, { account: merchant, onSignOut: noop }))), /Disputes Insights Account/);
+  const buyerHome = text(html(createElement(BuyerHome, { account: buyer, onSignOut: noop })));
+  assert.match(buyerHome, /Disputes Account/);
+  assert.match(html(createElement(BuyerHome, { account: buyer, onSignOut: noop })), /<h1>Disputes<\/h1>/);
+  const buyerAccount = html(createElement(BuyerHome, { account: buyer, onSignOut: noop, initialView: "account" }));
+  assert.match(buyerAccount, /<h1>Account<\/h1>/);
+  assert.match(text(buyerAccount), /DEMO ACCOUNT — SYNTHETIC/);
+});
+
+test("the account page shows the account read-only, for each role, with nothing that can't work", () => {
+  for (const account of [merchant, { ...merchant, paypal_sandbox: false }, buyer, admin]) {
+    const markup = html(createElement(AccountView, { account, onSignOut: noop }));
+    const out = text(markup);
+    for (const value of [account.display_name, account.email, account.id]) assert.ok(out.includes(value), value);
+    assert.match(out, /Set in the demo data. It can't be changed here./);
+    assert.match(out, /Follows your device/);
+    assert.match(out, /Two-step sign-in./);
+    // No form controls and no actions the app doesn't have: only Sign out.
+    assert.doesNotMatch(markup, /<(input|select|textarea|form)|role="switch"/);
+    assert.deepEqual([...markup.matchAll(/<button[^>]*>([^<]*)</g)].map((b) => b[1]), ["Sign out"]);
+    assert.ok([...markup.matchAll(/<button[^>]*>/g)].every((b) => /type="button"/.test(b[0])));
+    assert.doesNotMatch(out, /Edit profile|Change password|Verified|Connected|Sign out all|2FA/i);
+    const levels = headingLevels(markup);
+    assert.deepEqual([...new Set(levels)], [2]);
+  }
+  const reach = (account: AccountInfo) => text(html(createElement(AccountView, { account, onSignOut: noop })));
+  assert.match(reach(merchant), /Can read sandbox disputes/);
+  assert.match(reach({ ...merchant, paypal_sandbox: false }), /No sandbox access/);
+  assert.doesNotMatch(reach({ ...merchant, paypal_sandbox: false }), /PayPal sandbox disputes, read-only/);
+  assert.doesNotMatch(reach(buyer), /PayPal sandbox|draft responses/);
+  assert.match(reach(buyer), /never shown to buyers/);
+  assert.match(reach(admin), /Admin can't change accounts or disputes/);
+});
+
+test("signing out from the account page uses the app's sign-out handler", () => {
+  const source = readFileSync(new URL("./Account.tsx", import.meta.url), "utf8");
+  assert.match(source, /onClick={onSignOut}/);
+  assert.doesNotMatch(source, /fetch\(|from "\.\/(sandbox|auth|Admin)\.ts/);
+});
+
 const percentDenominators = (out: string) => [...out.matchAll(/of (\d+) \(\d+%\)/g)].map((m) => Number(m[1]));
 
 test("the dashboard offers an Insights view, and the buyer home does not", () => {
