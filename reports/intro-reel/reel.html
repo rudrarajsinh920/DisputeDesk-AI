@@ -1,0 +1,527 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>DisputeDesk AI intro reel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=block" rel="stylesheet">
+<style>
+  html, body { margin: 0; background: #0B0D0C; }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #0B0D0C; color: #F3F4F1;
+    font-family: Inter, sans-serif; }
+  .abs { position: absolute; left: 0; top: 0; }
+  .clip { overflow: hidden; }
+  .word { position: absolute; left: 960px; white-space: nowrap; font-weight: 800; line-height: 1; transform-origin: 50% 50%; }
+  .row { position: absolute; width: 1000px; height: 112px; box-sizing: border-box; display: flex; align-items: center; gap: 28px;
+    padding: 0 44px 0 32px; border-radius: 28px; background: #161917; border: 2px solid rgba(243,244,241,.16); }
+  .row svg { flex: none; }
+  .rname { flex: 1; font-size: 40px; font-weight: 600; letter-spacing: -0.02em; }
+  .rstat { font-size: 32px; font-weight: 600; }
+  .lab { position: absolute; left: 0; top: 0; width: 960px; }
+  .lab .n { font-size: 80px; font-weight: 700; letter-spacing: -0.035em; line-height: 1; }
+  .lab .s { margin-top: 22px; font-size: 52px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+  #panel { width: 1640px; height: 880px; left: 140px; top: 100px; border-radius: 44px; background: #121513; border: 2px solid rgba(243,244,241,.12); box-sizing: border-box; }
+  .k { font-size: 30px; font-weight: 500; color: rgba(243,244,241,.6); letter-spacing: -0.01em; white-space: nowrap; }
+  .pill { display: inline-block; padding: 10px 24px; border-radius: 999px; background: #CDF86A; color: #0B0D0C; font-size: 30px; font-weight: 700; }
+  .dl { font-size: 72px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; white-space: nowrap; }
+  .big { font-weight: 900; line-height: 1; letter-spacing: -0.055em; white-space: nowrap; color: #0B0D0C; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <svg width="0" height="0" class="abs"><defs id="defs"></defs></svg>
+
+  <!-- Bar 1-2: the dot, the line, the words that open out of it -->
+  <div id="tTopW" class="abs clip" style="width:1920px;height:540px"><div id="tTop" class="word"></div></div>
+  <div id="tBotW" class="abs clip" style="width:1920px;height:540px;top:540px"><div id="tBot" class="word"></div></div>
+  <div id="line" class="abs" style="background:#CDF86A;border-radius:999px"></div>
+
+  <!-- Bar 5: the case screen -->
+  <div id="panel" class="abs">
+    <div id="headW" class="abs clip" style="left:60px;top:48px;width:1520px;height:190px">
+      <div id="head" class="abs" style="width:1520px">
+        <div class="k">Example dispute</div>
+        <div style="display:flex;align-items:center;gap:28px;margin-top:16px">
+          <div style="font-size:76px;font-weight:800;letter-spacing:-0.04em;line-height:1">Item not received</div>
+          <span class="pill">Awaiting seller</span>
+          <div style="margin-left:auto;font-size:76px;font-weight:700;letter-spacing:-0.04em;line-height:1">$84.00</div>
+        </div>
+      </div>
+    </div>
+    <div id="cntW" class="abs clip" style="left:860px;top:200px;width:700px;height:250px">
+      <div id="cnt" class="abs" style="display:flex;align-items:flex-end;gap:28px">
+        <div id="cntN" style="font-size:230px;font-weight:800;letter-spacing:-0.06em;line-height:1;color:#CDF86A">0</div>
+        <div style="font-size:44px;font-weight:600;letter-spacing:-0.02em;line-height:1.1;padding-bottom:30px">records<br>checked</div>
+      </div>
+    </div>
+    <div id="bl0" class="abs k" style="left:860px;top:452px">Available · 2</div>
+    <div id="bl1" class="abs k" style="left:860px;top:542px">Unverified · 1</div>
+    <div id="bl2" class="abs k" style="left:860px;top:632px">Missing · 1</div>
+    <div id="stW" class="abs clip" style="left:60px;top:744px;width:1520px;height:50px"><div id="stL" class="abs k" style="width:1520px">Stage 2 of 4 · Seller and buyer respond</div></div>
+    <div id="seg0" class="abs" style="left:60px;top:806px;width:368px;height:16px;border-radius:999px;background:rgba(243,244,241,.14)"><div class="abs" style="height:16px;border-radius:999px;background:#5AA9D8"></div></div>
+    <div id="seg1" class="abs" style="left:444px;top:806px;width:368px;height:16px;border-radius:999px;background:rgba(243,244,241,.14)"><div class="abs" style="height:16px;border-radius:999px;background:#5AA9D8"></div></div>
+    <div id="seg2" class="abs" style="left:828px;top:806px;width:368px;height:16px;border-radius:999px;background:rgba(243,244,241,.14)"><div class="abs" style="height:16px;border-radius:999px;background:#5AA9D8"></div></div>
+    <div id="seg3" class="abs" style="left:1212px;top:806px;width:368px;height:16px;border-radius:999px;background:rgba(243,244,241,.14)"><div class="abs" style="height:16px;border-radius:999px;background:#5AA9D8"></div></div>
+  </div>
+
+  <!-- Bar 4: the four records, in 3D -->
+  <div id="persp" class="abs" style="left:960px;top:540px;width:0;height:0;perspective:1900px">
+    <div id="stack" class="abs" style="transform-style:preserve-3d">
+      <div class="row" id="r0"><svg width="56" height="56" viewBox="-28 -28 56 56"><circle r="24" fill="#CDF86A"/></svg><div class="rname">Order confirmation</div><div class="rstat" style="color:#CDF86A">Available</div></div>
+      <div class="row" id="r1"><svg width="56" height="56" viewBox="-28 -28 56 56"><path d="M0 -27 L23.4 13.5 L-23.4 13.5 Z" fill="#E9A23B" stroke="#E9A23B" stroke-width="4" stroke-linejoin="round"/></svg><div class="rname">Shipping tracking</div><div class="rstat" style="color:#E9A23B">Unverified</div></div>
+      <div class="row" id="r2"><svg width="56" height="56" viewBox="-28 -28 56 56"><circle r="21" fill="none" stroke="#F3F4F1" stroke-width="4" stroke-dasharray="7 5"/></svg><div class="rname">Proof of delivery</div><div class="rstat" style="color:rgba(243,244,241,.7)">Missing</div></div>
+      <div class="row" id="r3"><svg width="56" height="56" viewBox="-28 -28 56 56"><circle id="r3dot" r="24" fill="#CDF86A"/></svg><div class="rname">Customer messages</div><div class="rstat" style="color:#CDF86A">Available</div></div>
+    </div>
+  </div>
+
+  <!-- Bar 3: one shape, four evidence states -->
+  <svg id="shapeSvg" class="abs" width="1920" height="1080" viewBox="0 0 1920 1080" style="overflow:visible"><path id="shape" stroke-linejoin="round"/></svg>
+  <div id="labW" class="abs clip" style="left:930px;top:410px;width:960px;height:260px">
+    <div class="lab" id="lab0"><div class="n"></div><div class="s"></div></div>
+    <div class="lab" id="lab1"><div class="n"></div><div class="s"></div></div>
+  </div>
+
+  <!-- Bar 6: the AI draft -->
+  <div id="dk" class="abs clip" style="left:200px;top:236px;width:1200px;height:50px"><div id="dkI" class="abs k">AI draft · needs your review</div></div>
+  <div id="dw0" class="abs clip" style="left:200px;width:1600px;height:92px"><div id="dt0" class="abs dl"></div></div>
+  <div id="dw1" class="abs clip" style="left:200px;width:1600px;height:92px"><div id="dt1" class="abs dl"></div></div>
+  <div id="dw2" class="abs clip" style="left:200px;width:1600px;height:92px"><div id="dt2" class="abs dl"></div></div>
+  <div id="strike" class="abs" style="height:8px;border-radius:999px;background:#CDF86A"></div>
+  <div id="scan" class="abs" style="left:140px;width:1640px;height:4px;background:#CDF86A"></div>
+
+  <!-- Bars that become underlines; bar 0 also becomes the button, the flood and the logo -->
+  <div id="b2" class="abs" style="box-sizing:border-box;border:3px dashed rgba(243,244,241,.75);border-radius:999px"></div>
+  <div id="b1" class="abs" style="background:#E9A23B;border-radius:999px"></div>
+  <div id="b0" class="abs" style="background:#CDF86A"></div>
+  <div id="btnW" class="abs clip" style="left:640px;top:470px;width:640px;height:140px">
+    <div id="btnT" class="abs" style="width:640px;height:140px;display:flex;align-items:center;justify-content:center;font-size:52px;font-weight:700;letter-spacing:-0.025em;color:#0B0D0C">Review the draft</div>
+  </div>
+
+  <!-- Bar 7 -->
+  <div id="youW" class="abs clip" style="width:1920px;height:300px"><div id="you" class="abs big" style="width:1920px;text-align:center;font-size:300px">YOU</div></div>
+  <div id="decW" class="abs clip" style="width:1920px;height:300px"><div id="dec" class="abs big" style="width:1920px;text-align:center;font-size:300px">DECIDE.</div></div>
+  <svg id="checkSvg" class="abs" width="1920" height="1080" viewBox="0 0 1920 1080" style="overflow:visible">
+    <g id="checkG"><path id="check" d="M 700 560 L 880 740 L 1240 360" fill="none" stroke="#0B0D0C" stroke-width="100" stroke-linecap="round" stroke-linejoin="round"/></g>
+  </svg>
+
+  <!-- End title -->
+  <div id="wmW" class="abs clip" style="left:690px;top:470px;width:1200px;height:140px">
+    <div id="wm" class="abs" style="font-size:118px;font-weight:800;letter-spacing:-0.045em;line-height:140px;white-space:nowrap">DisputeDesk <span style="color:#CDF86A">AI</span></div>
+  </div>
+  <span id="measure" class="dl" style="position:absolute;left:-9999px;top:0"></span>
+</div>
+
+<script>
+// Every style below is computed from t inside window.seek(t). No CSS animation, no timers, no state between frames.
+const LIME = "#CDF86A", AMBER = "#E9A23B", WHITE = "#F3F4F1";
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+const mix = (a, b, u) => a + (b - a) * u;
+const at = (t, s, d) => clamp((t - s) / d);
+const eo = (u) => (u >= 1 ? 1 : 1 - Math.pow(2, -10 * u));
+const ei = (u) => (u <= 0 ? 0 : Math.pow(2, 10 * (u - 1)));
+const eio = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u < 0.5 ? Math.pow(2, 20 * u - 10) / 2 : (2 - Math.pow(2, -20 * u + 10)) / 2);
+// Critically damped spring: settles with no overshoot.
+const spr = (dt, w = 16) => (dt <= 0 ? 0 : 1 - (1 + w * dt) * Math.exp(-w * dt));
+// A beat accent: 40ms attack, exponential decay. Zero before the beat, so frame 0 is at rest.
+const kick = (dt) => (dt < 0 ? 0 : dt < 0.04 ? dt / 0.04 : Math.exp(-(dt - 0.04) * 9));
+const show = (el, on) => { el.style.display = on ? "" : "none"; };
+const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const mixCol = (a, b, u) => { const x = hex(a), y = hex(b); return `rgb(${x.map((v, i) => Math.round(mix(v, y[i], u))).join(",")})`; };
+
+// Directional motion blur: one SVG filter per element, deviation from the element's speed on each axis.
+const blurs = {};
+function mb(el, vx, vy) {
+  const id = "mb-" + el.id;
+  if (!blurs[id]) {
+    const f = document.createElementNS("http://www.w3.org/2000/svg", "filter");
+    f.id = id; f.setAttribute("x", "-50%"); f.setAttribute("y", "-50%"); f.setAttribute("width", "200%"); f.setAttribute("height", "200%");
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "feGaussianBlur");
+    f.appendChild(g); $("defs").appendChild(f); blurs[id] = g;
+  }
+  const sx = Math.min((Math.abs(vx) / 60) * 0.35, 22), sy = Math.min((Math.abs(vy) / 60) * 0.35, 22);
+  if (sx < 0.3 && sy < 0.3) { el.style.filter = "none"; return; }
+  blurs[id].setAttribute("stdDeviation", `${sx.toFixed(2)} ${sy.toFixed(2)}`);
+  el.style.filter = `url(#${id})`;
+}
+const DT = 1 / 240;
+const vel = (fn, t, key) => { const a = fn(t), b = fn(t - DT); return a && b ? (a[key] - b[key]) / DT : 0; };
+
+/* ---------- Bars 1-2: dot, line, words ---------- */
+function lineS(t) {
+  if (t >= 4) return null;
+  if (t < 0.5) { const s = 36 * (1 + 0.5 * kick(t)); return { w: s, h: s }; }
+  if (t < 3.5) {
+    const u = eo(at(t, 0.5, 0.5));
+    const h = mix(36, 8, eo(at(t, 0.5, 0.35))) + 16 * kick(t - 1.5) + 6 * (kick(t - 1) + kick(t - 2) + kick(t - 2.5) + kick(t - 3));
+    return { w: mix(36, 1500, u), h };
+  }
+  const u = eio(at(t, 3.5, 0.45));
+  return { w: mix(1500, 36, u), h: mix(8, 36, u) };
+}
+const WORDS = [
+  { txt: "CLAIM", fs: 300, o: 1.0, c: 1.8, col: WHITE, ls0: 0, sx0: 1 },
+  { txt: "ITEM", fs: 300, o: 2.0, c: 2.3, col: WHITE, ls0: 0.32, sx0: 1 },
+  { txt: "NOT", fs: 300, o: 2.5, c: 2.8, col: LIME, ls0: -0.045, sx0: 1.8 },
+  { txt: "RECEIVED.", fs: 240, o: 3.0, c: 3.32, col: WHITE, ls0: 0.4, sx0: 1 },
+];
+function typeS(t) {
+  const w = WORDS.find((w) => t >= w.o && t < w.c + 0.18);
+  if (!w) return null;
+  const openU = t < w.c ? eo(at(t, w.o, 0.32)) : 1 - ei(at(t, w.c, 0.18));
+  const k = eo(at(t, w.o, 0.42));
+  let slice = 0;
+  if (w.txt === "CLAIM") slice = t < w.c ? 80 * eo(at(t, 1.5, 0.3)) : 80 * (1 - eio(at(t, w.c, 0.18)));
+  return { w, off: (1 - openU) * w.fs * 0.62, slice, ls: mix(w.ls0, -0.045, k), sx: mix(w.sx0, 1, k) };
+}
+
+/* ---------- Bar 3: one shape, four states ---------- */
+const SH = [
+  { n: 0, col: LIME, fill: 1, sw: 0 },
+  { n: 3, col: AMBER, fill: 1, sw: 0 },
+  { n: 0, col: WHITE, fill: 0, sw: 12 },
+  { n: 0, col: LIME, fill: 1, sw: 0 },
+];
+function shapeS(t) {
+  if (t < 4 || t >= 6.36) return null;
+  const g = spr(t - 4, 13);
+  let cx = mix(960, 720, g), cy = 540, r = mix(18, 150, g);
+  const i = Math.min(3, Math.floor((t - 4) / 0.5)), bi = 4 + i * 0.5;
+  const u = i === 0 ? 1 : eio(at(t, bi, 0.34));
+  r *= 1 + 0.07 * kick(t - bi);
+  if (t >= 6) { const m = eio(at(t, 6, 0.35)); cx = mix(720, 520, m); cy = mix(540, 744, m); r = mix(r, 24, m); }
+  return { cx, cy, r, A: SH[Math.max(0, i - 1)], B: SH[i], u };
+}
+function radial(s, a) {
+  if (!s.n) return 1;
+  const seg = (2 * Math.PI) / s.n, rot = -Math.PI / 2;
+  let d = (a - rot) % seg; if (d < 0) d += seg;
+  return (1.18 * Math.cos(Math.PI / s.n)) / Math.cos(d - Math.PI / s.n);
+}
+function shapePath(S) {
+  const N = 144; let d = "";
+  for (let j = 0; j < N; j++) {
+    const a = (j / N) * 2 * Math.PI - Math.PI / 2;
+    const rr = S.r * mix(radial(S.A, a), radial(S.B, a), S.u);
+    d += (j ? "L" : "M") + (S.cx + rr * Math.cos(a)).toFixed(2) + " " + (S.cy + rr * Math.sin(a)).toFixed(2);
+  }
+  return d + "Z";
+}
+const LAB = [["Order confirmation", "Available", LIME], ["Shipping tracking", "Unverified", AMBER], ["Proof of delivery", "Missing", "rgba(243,244,241,.7)"], ["Customer messages", "Available", LIME]];
+function labS(t) {
+  if (t < 4 || t >= 6.4) return [];
+  if (t >= 6) return t < 6.16 ? [{ k: 3, y: -260 * ei(at(t, 6, 0.16)) }] : [];
+  const i = Math.min(3, Math.floor((t - 4) / 0.5)), bi = 4 + i * 0.5;
+  const out = [{ k: i, y: 260 * (1 - eo(at(t, bi + 0.12, 0.34))) }];
+  if (i > 0 && t < bi + 0.14) out.push({ k: i - 1, y: -260 * ei(at(t, bi, 0.14)) });
+  return out;
+}
+
+/* ---------- Bar 4: rows, tilt, layers, dock ---------- */
+const ROWY = [-260, -124, 12, 148]; // row tops, relative to the stack centre
+function stackS(t) {
+  if (t < 6 || t >= 10.5) return null;
+  const tilt = eio(at(t, 6.5, 0.42)), sep = eio(at(t, 7, 0.4)), back = eio(at(t, 7.5, 0.5));
+  const drift = -10 * clamp((t - 6.5) / 1);
+  const rx = 56 * tilt * (1 - back), rz = (-34 * tilt + drift * tilt) * (1 - back);
+  const z = (120 * sep + 14 * kick(t - 7)) * (1 - back);
+  const s = mix(mix(1, 0.84, tilt), 0.62, back);
+  const x = mix(0, 510 - 960, back);
+  const y = mix(0, 600 - 540, back) - 1150 * eio(at(t, 9.88, 0.3));
+  return { rx, rz, z, s, x, y };
+}
+function rowsS(t) {
+  // Rows 0-2 slide up out of row 3, which the shape has just landed in.
+  return [0, 1, 2, 3].map((i) => (i === 3 ? 0 : (ROWY[3] - ROWY[i]) * (1 - eo(at(t, 6.12 + (2 - i) * 0.06, 0.42)))));
+}
+
+/* ---------- Bar 5: case screen ---------- */
+function panelS(t) {
+  if (t < 7.6 || t >= 10.5) return null;
+  return { u: eio(at(t, 7.6, 0.5)), y: -1150 * eio(at(t, 9.88, 0.3)) };
+}
+
+/* ---------- Bar 6: draft ---------- */
+const DL = ["Order confirmation is on record.", "Tracking shows it was delivered.", "Proof of delivery is not on record."];
+const LY = [330, 460, 590];
+let PW = [[], [], []]; // prefix widths, measured once after the font loads
+function draftS(t) {
+  if (t < 10 || t >= 12) return null;
+  const n = DL.map((s, i) => Math.round(s.length * at(t, 10.16 + i * 0.1, 0.4)));
+  const drop = 700 * ei(at(t, 11.3, 0.28));
+  const up = spr(t - 11.36, 15);
+  const y = [LY[0], LY[1] + drop, mix(LY[2], LY[1], up)];
+  const close = 92 * eio(at(t, 11.62, 0.18));
+  return { n, y, drop, close };
+}
+function barS(i, t) {
+  // A status bar on the case screen, then the underline of draft line i.
+  if (t < 9 || t >= 12) return null;
+  const TW = [560, 280, 280], BY = [600, 690, 780];
+  let x = 1000, y = BY[i], w = TW[i] * eo(at(t, 9 + i * 0.08, 0.4)), h = 36;
+  if (t >= 10) {
+    const d = draftS(t), m = eio(at(t, 10, 0.42));
+    const tw = PW[i][d.n[i]] || 0;
+    x = mix(1000, 200, m); y = mix(BY[i], d.y[i] + 82, m); w = mix(TW[i], tw, m); h = mix(36, 8, m);
+    if (i === 1) h += 14 * eo(at(t, 10.5, 0.22));
+    if (i === 2) { const s = eio(at(t, 11.68, 0.24)); x = mix(x, 960, s); w = mix(w, 0, s); }
+  }
+  return { x, y, w, h };
+}
+// Bar 0 runs on: underline, button, the lime flood, the logo, and finally the dot the reel opened with.
+function b0S(t) {
+  if (t >= 9 && t < 11.68) { const b = barS(0, t); return { ...b, r: b.h / 2 }; }
+  if (t < 11.68) return null;
+  const B0 = barS(0, 11.6799);
+  if (t < 12) { const m = eio(at(t, 11.68, 0.32)); return { x: mix(B0.x, 640, m), y: mix(B0.y, 470, m), w: mix(B0.w, 640, m), h: mix(B0.h, 140, m), r: mix(4, 70, m) }; }
+  if (t < 14) { const m = eio(at(t, 12, 0.45)); return { x: mix(640, 0, m), y: mix(470, 0, m), w: mix(640, 1920, m), h: mix(140, 1080, m), r: mix(70, 0, m) }; }
+  if (t < 14.6) { const m = eio(at(t, 14, 0.42)); return { x: mix(0, 420, m), y: mix(0, 430, m), w: mix(1920, 220, m), h: mix(1080, 220, m), r: mix(0, 110, m) }; }
+  const m = eio(at(t, 14.6, 0.36)), cx = mix(530, 960, m), s = mix(220, 36, m);
+  return { x: cx - s / 2, y: 540 - s / 2, w: s, h: s, r: s / 2 };
+}
+
+/* ---------- Bar 7 + end ---------- */
+function youS(t) {
+  if (t < 12.5 || t >= 13.9) return null;
+  const top = mix(540, 380, eio(at(t, 13, 0.38))) - 150;
+  const off = 300 * (1 - eo(at(t, 12.5, 0.36))) - 300 * ei(at(t, 13.38, 0.22));
+  return { top, off };
+}
+function decS(t) {
+  if (t < 13 || t >= 13.9) return null;
+  return { top: 700 - 150, off: 300 * (1 - eo(at(t, 13.04, 0.36))) - 300 * ei(at(t, 13.38, 0.22)) };
+}
+function checkS(t) {
+  if (t < 13.5 || t >= 14.86) return null;
+  const draw = eo(at(t, 13.6, 0.36));
+  if (t >= 14) {
+    let s = mix(1, 120 / 540, eio(at(t, 14, 0.42)));
+    if (t >= 14.6) s *= 1 - eio(at(t, 14.6, 0.24));
+    const c = b0S(t);
+    return { draw, s, tx: c.x + c.w / 2, ty: c.y + c.h / 2 };
+  }
+  return { draw, s: 1 + 0.04 * kick(t - 13.5), tx: 970, ty: 550 };
+}
+function wmS(t) {
+  if (t < 14.28 || t >= 14.84) return null;
+  return { y: 140 * (1 - eo(at(t, 14.3, 0.26))), x: -1250 * ei(at(t, 14.58, 0.24)) };
+}
+
+/* ---------- apply one frame ---------- */
+let CHECK_LEN = 1000;
+window.seek = function (T) {
+  const t = ((T % 15) + 15) % 15;
+
+  // dot / line
+  const L = lineS(t), line = $("line"); show(line, !!L);
+  if (L) {
+    line.style.width = L.w + "px"; line.style.height = L.h + "px";
+    line.style.transform = `translate(${960 - L.w / 2}px, ${540 - L.h / 2}px)`;
+    mb(line, vel(lineS, t, "w") / 2, 0);
+  }
+
+  // words opening out of the line
+  const Ts = typeS(t);
+  for (const [id, sign] of [["tTop", 1], ["tBot", -1]]) {
+    const el = $(id); show(el, !!Ts);
+    if (!Ts) continue;
+    const { w } = Ts;
+    el.textContent = w.txt; el.style.fontSize = w.fs + "px"; el.style.color = w.col; el.style.letterSpacing = Ts.ls + "em";
+    el.style.top = (sign > 0 ? 540 - w.fs / 2 : -w.fs / 2) + "px";
+    el.style.transform = `translate(-50%, ${sign * Ts.off}px) translateX(${-sign * Ts.slice}px) scaleX(${Ts.sx})`;
+    mb(el, vel(typeS, t, "slice"), vel(typeS, t, "off"));
+  }
+
+  // shape
+  const S = shapeS(t), sh = $("shape"); show($("shapeSvg"), !!S);
+  if (S) {
+    sh.setAttribute("d", shapePath(S));
+    const col = mixCol(S.A.col, S.B.col, S.u), sw = mix(S.A.sw, S.B.sw, S.u) * (S.r / 150);
+    sh.setAttribute("fill", col); sh.setAttribute("fill-opacity", mix(S.A.fill, S.B.fill, S.u));
+    sh.setAttribute("stroke", col); sh.setAttribute("stroke-width", sw.toFixed(2));
+    sh.setAttribute("stroke-dasharray", S.B.sw || S.A.sw ? `${(S.r * 0.19).toFixed(1)} ${(S.r * 0.12).toFixed(1)}` : "none");
+    mb($("shapeSvg"), vel(shapeS, t, "cx"), vel(shapeS, t, "cy"));
+  }
+
+  // labels
+  const LS = labS(t), LP = labS(t - DT);
+  for (let s = 0; s < 2; s++) {
+    const el = $("lab" + s), item = LS.find((x) => x.k % 2 === s);
+    show(el, !!item);
+    if (!item) continue;
+    const [n, st, c] = LAB[item.k];
+    el.children[0].textContent = n; el.children[1].textContent = st; el.children[1].style.color = c;
+    el.style.transform = `translateY(${item.y}px)`;
+    const prev = LP.find((x) => x.k === item.k);
+    mb(el, 0, prev ? (item.y - prev.y) / DT : 0);
+  }
+
+  // stack
+  const K = stackS(t), stack = $("stack"); show($("persp"), !!K);
+  if (K) {
+    stack.style.transform = `translate(${K.x}px, ${K.y}px) scale(${K.s}) rotateX(${K.rx}deg) rotateZ(${K.rz}deg)`;
+    const dy = rowsS(t);
+    for (let i = 0; i < 4; i++) {
+      const r = $("r" + i);
+      r.style.left = "-500px"; r.style.top = ROWY[i] + "px";
+      r.style.zIndex = i === 3 ? 4 : i;
+      r.style.transform = `translateY(${dy[i]}px) translateZ(${(3 - i) * K.z}px)`;
+    }
+    const reveal = eo(at(t, 6.02, 0.38));
+    for (let i = 0; i < 4; i++) $("r" + i).style.clipPath = t < 6.4 ? `inset(0 ${((1 - reveal) * 880).toFixed(1)}px 0 0 round 28px)` : "none";
+    $("r3dot").style.opacity = t >= 6.35 ? 1 : 0;
+    mb($("persp"), 0, vel(stackS, t, "y"));
+  }
+
+  // case screen
+  const P = panelS(t), panel = $("panel"); show(panel, !!P);
+  if (P) {
+    const u = P.u;
+    panel.style.clipPath = `inset(${mix(339, 0, u)}px ${mix(960, 0, u)}px ${mix(219, 0, u)}px ${mix(60, 0, u)}px round ${mix(18, 44, u)}px)`;
+    panel.style.transform = `translateY(${P.y}px)`;
+    $("head").style.transform = `translateY(${190 * (1 - eo(at(t, 8, 0.36)))}px)`;
+    $("cnt").style.transform = `translateY(${250 * (1 - eo(at(t, 8.5, 0.36)))}px)`;
+    $("cntN").textContent = Math.min(4, Math.floor(5 * at(t, 8.52, 0.34)));
+    for (let i = 0; i < 3; i++) $("bl" + i).style.opacity = eo(at(t, 9 + i * 0.08, 0.3));
+    $("stL").style.transform = `translateY(${50 * (1 - eo(at(t, 9.5, 0.34)))}px)`;
+    for (let j = 0; j < 4; j++) $("seg" + j).firstElementChild.style.width = 368 * (j < 2 ? eo(at(t, 9.52 + j * 0.12, 0.34)) : 0) + "px";
+    mb(panel, 0, vel(panelS, t, "y"));
+  }
+
+  // bars / underlines
+  for (let i = 1; i < 3; i++) {
+    const B = barS(i, t), el = $("b" + i); show(el, !!B && B.w > 0.5);
+    if (!B) continue;
+    el.style.width = B.w + "px"; el.style.height = B.h + "px";
+    el.style.transform = `translate(${B.x}px, ${B.y}px)`;
+    mb(el, 0, i === 1 && t >= 11.3 ? (draftS(t).drop - draftS(t - DT).drop) / DT : 0);
+  }
+  const B0 = b0S(t), b0 = $("b0"); show(b0, !!B0 && B0.w > 0.5);
+  if (B0) {
+    b0.style.width = B0.w + "px"; b0.style.height = B0.h + "px"; b0.style.borderRadius = B0.r + "px";
+    b0.style.transform = `translate(${B0.x}px, ${B0.y}px)`;
+  }
+  show($("btnW"), t >= 11.8 && t < 12.3);
+  $("btnT").style.transform = `translateY(${140 * (1 - eo(at(t, 11.84, 0.3))) - 140 * ei(at(t, 12, 0.24))}px)`;
+
+  // draft
+  const D = draftS(t);
+  show($("dk"), !!D);
+  if (D) $("dkI").style.transform = `translateY(${50 * (1 - eo(at(t, 10.14, 0.32))) - 50 * ei(at(t, 11.6, 0.2))}px)`;
+  for (let i = 0; i < 3; i++) {
+    const w = $("dw" + i), tx = $("dt" + i); show(w, !!D);
+    if (!D) continue;
+    w.style.top = D.y[i] + "px";
+    tx.textContent = DL[i].slice(0, D.n[i]);
+    tx.style.color = i === 1 ? mixCol(WHITE, AMBER, eo(at(t, 10.5, 0.22))) : WHITE;
+    tx.style.transform = `translateY(${D.close}px)`;
+    mb(w, 0, i === 1 ? (D.drop - (draftS(t - DT)?.drop ?? 0)) / DT : i === 2 ? (D.y[2] - (draftS(t - DT)?.y[2] ?? D.y[2])) / DT : 0);
+  }
+  const st = $("strike"); show(st, !!D && t >= 11.12);
+  if (D) { st.style.width = (PW[1][DL[1].length] || 0) * eo(at(t, 11.14, 0.16)) + "px"; st.style.transform = `translate(200px, ${D.y[1] + 34}px)`; }
+  const sc = $("scan"); show(sc, t >= 11 && t < 11.4);
+  const scanY = (x) => mix(300, 760, eio(at(x, 11, 0.38)));
+  sc.style.transform = `translateY(${scanY(t)}px)`;
+  mb(sc, 0, (scanY(t) - scanY(t - DT)) / DT);
+
+  // YOU / DECIDE.
+  for (const [wid, tid, fn] of [["youW", "you", youS], ["decW", "dec", decS]]) {
+    const s = fn(t); show($(wid), !!s);
+    if (!s) continue;
+    $(wid).style.top = s.top + "px";
+    $(tid).style.transform = `translateY(${s.off}px)`;
+    mb($(tid), 0, vel(fn, t, "off") + vel(fn, t, "top"));
+  }
+
+  // check mark
+  const C = checkS(t); show($("checkSvg"), !!C);
+  if (C) {
+    $("check").setAttribute("stroke-dasharray", CHECK_LEN);
+    $("check").setAttribute("stroke-dashoffset", (CHECK_LEN * (1 - C.draw)).toFixed(1));
+    $("checkG").setAttribute("transform", `translate(${C.tx} ${C.ty}) scale(${C.s}) translate(-970 -550)`);
+  }
+
+  // wordmark
+  const M = wmS(t); show($("wmW"), !!M);
+  if (M) { $("wm").style.transform = `translate(${M.x}px, ${M.y}px)`; mb($("wm"), vel(wmS, t, "x"), vel(wmS, t, "y")); }
+};
+
+window.ready = (async () => {
+  await document.fonts.ready;
+  for (const w of [500, 600, 700, 800, 900]) await document.fonts.load(`${w} 72px Inter`);
+  const m = $("measure");
+  PW = DL.map((s) => { const a = []; for (let n = 0; n <= s.length; n++) { m.textContent = s.slice(0, n); a.push(m.getBoundingClientRect().width); } return a; });
+  CHECK_LEN = $("check").getTotalLength() + 2;
+  window.seek(0);
+  return true;
+})();
+
+/* ---------- soundtrack, rendered offline ---------- */
+window.renderAudio = async function () {
+  const SR = 48000, LEN = 15, ctx = new OfflineAudioContext(2, SR * LEN, SR);
+  const master = ctx.createGain(); master.gain.value = 0.8;
+  const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -10; comp.ratio.value = 6; comp.attack.value = 0.003; comp.release.value = 0.12;
+  master.connect(comp); comp.connect(ctx.destination);
+  const noise = ctx.createBuffer(1, SR * 2, SR), nd = noise.getChannelData(0);
+  let seed = 7; for (let i = 0; i < nd.length; i++) { seed = (seed * 16807) % 2147483647; nd[i] = (seed / 2147483647) * 2 - 1; }
+  const noiseAt = (t, dur, type, freq, q, gain, decay) => {
+    const s = ctx.createBufferSource(); s.buffer = noise;
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+    s.connect(f); f.connect(g); g.connect(master); s.start(t); s.stop(t + dur);
+  };
+  // Kick on every beat.
+  for (let b = 0; b < 30; b++) {
+    const t = b * 0.5, o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(44, t + 0.11);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(b >= 24 && b < 28 ? 1.05 : 0.9, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.45);
+    noiseAt(t, 0.03, "highpass", 3000, 0.7, 0.18, 0.02);
+  }
+  // Closed hat on every off-beat.
+  for (let b = 0; b < 30; b++) noiseAt(b * 0.5 + 0.25, 0.06, "highpass", 8000, 0.8, b >= 28 ? 0.05 : 0.09, 0.045);
+  // A hit on each scene change; the biggest on the last full bar.
+  for (const t of [2, 4, 6, 8, 10, 12, 14]) {
+    const big = t === 12;
+    noiseAt(t, 1.2, "bandpass", big ? 900 : 1600, 0.6, big ? 0.55 : 0.32, big ? 0.9 : 0.35);
+    const o = ctx.createOscillator(), g = ctx.createGain(); o.type = "triangle";
+    o.frequency.setValueAtTime(big ? 98 : 196, t); o.frequency.exponentialRampToValueAtTime(big ? 49 : 98, t + 0.5);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(big ? 0.5 : 0.22, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + (big ? 1.4 : 0.6));
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + 1.5);
+  }
+  // Riser into the last full bar (10 s to 12 s), cut on the downbeat.
+  {
+    const s = ctx.createBufferSource(); s.buffer = noise; s.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.Q.value = 2.5;
+    f.frequency.setValueAtTime(300, 10); f.frequency.exponentialRampToValueAtTime(7000, 11.98);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, 10); g.gain.exponentialRampToValueAtTime(0.45, 11.98); g.gain.linearRampToValueAtTime(0, 12);
+    s.connect(f); f.connect(g); g.connect(master); s.start(10); s.stop(12.01);
+    const o = ctx.createOscillator(); o.type = "sawtooth";
+    o.frequency.setValueAtTime(110, 10); o.frequency.exponentialRampToValueAtTime(880, 11.98);
+    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.setValueAtTime(400, 10); lp.frequency.exponentialRampToValueAtTime(5000, 11.98);
+    const og = ctx.createGain(); og.gain.setValueAtTime(0.0001, 10); og.gain.exponentialRampToValueAtTime(0.16, 11.98); og.gain.linearRampToValueAtTime(0, 12);
+    o.connect(lp); lp.connect(og); og.connect(master); o.start(10); o.stop(12.01);
+  }
+  // A low sub note per bar.
+  [55, 55, 65.41, 61.74, 55, 73.42, 82.41, 55].forEach((f0, i) => {
+    const t = i * 2, end = Math.min(15, t + 2), o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f0;
+    const v = i === 6 ? 0.22 : 0.14;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + 0.02); g.gain.setValueAtTime(v, end - 0.06); g.gain.linearRampToValueAtTime(0, end);
+    o.connect(g); g.connect(master); o.start(t); o.stop(end);
+  });
+  const buf = await ctx.startRendering();
+  const ch = [buf.getChannelData(0), buf.getChannelData(1)], n = buf.length;
+  const out = new DataView(new ArrayBuffer(44 + n * 4));
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) out.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); out.setUint32(4, 36 + n * 4, true); str(8, "WAVE"); str(12, "fmt "); out.setUint32(16, 16, true);
+  out.setUint16(20, 1, true); out.setUint16(22, 2, true); out.setUint32(24, SR, true); out.setUint32(28, SR * 4, true);
+  out.setUint16(32, 4, true); out.setUint16(34, 16, true); str(36, "data"); out.setUint32(40, n * 4, true);
+  for (let i = 0, o = 44; i < n; i++) for (let c = 0; c < 2; c++, o += 2) out.setInt16(o, Math.max(-1, Math.min(1, ch[c][i])) * 32767, true);
+  let bin = ""; const bytes = new Uint8Array(out.buffer);
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+};
+</script>
+</body>
+</html>
