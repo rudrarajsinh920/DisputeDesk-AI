@@ -6,18 +6,27 @@
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
 
-  --bg: #f7f7f5;
-  --surface: #ffffff;
-  --surface-2: #efefeb;
-  --border: #dcdcd6;
-  --rule: #e6e6e1;
-  --text: #0b0b0c;
-  --muted: #55555b;
-  --accent: #0b0b0c;
-  --accent-text: #ffffff;
-  --focus: #0b0b0c;
+  --bg: #dfe6e3;
+  --surface: #eef2f0;
+  --surface-2: #dde5e1;
+  --border: #b7c4bf;
+  --rule: #cdd7d3;
+  --text: #10181b;
+  --muted: #43524f;
+  --accent: #10181b;
+  --accent-text: #eef2f0;
+  --focus: #10181b;
   --signal: #d8f65a;
-  --signal-text: #0b0b0c;
+  --signal-text: #10181b;
+  --lattice: rgb(16 24 27 / 0.06);
+  --lift: 0 1px 2px rgb(16 24 27 / 0.06), 0 18px 40px -26px rgb(16 24 27 / 0.45);
+
+  /* Smoked glass, as on the landing page: the rail and each case's header. Stays dark in both modes. */
+  --glass: #121c1f;
+  --glass-2: #1f2e33;
+  --glass-fg: #e6ecea;
+  --glass-muted: #a1b2ad;
+  --glass-line: rgb(230 236 234 / 0.14);
 
   --warn-bg: #fbefd5;
   --warn-text: #6b3d0a;
@@ -27,8 +36,8 @@
   --ok-text: #14532d;
   --gap-bg: #fbe3df;
   --gap-text: #7f1d1d;
-  --neutral-bg: #ececE8;
-  --neutral-text: #3a3a40;
+  --neutral-bg: #dde5e1;
+  --neutral-text: #2c3936;
   --error-text: #b42318;
 
   --demo-bg: #fbefd5;
@@ -39,22 +48,27 @@
   --sandbox-text: #1d2742;
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --radius: 8px;
+  --radius: 10px;
   --rail: 232px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0b0b0c;
-    --surface: #151517;
-    --surface-2: #1f1f22;
-    --border: #2a2a2e;
-    --rule: #232326;
-    --text: #f2f2ef;
-    --muted: #a7a7ad;
-    --accent: #f2f2ef;
-    --accent-text: #0b0b0c;
-    --focus: #f2f2ef;
+    --bg: #0c1316;
+    --surface: #131d20;
+    --surface-2: #1a272b;
+    --border: #26363b;
+    --rule: #1f2d31;
+    --text: #dfe6e3;
+    --muted: #95a7a2;
+    --accent: #dfe6e3;
+    --accent-text: #10181b;
+    --focus: #dfe6e3;
+    --lattice: rgb(223 230 227 / 0.045);
+    --lift: 0 18px 40px -28px rgb(0 0 0 / 0.7);
+    --glass: #172327;
+    --glass-2: #243439;
+    --glass-line: rgb(230 236 234 / 0.17);
 
     --warn-bg: #2d220c;
     --warn-text: #f6cd78;
@@ -64,8 +78,8 @@
     --ok-text: #8ee3ad;
     --gap-bg: #331513;
     --gap-text: #f8a9a0;
-    --neutral-bg: #232326;
-    --neutral-text: #cfcfd4;
+    --neutral-bg: #1a272b;
+    --neutral-text: #c9d4d0;
     --error-text: #f8a9a0;
 
     --demo-bg: #2d220c;
@@ -1931,6 +1945,105 @@ details summary {
 .stack-available { background: var(--text); }
 .stack-unverified { background: repeating-linear-gradient(135deg, var(--text) 0 2px, transparent 2px 4px); }
 .stack-missing { outline: 1px dashed var(--muted); outline-offset: -1px; }
+
+/* Glass Record, carried over from the landing page: a mist ground ruled in a square lattice, smoked glass for the rail
+   and each case's header, panes that sit slightly above the ground. Glass areas swap the tokens, so everything inside
+   them (buttons, badges, focus rings) reads light on dark without its own rules. */
+
+body {
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--lattice) 1px, transparent 1px),
+    linear-gradient(90deg, var(--lattice) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-attachment: fixed;
+}
+
+.rail,
+.case-head {
+  --text: var(--glass-fg);
+  --muted: var(--glass-muted);
+  --surface: var(--glass-2);
+  --surface-2: var(--glass-2);
+  --border: var(--glass-line);
+  --rule: var(--glass-line);
+  --bg: var(--glass);
+  --accent: var(--glass-fg);
+  --accent-text: var(--glass);
+  --focus: var(--signal);
+  --neutral-bg: var(--glass-2);
+  --neutral-text: var(--glass-fg);
+  color: var(--text);
+  background: var(--glass);
+}
+
+.rail {
+  border-color: var(--glass-line);
+}
+
+.rail .brand-mark {
+  background: var(--signal);
+  color: var(--signal-text);
+}
+
+.rail-nav button[aria-pressed="true"] {
+  background: var(--glass-2);
+  box-shadow: inset 3px 0 0 var(--signal);
+}
+
+.rail .segmented {
+  background: transparent;
+}
+
+.rail .segmented button[aria-pressed="true"] {
+  background: var(--signal);
+  color: var(--signal-text);
+}
+
+.panel,
+.state-panel {
+  box-shadow: var(--lift);
+}
+
+/* The case header is the open record's pane of glass; the panel's top corners belong to it. */
+.detail-panel {
+  overflow: clip;
+}
+
+.case-head {
+  padding-top: 18px;
+  border-bottom-color: var(--glass-line);
+  border-radius: 0;
+}
+
+.case-head .eyebrow {
+  color: var(--signal);
+}
+
+.case-nav a[aria-current="location"] {
+  color: var(--text);
+  border-bottom-color: var(--signal);
+}
+
+.page-head h1 {
+  font-size: 1.75rem;
+  letter-spacing: -0.02em;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+}
+
+/* Each view and each opened case arrives with a short rise; reduced motion turns it off above. */
+.main,
+.detail {
+  animation: rise-in 260ms var(--ease-out);
+}
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
 
 /* Fingers need bigger targets than a mouse. Last in the file so it wins over each control's own height. */
 @media (pointer: coarse) {

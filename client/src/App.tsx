@@ -219,7 +219,7 @@ export function Dashboard({ account, onSignOut, initialView }: { account: Accoun
       <nav className="rail-group" aria-label="Views">
         <div className="rail-nav">
           {(isAdmin ? ADMIN_VIEWS : MERCHANT_VIEWS).map((v) => (
-            <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
+            <button key={v} type="button" aria-pressed={view === v} onClick={() => { setView(v); window.scrollTo({ top: 0 }); }}>
               {VIEW_LABELS[v]}
             </button>
           ))}
@@ -286,7 +286,7 @@ export function Dashboard({ account, onSignOut, initialView }: { account: Accoun
         </div>
       )}
 
-      <main className="main">
+      <main className="main" key={view}>
         <header className="page-head">
           <h1>{VIEW_LABELS[view]}</h1>
         </header>
@@ -550,7 +550,7 @@ export function BuyerHome({
           <nav className="rail-group" aria-label="Views">
             <div className="rail-nav">
               {(["disputes", "account"] as const).map((v) => (
-                <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)}>
+                <button key={v} type="button" aria-pressed={view === v} onClick={() => { setView(v); window.scrollTo({ top: 0 }); }}>
                   {VIEW_LABELS[v]}
                 </button>
               ))}
@@ -568,7 +568,7 @@ export function BuyerHome({
           <span>Synthetic disputes on this demo buyer account. Nothing here is connected to PayPal.</span>
         </div>
       )}
-      <main className="main">
+      <main className="main" key={view}>
         <header className="page-head">
           <h1>{VIEW_LABELS[view]}</h1>
         </header>

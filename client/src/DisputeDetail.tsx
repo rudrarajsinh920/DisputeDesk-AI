@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AnalysisPanel } from "./AnalysisPanel.tsx";
 import { REASON_LABELS, formatDate, formatMoney, humanize, labelFor } from "../../shared/disputes.ts";
 import type { Dispute } from "../../shared/types.ts";
@@ -15,7 +15,35 @@ const CASE_PARTS = [
 
 const orNotRecorded =(value: ReactNode) => value || <span className="muted">Not recorded</span>;
 
+// The part of the case under the sticky header. Sections mount as the analysis arrives, so look them up on each scroll.
+function useCurrentPart(): string {
+  const [current, setCurrent] = useState<string>(CASE_PARTS[0][0]);
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      let at: string = CASE_PARTS[0][0];
+      for (const [href] of CASE_PARTS) {
+        const top = document.getElementById(href.slice(1))?.getBoundingClientRect().top;
+        if (top !== undefined && top <= 160) at = href;
+      }
+      setCurrent(at);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    update();
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(frame);
+    };
+  }, []);
+  return current;
+}
+
 export function DisputeDetail({ dispute, canDraft = true }: { dispute: Dispute; canDraft?: boolean }) {
+  const current = useCurrentPart();
   return (
     <article className="detail">
       <div className="case-head">
@@ -29,7 +57,7 @@ export function DisputeDetail({ dispute, canDraft = true }: { dispute: Dispute; 
         {/* In-page links, not tabs: every part stays rendered for screen readers and search. */}
         <nav className="case-nav" aria-label="Parts of this dispute">
           {CASE_PARTS.map(([href, label]) => (
-            <a key={href} href={href}>
+            <a key={href} href={href} aria-current={current === href ? "location" : undefined}>
               {label}
             </a>
           ))}
