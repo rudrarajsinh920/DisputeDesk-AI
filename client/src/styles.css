@@ -501,7 +501,8 @@ code,
 }
 
 /* Rows read like a table: rules, alignment, no cards. */
-.dispute-list {
+.dispute-list,
+.status-counts {
   list-style: none;
   margin: 0 -16px;
   padding: 0;
@@ -2133,6 +2134,400 @@ blockquote {
 .stat-value {
   font-size: 1.75rem;
   letter-spacing: -0.03em;
+}
+
+/* Premium pass: grouped rail with icons, a page head with an eyebrow and a lead, figures as cards, softer panels,
+   quieter tables and calmer banners. Values only; the meaning of each state is unchanged. */
+
+.nav-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  stroke-width: 1.75;
+}
+
+.rail-nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 14px;
+}
+
+@media (hover: hover) {
+  .rail-nav button:not([aria-pressed="true"]):hover {
+    background: rgb(238 241 236 / 0.06);
+    color: var(--text);
+  }
+}
+
+.rail-nav button[aria-pressed="true"] .nav-icon {
+  stroke-width: 2.25;
+}
+
+.rail-views {
+  gap: 4px 12px;
+}
+
+.rail-section {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.rail-section .rail-label {
+  display: none;
+}
+
+.rail-note {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .rail {
+    gap: 18px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--glass-line) transparent;
+  }
+
+  .rail-views {
+    gap: 12px;
+  }
+
+  .rail-nav button {
+    min-height: 38px;
+    padding-block: 7px;
+  }
+
+  .rail-section {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+  }
+
+  .rail .rail-label,
+  .rail-section .rail-label {
+    display: block;
+    padding: 0 14px 6px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .rail-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 10px 14px;
+    border: 1px solid var(--glass-line);
+    border-radius: 14px;
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+
+  .rail-note .nav-icon {
+    color: var(--signal);
+  }
+
+  .app-main {
+    padding: 24px 48px 72px;
+    max-width: 1360px;
+  }
+}
+
+/* Page head: what kind of page, its name, then one plain line about it. */
+.page-head {
+  display: block;
+  margin: 8px 0 28px;
+}
+
+.page-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.page-eyebrow::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--signal);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--signal) 22%, transparent);
+}
+
+.page-head h1 {
+  font-size: clamp(2rem, 3.4vw, 2.75rem);
+  line-height: 1.05;
+  font-weight: 600;
+  letter-spacing: -0.045em;
+}
+
+.page-lead {
+  max-width: 62ch;
+  margin: 10px 0 0;
+  font-size: 1.0625rem;
+  color: var(--muted);
+}
+
+/* Figures as cards: one row, the first one lit. */
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 0;
+  border: 0;
+}
+
+.stat {
+  position: relative;
+  gap: 14px;
+  padding: 18px 20px 20px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--lift);
+}
+
+.stat:first-child {
+  border-color: transparent;
+  background:
+    radial-gradient(22rem 10rem at 100% 0%, rgb(255 255 255 / 0.45), transparent 60%),
+    var(--signal);
+  color: var(--signal-text);
+}
+
+.stat:first-child .stat-label {
+  color: color-mix(in oklab, var(--signal-text) 72%, transparent);
+}
+
+.stat-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.stat-value {
+  font-size: clamp(1.75rem, 2.6vw, 2.375rem);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.045em;
+}
+
+/* Panels: larger radius, a hairline under the head, more air. */
+.panel,
+.state-panel {
+  border-radius: 24px;
+}
+
+.panel {
+  padding: 20px;
+}
+
+@media (min-width: 900px) {
+  .panel {
+    padding: 22px 24px 24px;
+  }
+}
+
+.panel-head {
+  align-items: center;
+  margin: -2px 0 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.panel-head h2 {
+  font-size: 1.0625rem;
+  letter-spacing: -0.015em;
+}
+
+.detail-panel .panel-head,
+.list-panel .panel-head {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* Banners: a calm strip with a status dot, not a shout. */
+.banner {
+  align-items: center;
+  gap: 4px 14px;
+  padding: 10px 16px;
+  border-radius: 16px;
+  font-size: 0.8125rem;
+}
+
+.banner strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+}
+
+.banner strong::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+/* Tables: a tinted head row, roomy rows, a soft hover. */
+.data-table thead th {
+  background: var(--surface-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.data-table thead th:first-child {
+  border-radius: 12px 0 0 12px;
+}
+
+.data-table thead th:last-child {
+  border-radius: 0 12px 12px 0;
+}
+
+.data-table th,
+.data-table td {
+  padding-block: 14px;
+}
+
+.data-table thead th {
+  padding-block: 10px;
+  border-bottom: 0;
+}
+
+@media (hover: hover) {
+  .data-table tbody tr:hover > * {
+    background: color-mix(in oklab, var(--surface-2) 60%, transparent);
+  }
+}
+
+.data-table .nowrap {
+  white-space: nowrap;
+}
+
+/* Status counts on the overview: a ruled list with a lime mark on hover. */
+.status-count {
+  border-radius: 14px;
+}
+
+.status-count-value {
+  font-size: 1.125rem;
+  letter-spacing: -0.02em;
+}
+
+/* Lists bleed to the panel edge, which moved with the new padding. */
+.dispute-list,
+.status-counts {
+  margin-inline: -20px;
+}
+
+.dispute-row,
+.status-count {
+  padding-inline: 20px;
+}
+
+/* The open case keeps its glass header flush with the panel top. */
+.detail-panel {
+  padding: 0 20px 20px;
+}
+
+@media (min-width: 900px) {
+  .dispute-list,
+  .status-counts {
+    margin-inline: -24px;
+  }
+
+  .dispute-row,
+  .status-count {
+    padding-inline: 24px;
+  }
+
+  .detail-panel {
+    padding: 0 24px 24px;
+  }
+
+  .case-head {
+    margin-inline: -24px;
+    padding-inline: 24px;
+  }
+}
+
+/* Account: one card, like the other pages. */
+.account {
+  padding: 24px 20px 8px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: var(--lift);
+}
+
+@media (min-width: 900px) {
+  .account {
+    padding: 32px 36px 12px;
+  }
+}
+
+/* Audit and settings */
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 14px;
+  margin-bottom: 14px;
+}
+
+.toolbar .search {
+  flex: 1 1 260px;
+  margin: 0;
+}
+
+.toolbar .field {
+  flex: 0 1 220px;
+  margin: 0;
+}
+
+.audit-table td.muted {
+  max-width: 28ch;
+  overflow-wrap: anywhere;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 900px) {
+  .settings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-foot {
+    grid-column: 1 / -1;
+  }
+}
+
+.settings-group > .muted {
+  margin: 0 0 12px;
+}
+
+.settings-group .config > div {
+  padding-block: 12px;
 }
 
 /* Fingers need bigger targets than a mouse. Last in the file so it wins over each control's own height. */

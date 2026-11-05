@@ -408,10 +408,229 @@ export function AdminSystem({ health, onRetry }: { health: Health; onRetry: () =
           <li>Admin is read-only: it can't change accounts, disputes, evidence or drafts.</li>
           <li>Admin can't generate AI drafts or AI summaries. Merchants write drafts for their own disputes.</li>
           <li>Every request except sign-in and sign-out needs a session, checked by the server.</li>
-          <li>Sign-ins and dispute views are written to an append-only audit log on the server. There is no screen for it yet.</li>
+          <li>Sign-ins and dispute views are written to an append-only audit log on the server. Audit logs shows the latest entries.</li>
           <li>PayPal is reached only in its sandbox, with read-only requests.</li>
         </ul>
       </section>
+    </div>
+  );
+}
+
+// ---- Audit logs: the server's append-only log, newest first. Read-only. ----
+
+export type AuditEntry = { id: number; at: number; event: string; account_id: string | null; dispute_id: string | null; detail: string | null };
+
+export async function fetchAudit(signal?: AbortSignal): Promise<AuditEntry[]> {
+  const response = await fetch("/api/admin/audit", { signal });
+  const body = (await response.json().catch(() => null)) as { entries?: unknown } | null;
+  if (!response.ok) throw serverError(response, body);
+  const ok = (e: Partial<AuditEntry>) => typeof e?.id === "number" && typeof e.at === "number" && typeof e.event === "string";
+  if (!Array.isArray(body?.entries) || !body.entries.every(ok)) throw new Error("The DisputeDesk server sent an unexpected response.");
+  return body.entries as AuditEntry[];
+}
+
+const EVENT_LABELS: Record<string, string> = {
+  login_succeeded: "Signed in",
+  login_failed: "Sign-in failed",
+  login_locked: "Sign-in locked",
+  logout: "Signed out",
+  dispute_access_denied: "Access refused",
+  analysis_viewed: "Evidence checked",
+  ai_draft_generated: "AI draft written",
+  ai_example_viewed: "Check example viewed",
+  buyer_explanation_generated: "Buyer explanation",
+  intelligence_viewed: "Insights viewed",
+  intelligence_explanation_generated: "Insights summary",
+};
+// Events worth a second look get the warning tone; everything else is neutral.
+const ALERT_EVENTS = new Set(["login_failed", "login_locked", "dispute_access_denied"]);
+
+export function AdminAudit({ entries, accounts, onRetry }: { entries: AuditEntry[]; accounts: AdminAccount[]; onRetry: () => void }) {
+  const [event, setEvent] = useState("ALL");
+  const [query, setQuery] = useState("");
+  const names = new Map(accounts.map((a) => [a.id, a.display_name]));
+  const q = query.trim().toLowerCase();
+  const visible = entries.filter(
+    (e) =>
+      (event === "ALL" || e.event === event) &&
+      (!q || [e.account_id, e.dispute_id, e.detail, names.get(e.account_id ?? "")].some((s) => s?.toLowerCase().includes(q))),
+  );
+  const count = (fn: (e: AuditEntry) => boolean) => entries.filter(fn).length;
+  const present = [...new Set(entries.map((e) => e.event))];
+  const when = (at: number) => new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
+
+  return (
+    <div className="admin">
+      <section className="summary" aria-label="Audit summary">
+        <Stat label="Entries shown" value={entries.length} />
+        <Stat label="Sign-ins" value={count((e) => e.event === "login_succeeded")} />
+        <Stat label="Failed or locked sign-ins" value={count((e) => e.event === "login_failed" || e.event === "login_locked")} />
+        <Stat label="Access refused" value={count((e) => e.event === "dispute_access_denied")} />
+      </section>
+
+      <section className="panel" aria-labelledby="audit-heading">
+        <div className="panel-head">
+          <h2 id="audit-heading">Latest entries</h2>
+          <button type="button" className="button button-secondary" onClick={onRetry}>
+            Refresh
+          </button>
+        </div>
+        <div className="toolbar">
+          <input
+            type="search"
+            className="search"
+            aria-label="Search audit entries by account, dispute or detail"
+            placeholder="Search account, dispute or detail"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <label className="field">
+            <span className="field-label">Event</span>
+            <select className="select" value={event} onChange={(e) => setEvent(e.target.value)}>
+              <option value="ALL">All events</option>
+              {present.map((e) => (
+                <option key={e} value={e}>
+                  {EVENT_LABELS[e] ?? e}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {visible.length === 0 ? (
+          <p className="empty-inline">{entries.length === 0 ? "No audit entries yet." : "No entries match these filters."}</p>
+        ) : (
+          <table className="data-table audit-table">
+            <caption className="sr-only">Audit log entries, newest first</caption>
+            <thead>
+              <tr>
+                <th scope="col">Time</th>
+                <th scope="col">Event</th>
+                <th scope="col">Account</th>
+                <th scope="col">Dispute</th>
+                <th scope="col">Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((e) => (
+                <tr key={e.id}>
+                  <th scope="row" data-label="Time" className="nowrap">
+                    <time dateTime={new Date(e.at).toISOString()}>{when(e.at)}</time>
+                  </th>
+                  <td data-label="Event">
+                    <span className={`badge ${ALERT_EVENTS.has(e.event) ? "badge-warn" : "badge-neutral"}`}>{EVENT_LABELS[e.event] ?? e.event}</span>
+                  </td>
+                  <td data-label="Account">{e.account_id ? (names.get(e.account_id) ?? e.account_id) : <span className="muted">Unknown email</span>}</td>
+                  <td data-label="Dispute" className="mono">
+                    {e.dispute_id ?? <span className="muted">—</span>}
+                  </td>
+                  <td data-label="Detail" className="muted">
+                    {e.detail ?? "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="footnote">Append-only: the server refuses to change or delete an entry. Entries never hold passwords, tokens or cookies.</p>
+      </section>
+    </div>
+  );
+}
+
+// ---- Admin settings: the limits the server runs with. Nothing here can be changed from the browser. ----
+
+export type Settings = {
+  session: { idle_minutes: number; absolute_hours: number };
+  sign_in: { max_failures: number; max_failures_per_address: number; window_minutes: number };
+  paypal: { environment: string; configured: boolean; access: string };
+  ai: { configured: boolean; model: string | null; reason: string | null };
+  audit: { append_only: boolean; shown: number };
+};
+
+export async function fetchSettings(signal?: AbortSignal): Promise<Settings> {
+  const response = await fetch("/api/admin/settings", { signal });
+  const body = (await response.json().catch(() => null)) as Partial<Settings> | null;
+  if (!response.ok) throw serverError(response, body);
+  if (typeof body?.session?.idle_minutes !== "number" || typeof body.sign_in?.max_failures !== "number" || !body.paypal || !body.ai || !body.audit) {
+    throw new Error("The DisputeDesk server sent an unexpected response.");
+  }
+  return body as Settings;
+}
+
+function SettingsGroup({ id, title, note, rows }: { id: string; title: string; note: string; rows: [string, ReactNode][] }) {
+  return (
+    <section className="panel settings-group" aria-labelledby={id}>
+      <div className="panel-head">
+        <h2 id={id}>{title}</h2>
+        <span className="badge badge-neutral">Read-only</span>
+      </div>
+      <p className="muted">{note}</p>
+      <dl className="config">
+        {rows.map(([term, value]) => (
+          <div key={term}>
+            <dt>{term}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+export function AdminSettings({ settings }: { settings: Settings }) {
+  const s = settings;
+  return (
+    <div className="admin settings-grid">
+      <SettingsGroup
+        id="set-session"
+        title="Sessions"
+        note="Sessions live in the server's database. Only a hash of each session token is stored."
+        rows={[
+          ["Signed out after inactivity", `${s.session.idle_minutes} minutes`],
+          ["Longest session", `${s.session.absolute_hours} hours`],
+          ["Cookie", "HttpOnly, Secure, SameSite=Strict"],
+        ]}
+      />
+      <SettingsGroup
+        id="set-signin"
+        title="Sign-in limit"
+        note="Repeated failed sign-ins are refused for a while, by account and by address."
+        rows={[
+          ["Failures per account", `${s.sign_in.max_failures} in ${s.sign_in.window_minutes} minutes`],
+          ["Failures per address", `${s.sign_in.max_failures_per_address} in ${s.sign_in.window_minutes} minutes`],
+          ["Passwords", "Stored as scrypt hashes only"],
+        ]}
+      />
+      <SettingsGroup
+        id="set-paypal"
+        title="PayPal"
+        note="DisputeDesk asks PayPal for a token and reads disputes. It never creates or changes one."
+        rows={[
+          ["Environment", s.paypal.environment === "sandbox" ? "Sandbox" : s.paypal.environment],
+          ["Credentials", s.paypal.configured ? "Configured on the server" : "Not configured"],
+          ["Access", s.paypal.access === "read-only" ? "Read-only" : s.paypal.access],
+        ]}
+      />
+      <SettingsGroup
+        id="set-ai"
+        title="AI wording"
+        note="Gemini only words explanations and drafts. The server checks every line against the records."
+        rows={[
+          ["Status", s.ai.configured ? "On" : "Off"],
+          s.ai.configured ? ["Model", <span className="mono">{s.ai.model}</span>] : ["Why it is off", s.ai.reason ?? "Not configured"],
+          ["Admin drafts", "Not allowed: admin is read-only"],
+        ]}
+      />
+      <SettingsGroup
+        id="set-audit"
+        title="Audit log"
+        note="Every sign-in, sign-out, refused access and dispute check is written to the log."
+        rows={[
+          ["Changes and deletions", s.audit.append_only ? "Refused by the database" : "Allowed"],
+          ["Shown in Audit logs", `Latest ${s.audit.shown} entries`],
+        ]}
+      />
+      <p className="footnote settings-foot">These values are set in the server's code and environment. Change them there; this page only reads them.</p>
     </div>
   );
 }

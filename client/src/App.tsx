@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { Activity, BarChart3, FileText, LayoutDashboard, ScrollText, Settings2, ShieldCheck, Store, UserRound, Users } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { AccountView } from "./Account.tsx";
-import { AdminAccounts, AdminOverview, AdminSystem, Loaded, fetchAdminAccounts, fetchHealth, ownerNames, useLoad } from "./Admin.tsx";
+import { AdminAccounts, AdminAudit, AdminOverview, AdminSettings, AdminSystem, Loaded, fetchAdminAccounts, fetchAudit, fetchHealth, fetchSettings, ownerNames, useLoad } from "./Admin.tsx";
 import { BuyerDisputes } from "./Buyer.tsx";
 import type { BuyerLoad } from "./Buyer.tsx";
 import { DisputeDetail } from "./DisputeDetail.tsx";
@@ -36,18 +38,75 @@ const SOURCES: { id: Source; label: string }[] = [
 
 const ROLE_LABELS: Record<Role, string> = { merchant: "Merchant", buyer: "Buyer", admin: "Admin (read-only)" };
 
-type View = "overview" | "disputes" | "merchants" | "buyers" | "insights" | "system" | "account";
+type View = "overview" | "disputes" | "merchants" | "buyers" | "insights" | "audit" | "system" | "settings" | "account";
 const VIEW_LABELS: Record<View, string> = {
   overview: "Overview",
   disputes: "Disputes",
   merchants: "Merchants",
   buyers: "Buyers",
   insights: "Insights",
-  system: "System",
+  audit: "Audit logs",
+  system: "System health",
+  settings: "Admin settings",
   account: "Account",
 };
-const ADMIN_VIEWS: View[] = ["overview", "disputes", "merchants", "buyers", "insights", "system", "account"];
-const MERCHANT_VIEWS: View[] = ["disputes", "insights", "account"];
+const VIEW_ICONS: Record<View, LucideIcon> = {
+  overview: LayoutDashboard,
+  disputes: FileText,
+  merchants: Store,
+  buyers: Users,
+  insights: BarChart3,
+  audit: ScrollText,
+  system: Activity,
+  settings: Settings2,
+  account: UserRound,
+};
+// One line under each page title: what the page is for, in plain words.
+const VIEW_LEADS: Record<View, string> = {
+  overview: "Every demo account and dispute at a glance. Read-only.",
+  disputes: "Each dispute, its evidence checked by fixed rules, and a draft only you can send.",
+  merchants: "Merchant accounts and the disputes each one can reach.",
+  buyers: "Buyer accounts and the disputes each one can follow.",
+  insights: "Patterns across the evidence checks: counts and dispute IDs only.",
+  audit: "What the server recorded: sign-ins, refused access and dispute checks.",
+  system: "What the server reports about its own setup.",
+  settings: "The limits this server runs with. Set in code, shown here read-only.",
+  account: "Who is signed in and what this account can do.",
+};
+const ADMIN_DISPUTES_LEAD = "Every demo dispute and its evidence checks, across all accounts. Read-only.";
+const BUYER_LEADS = { disputes: "Where each of your disputes stands, in plain words.", account: VIEW_LEADS.account };
+// The rail groups views by what they are about.
+const ADMIN_GROUPS: [string, View[]][] = [
+  ["Workspace", ["overview", "disputes", "insights"]],
+  ["People", ["merchants", "buyers"]],
+  ["Oversight", ["audit", "system", "settings"]],
+  ["You", ["account"]],
+];
+const MERCHANT_GROUPS: [string, View[]][] = [
+  ["Workspace", ["disputes", "insights"]],
+  ["You", ["account"]],
+];
+
+function NavButton({ v, view, onView }: { v: View; view: string; onView: (v: View) => void }) {
+  const Icon = VIEW_ICONS[v];
+  return (
+    <button type="button" aria-pressed={view === v} onClick={() => onView(v)}>
+      <Icon aria-hidden="true" className="nav-icon" />
+      {VIEW_LABELS[v]}
+    </button>
+  );
+}
+
+function PageHead({ title, lead, eyebrow }: { title: string; lead: string; eyebrow: string }) {
+  return (
+    <header className="page-head">
+      <p className="page-eyebrow">{eyebrow}</p>
+      <h1>{title}</h1>
+      <p className="page-lead">{lead}</p>
+    </header>
+  );
+}
+
 
 const accountBanner = (
   <div className="banner banner-demo" role="note">
@@ -192,6 +251,9 @@ export function Dashboard({ account, onSignOut, initialView }: { account: Accoun
   const [accounts, retryAccounts] = useLoad(fetchAdminAccounts, isAdmin);
   const [demo, retryDemo] = useLoad(fetchDemoDisputes, isAdmin);
   const [health, retryHealth] = useLoad(fetchHealth, isAdmin);
+  // Loaded only when their view is open, so the audit log is read fresh each time.
+  const [auditLog, retryAudit] = useLoad(fetchAudit, isAdmin && view === "audit");
+  const [settings, retrySettings] = useLoad(fetchSettings, isAdmin && view === "settings");
   const owners = isAdmin && source === "demo" && accounts.status === "ready" ? ownerNames(accounts.value) : undefined;
 
   // Opens the Disputes view on the demo records, at one dispute or one status.
@@ -216,15 +278,25 @@ export function Dashboard({ account, onSignOut, initialView }: { account: Accoun
 
   const rail = (
     <>
-      <nav className="rail-group" aria-label="Views">
-        <div className="rail-nav">
-          {(isAdmin ? ADMIN_VIEWS : MERCHANT_VIEWS).map((v) => (
-            <button key={v} type="button" aria-pressed={view === v} onClick={() => { setView(v); window.scrollTo({ top: 0 }); }}>
-              {VIEW_LABELS[v]}
-            </button>
-          ))}
-        </div>
+      <nav className="rail-group rail-views" aria-label="Views">
+        {(isAdmin ? ADMIN_GROUPS : MERCHANT_GROUPS).map(([group, views]) => (
+          <div key={group} className="rail-section">
+            <span className="rail-label" aria-hidden="true">
+              {group}
+            </span>
+            <div className="rail-nav">
+              {views.map((v) => (
+                <NavButton key={v} v={v} view={view} onView={(next) => { setView(next); window.scrollTo({ top: 0 }); }} />
+              ))}
+            </div>
+          </div>
+        ))}
       </nav>
+      {isAdmin && (
+        <p className="rail-note">
+          <ShieldCheck aria-hidden="true" className="nav-icon" /> Read-only access
+        </p>
+      )}
       {sources.length > 1 && view === "disputes" && (
         <div className="rail-group">
           <span className="rail-label" aria-hidden="true">
@@ -253,7 +325,12 @@ export function Dashboard({ account, onSignOut, initialView }: { account: Accoun
 
   return (
     <Shell rail={rail}>
-      {view === "system" ? null : view === "account" ? (
+      {view === "system" || view === "settings" ? null : view === "audit" ? (
+        <div className="banner banner-demo" role="note">
+          <strong>SERVER AUDIT LOG — DEMO ACCOUNTS</strong>
+          <span>Entries the DisputeDesk server wrote for the synthetic demo accounts. Read-only: entries cannot be changed or deleted.</span>
+        </div>
+      ) : view === "account" ? (
         accountBanner
       ) : view === "overview" || view === "merchants" || view === "buyers" ? (
         <div className="banner banner-demo" role="note">
@@ -287,9 +364,7 @@ export function Dashboard({ account, onSignOut, initialView }: { account: Accoun
       )}
 
       <main className="main" key={view}>
-        <header className="page-head">
-          <h1>{VIEW_LABELS[view]}</h1>
-        </header>
+        <PageHead title={VIEW_LABELS[view]} lead={isAdmin && view === "disputes" ? ADMIN_DISPUTES_LEAD : VIEW_LEADS[view]} eyebrow={isAdmin ? "Admin · read-only" : "Merchant workspace"} />
         {view === "account" ? (
           <AccountView account={account} onSignOut={onSignOut} />
         ) : view === "overview" ? (
@@ -323,6 +398,14 @@ export function Dashboard({ account, onSignOut, initialView }: { account: Accoun
                 />
               )
             }
+          </Loaded>
+        ) : view === "audit" ? (
+          <Loaded loads={[auditLog, accounts]} onRetry={() => (retryAudit(), retryAccounts())} what="the audit log">
+            {() => auditLog.status === "ready" && accounts.status === "ready" && <AdminAudit entries={auditLog.value} accounts={accounts.value} onRetry={retryAudit} />}
+          </Loaded>
+        ) : view === "settings" ? (
+          <Loaded loads={[settings]} onRetry={retrySettings} what="the server settings">
+            {() => settings.status === "ready" && <AdminSettings settings={settings.value} />}
           </Loaded>
         ) : view === "system" ? (
           <Loaded loads={[health]} onRetry={retryHealth} what="the system configuration">
@@ -550,9 +633,7 @@ export function BuyerHome({
           <nav className="rail-group" aria-label="Views">
             <div className="rail-nav">
               {(["disputes", "account"] as const).map((v) => (
-                <button key={v} type="button" aria-pressed={view === v} onClick={() => { setView(v); window.scrollTo({ top: 0 }); }}>
-                  {VIEW_LABELS[v]}
-                </button>
+                <NavButton key={v} v={v} view={view} onView={(next) => { setView(next as "disputes" | "account"); window.scrollTo({ top: 0 }); }} />
               ))}
             </div>
           </nav>
@@ -569,9 +650,7 @@ export function BuyerHome({
         </div>
       )}
       <main className="main" key={view}>
-        <header className="page-head">
-          <h1>{VIEW_LABELS[view]}</h1>
-        </header>
+        <PageHead title={VIEW_LABELS[view]} lead={BUYER_LEADS[view]} eyebrow="Buyer" />
         {view === "account" ? (
           <AccountView account={account} onSignOut={onSignOut} />
         ) : (

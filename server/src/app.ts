@@ -17,6 +17,9 @@ import {
   toBuyerRecord,
 } from "./buyer.ts";
 import {
+  ABSOLUTE_MS,
+  IDLE_MS,
+  LOGIN_MAX_FAILURES,
   LOGIN_MAX_FAILURES_PER_ADDRESS,
   LOGIN_WINDOW_MS,
   SESSION_COOKIE,
@@ -40,7 +43,7 @@ import { buildIntelligence, buildIntelligenceAiRequest, composeIntelligenceExpla
 import type { GeminiClient } from "./gemini.ts";
 import { PayPalError } from "./paypal.ts";
 import type { PayPalClient } from "./paypal.ts";
-import { audit, findAccountByEmail, getAccount, listAccounts, loadDisputes, seedDemo } from "./store.ts";
+import { audit, findAccountByEmail, getAccount, listAccounts, listAudit, loadDisputes, seedDemo } from "./store.ts";
 import { validateDispute, validateLogin, validateLookup } from "./validate.ts";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -347,6 +350,22 @@ export function createApp(
   // Read-only: admin can list accounts but nothing changes them. Password hashes never leave the server.
   app.get("/api/admin/accounts", requireRole("admin"), (_req, res) => {
     res.json({ accounts: listAccounts(db).map((a) => ({ ...toAccountInfo(a), dispute_ids: a.dispute_ids })) });
+  });
+
+  // Read-only: the latest audit entries, newest first. The log itself can never be changed or deleted.
+  app.get("/api/admin/audit", requireRole("admin"), (_req, res) => {
+    res.json({ entries: listAudit(db) });
+  });
+
+  // Read-only: the limits this server runs with. Nothing here can be changed from the browser, and no secrets are named.
+  app.get("/api/admin/settings", requireRole("admin"), (_req, res) => {
+    res.json({
+      session: { idle_minutes: IDLE_MS / 60_000, absolute_hours: ABSOLUTE_MS / 3_600_000 },
+      sign_in: { max_failures: LOGIN_MAX_FAILURES, max_failures_per_address: LOGIN_MAX_FAILURES_PER_ADDRESS, window_minutes: LOGIN_WINDOW_MS / 60_000 },
+      paypal: { environment: "sandbox", configured: paypal !== null, access: "read-only" },
+      ai: ai ? { configured: true, model: ai.model, reason: null } : { configured: false, model: null, reason: aiOff },
+      audit: { append_only: true, shown: 200 },
+    });
   });
 
   // Signed in only: it names the AI model and says why AI or PayPal is off. Buyers never need it.

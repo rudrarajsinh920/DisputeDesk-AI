@@ -13,8 +13,8 @@ import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
 import { AiResult, AiSectionView, AnalysisView, DISCARD_EDITS, DraftEditor, ValidationExampleView } from "./AnalysisPanel.tsx";
 import type { AiState, ExampleState } from "./AnalysisPanel.tsx";
 import { AccountView } from "./Account.tsx";
-import { AdminAccounts, AdminOverview, AdminSystem, ownerNames } from "./Admin.tsx";
-import type { AdminAccount, Health } from "./Admin.tsx";
+import { AdminAccounts, AdminAudit, AdminOverview, AdminSettings, AdminSystem, ownerNames } from "./Admin.tsx";
+import type { AdminAccount, AuditEntry, Health, Settings } from "./Admin.tsx";
 import App, { BuyerHome, Dashboard, DisputesView } from "./App.tsx";
 import { BuyerDisputes, ExplainView } from "./Buyer.tsx";
 import type { ExplainState } from "./Buyer.tsx";
@@ -226,7 +226,7 @@ const CHANGING = /\b(Delete|Edit|Disable|Enable|Save|Suspend|Reset|Sync|Clear ca
 
 test("the admin dashboard opens on an overview, and merchants keep only Disputes and Insights", () => {
   const page = text(html(createElement(Dashboard, { account: admin, onSignOut: noop })));
-  assert.match(page, /Overview Disputes Merchants Buyers Insights System/);
+  assert.match(page, /Workspace Overview Disputes Insights People Merchants Buyers Oversight Audit logs System health Admin settings You Account/);
   assert.match(page, /Loading the overview…/);
   const merchantPage = text(html(createElement(Dashboard, { account: merchant, onSignOut: noop })));
   assert.doesNotMatch(merchantPage, /Overview|Merchants|Buyers|System/);
@@ -264,7 +264,7 @@ test("the system page reports only the server's configuration, and says it is no
   assert.match(on, /Credentials configured/);
   assert.match(on, /On · gemini-test-model/);
   assert.match(on, /does not contact PayPal or Gemini, and there is no uptime or performance monitoring/);
-  assert.match(on, /There is no screen for it yet/);
+  assert.match(on, /Audit logs shows the latest entries/);
   assert.doesNotMatch(on, /Healthy|\d+(\.\d+)?%|\d+ ms/);
   const off = text(html(createElement(AdminSystem, { health: healthOff, onRetry: noop })));
   assert.match(off, /Credentials not configured/);
@@ -587,8 +587,8 @@ test("the client calls only DisputeDesk's own read and analysis endpoints", () =
     .map((f) => readFileSync(new URL(f, dir), "utf8"))
     .join("\n");
   const urls = [...new Set([...sources.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(urls, ["/api/admin/accounts", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
-  assert.equal((sources.match(/fetch\(/g) ?? []).length, 12, "each fetch call uses one of the endpoints above");
+  assert.deepEqual(urls, ["/api/admin/accounts", "/api/admin/audit", "/api/admin/settings", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
+  assert.equal((sources.match(/fetch\(/g) ?? []).length, 14, "each fetch call uses one of the endpoints above");
   assert.doesNotMatch(sources, /paypal\.com|generativelanguage|method:\s*"(PUT|PATCH|DELETE)"/i);
 });
 
@@ -661,8 +661,8 @@ const insightsHtml = (ids: string[] | null, canExplain = true, scope: "account" 
 const buyer: AccountInfo = { id: "buyer-a", email: "buyer-a@demo.disputedesk.test", role: "buyer", display_name: "Demo Buyer A", paypal_sandbox: false };
 
 test("every role gets an Account view in its rail, and buyers still open on Disputes", () => {
-  assert.match(text(html(createElement(Dashboard, { account: admin, onSignOut: noop }))), /Overview Disputes Merchants Buyers Insights System Account/);
-  assert.match(text(html(createElement(Dashboard, { account: merchant, onSignOut: noop }))), /Disputes Insights Account/);
+  assert.match(text(html(createElement(Dashboard, { account: admin, onSignOut: noop }))), /Overview Disputes Insights People Merchants Buyers Oversight Audit logs System health Admin settings You Account/);
+  assert.match(text(html(createElement(Dashboard, { account: merchant, onSignOut: noop }))), /Workspace Disputes Insights You Account/);
   const buyerHome = text(html(createElement(BuyerHome, { account: buyer, onSignOut: noop })));
   assert.match(buyerHome, /Disputes Account/);
   assert.match(html(createElement(BuyerHome, { account: buyer, onSignOut: noop })), /<h1>Disputes<\/h1>/);
@@ -785,4 +785,28 @@ test("insights headings keep order, and every bar states its count in text", () 
   for (const bar of bars) assert.match(bar, /\d+ (of \d+|disputes?)/, bar);
   assert.match(markup, /<table class="evidence-table">/);
   assert.match(markup, /<th scope="col">Available<\/th>/);
+});
+
+test("admin audit logs name accounts and flag refused access; admin settings are read-only and hold no secrets", () => {
+  const entries: AuditEntry[] = [
+    { id: 2, at: 2_000, event: "dispute_access_denied", account_id: "merchant-b", dispute_id: "DEMO-1001", detail: "demo" },
+    { id: 1, at: 1_000, event: "login_failed", account_id: null, dispute_id: null, detail: null },
+  ];
+  const audit = html(createElement(AdminAudit, { entries, accounts: demoAccounts as AdminAccount[], onRetry: noop }));
+  assert.match(text(audit), /Access refused/);
+  assert.match(text(audit), /Unknown email/);
+  assert.match(audit, /badge badge-warn">Access refused/);
+  assert.doesNotMatch(audit, /merchant-b<\/td>/, "account IDs show as display names");
+  const settings: Settings = {
+    session: { idle_minutes: 30, absolute_hours: 8 },
+    sign_in: { max_failures: 10, max_failures_per_address: 100, window_minutes: 15 },
+    paypal: { environment: "sandbox", configured: true, access: "read-only" },
+    ai: { configured: false, model: null, reason: "No key" },
+    audit: { append_only: true, shown: 200 },
+  };
+  const page = html(createElement(AdminSettings, { settings }));
+  assert.match(text(page), /30 minutes/);
+  assert.match(text(page), /Refused by the database/);
+  assert.doesNotMatch(page, /<(input|select|textarea|form)/, "nothing on the settings page can be edited");
+  assert.ok([...page.matchAll(/<button[^>]*>/g)].length === 0);
 });

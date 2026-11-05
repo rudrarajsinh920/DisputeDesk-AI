@@ -761,6 +761,8 @@ const PROTECTED: [string, string][] = [
   ["GET", "/api/buyer/disputes"],
   ["POST", "/api/buyer/explain"],
   ["GET", "/api/admin/accounts"],
+  ["GET", "/api/admin/audit"],
+  ["GET", "/api/admin/settings"],
   ["GET", "/api/sandbox/disputes"],
   ["POST", "/api/analysis"],
   ["POST", "/api/analysis/ai"],
@@ -817,6 +819,8 @@ test("each route allows exactly the intended roles", async () => {
     ["buyer dispute list", "/api/buyer/disputes", undefined, [403, 403, 403, 200, 200]],
     ["buyer explanation of DEMO-1001", "/api/buyer/explain", body("DEMO-1001"), [403, 403, 403, 200, 404]],
     ["admin account list", "/api/admin/accounts", undefined, [200, 403, 403, 403, 403]],
+    ["admin audit log", "/api/admin/audit", undefined, [200, 403, 403, 403, 403]],
+    ["admin settings", "/api/admin/settings", undefined, [200, 403, 403, 403, 403]],
     ["sandbox list", "/api/sandbox/disputes", undefined, [200, 200, 403, 403, 403]],
     ["rules analysis of DEMO-1001", "/api/analysis", body("DEMO-1001"), [200, 200, 404, 403, 403]],
     ["AI draft of DEMO-1001 (admin is read-only)", "/api/analysis/ai", body("DEMO-1001"), [403, 200, 404, 403, 403]],
@@ -1345,4 +1349,23 @@ test("viewing insights and asking for an explanation are audited, without any re
     { event: "intelligence_viewed", account_id: "admin", dispute_id: null, detail: `all, ${DEMO_DISPUTES.length} demo disputes` },
     { event: "intelligence_explanation_generated", account_id: "merchant-c", dispute_id: null, detail: "rules" },
   ]);
+});
+
+test("admin reads the audit log newest first and the server's limits, with no secrets in either", async () => {
+  let t = 5_000_000;
+  const app = makeApp(null, null, undefined, () => t++);
+  await get(app, "/api/analysis", lookup("demo", "DEMO-1001"));
+  const audit = await get(app, "/api/admin/audit", {}, "admin");
+  assert.equal(audit.status, 200);
+  const entries = audit.body.entries as { at: number; event: string }[];
+  assert.ok(entries.some((e) => e.event === "analysis_viewed"));
+  assert.ok(entries.every((e, i) => i === 0 || entries[i - 1].at >= e.at), "newest first");
+  const settings = await get(app, "/api/admin/settings", {}, "admin");
+  assert.equal(settings.status, 200);
+  assert.equal(settings.body.session.idle_minutes, 30);
+  assert.equal(settings.body.paypal.access, "read-only");
+  assert.equal(settings.body.audit.append_only, true);
+  for (const text of [audit.text, settings.text]) {
+    assert.doesNotMatch(text, /scrypt\$|password|__Host-dd_session|access_token|client_secret|Bearer/i);
+  }
 });

@@ -146,3 +146,10 @@ export function audit(
 ) {
   db.prepare("INSERT INTO audit_log (at, event, account_id, dispute_id, detail) VALUES (?, ?, ?, ?, ?)").run(at, event, account_id, dispute_id, detail);
 }
+
+export type AuditEntry = { id: number; at: number; event: AuditEvent; account_id: string | null; dispute_id: string | null; detail: string | null };
+
+// Newest first. Entries never hold secrets (see `audit`), so admin may read them as they are.
+export function listAudit(db: DatabaseSync, limit = 200): AuditEntry[] {
+  return db.prepare("SELECT id, at, event, account_id, dispute_id, detail FROM audit_log ORDER BY at DESC, id DESC LIMIT ?").all(limit) as AuditEntry[];
+}
