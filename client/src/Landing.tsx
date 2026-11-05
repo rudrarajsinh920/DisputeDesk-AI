@@ -51,6 +51,39 @@ const LINKS = [
 const REDUCED = "(prefers-reduced-motion: reduce)";
 const reduced = () => typeof window !== "undefined" && window.matchMedia(REDUCED).matches;
 
+// The opening plays once per browser session, and never for reduced motion. Storage can throw (private windows), so
+// a failed read just shows it.
+const INTRO_KEY = "dd-intro-seen";
+function shouldIntro(): boolean {
+  if (typeof window === "undefined" || reduced()) return false;
+  try {
+    return window.sessionStorage.getItem(INTRO_KEY) === null;
+  } catch {
+    return true;
+  }
+}
+
+// Decorative: the page under it is fully rendered, so assistive tech skips straight to it. Any click or key skips it.
+function Intro({ onSkip }: { onSkip: () => void }) {
+  return (
+    <div className="intro" aria-hidden="true" onClick={onSkip}>
+      <div className="intro-inner">
+        <span className="intro-mark">DD</span>
+        <p className="intro-word" translate="no">
+          DisputeDesk <span>AI</span>
+        </p>
+        <span className="intro-rule" />
+        <p className="intro-line">
+          <span>Rules check the record.</span> <span>AI words it.</span> <span>You decide.</span>
+        </p>
+      </div>
+      <button type="button" tabIndex={-1} className="intro-skip">
+        Skip intro
+      </button>
+    </div>
+  );
+}
+
 const MARK_ICON = { present: Check, missing: CircleDashed, cracked: TriangleAlert };
 
 // One etched line of evidence: present is etched solid, missing is a dashed outline, a contradiction is cracked.
@@ -262,10 +295,10 @@ function Hero({ onSignIn, face, onFace, turnRef }: { onSignIn: () => void; face:
     <section aria-labelledby="hero-h">
       <div className="mx-auto grid max-w-[90rem] gap-12 px-4 pt-10 pb-20 md:px-8 md:pt-14 lg:px-12 lg:pb-28 xl:grid-cols-12 xl:items-center xl:gap-10">
         <div className="xl:col-span-5">
-          <h1 id="hero-h" className="motion-safe:animate-rise text-[2.75rem] leading-[1] font-semibold tracking-[-0.04em] sm:text-6xl xl:text-[4.25rem]">
+          <h1 id="hero-h" data-arrive className="motion-safe:animate-rise text-[2.75rem] leading-[1] font-semibold tracking-[-0.04em] sm:text-6xl xl:text-[4.25rem]">
             Every dispute, checked against the record.
           </h1>
-          <div className="mt-6 motion-safe:animate-rise motion-safe:[animation-delay:120ms]">
+          <div data-arrive className="mt-6 motion-safe:animate-rise motion-safe:[animation-delay:120ms]">
             <p className="max-w-md text-lg">
               DisputeDesk reviews PayPal disputes for merchants and buyers. Both sides read the same facts, gaps stay marked as gaps, and a person makes every decision.
             </p>
@@ -635,6 +668,9 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
   const [howFace, setHowFace] = useState<Side>("merchant");
   const [step, setStep] = useState(0);
   const [active, setActive] = useState("");
+  // "on" while the opening shows, "done" after it (the hero text then keeps the arrival GSAP gave it).
+  const [intro, setIntro] = useState<"off" | "on" | "done">(() => (shouldIntro() ? "on" : "off"));
+  const introTl = useRef<gsap.core.Timeline | null>(null);
 
   const { contextSafe } = useGSAP(
     () => {
@@ -667,16 +703,51 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
         const bar = scope.querySelector<HTMLElement>(".l-header");
         if (!hero || !how || !section || !bar) return;
         const cleanups: (() => void)[] = [];
+        // Reduced motion switched on mid-opening: drop it rather than leave the glass up.
+        if (!motion && scope.querySelector(".intro")) setIntro("done");
 
         if (motion) {
+          const curtain = scope.querySelector<HTMLElement>(".intro");
           // Arrival: the pane clears out of the smoke, then its lines are etched in, then the crack runs.
-          gsap
-            .timeline({ delay: 0.15 })
+          const arrive = gsap
+            .timeline({ delay: curtain ? 0 : 0.15 })
             // Fade and blur go on the figure: a filter on a 3D layer would flatten its faces mid-turn.
             .from(hero.closest("figure"), { opacity: 0, filter: "blur(18px)", duration: 1.2, ease: "expo.out", clearProps: "opacity,filter" })
             .from(hero, { y: 36, rotationX: 12, duration: 1.2, ease: "expo.out" }, 0)
             .from(hero.querySelectorAll('[data-side="merchant"] [data-etch]'), { clipPath: "inset(0 100% 0 0)", duration: 0.7, stagger: 0.06, ease: "expo.out", clearProps: "clipPath" }, 0.35)
             .from(hero.querySelector('[data-side="merchant"] .crack path'), { strokeDashoffset: 1, duration: 0.6, ease: "power2.out" }, 0.95);
+
+          if (curtain) {
+            // The opening: the mark, the name etched in, the rule drawn in both sides' colours, the three lines,
+            // then the glass lifts and the hero arrives underneath it.
+            arrive.from(scope.querySelectorAll("[data-arrive]"), { opacity: 0, y: 14, duration: 0.64, stagger: 0.12, ease: "expo.out", clearProps: "opacity,transform" }, 0);
+            const html = document.documentElement;
+            html.style.overflow = "hidden";
+            const unlock = () => (html.style.overflow = "");
+            const end = () => {
+              unlock();
+              setIntro((v) => (v === "on" ? "done" : v));
+            };
+            try {
+              window.sessionStorage.setItem(INTRO_KEY, "1");
+            } catch {
+              // Storage is blocked: it plays again next visit, nothing else changes.
+            }
+            introTl.current = gsap
+              .timeline()
+              .from(".intro-mark", { opacity: 0, scale: 0.9, duration: 0.6, ease: "expo.out" })
+              .from(".intro-word", { clipPath: "inset(-20% 100% -20% 0)", duration: 0.9, ease: "expo.out" }, 0.15)
+              .from(".intro-rule", { scaleX: 0, duration: 1.1, ease: "power2.inOut" }, 0.3)
+              .from(".intro-line span", { opacity: 0, y: 10, filter: "blur(6px)", duration: 0.5, stagger: 0.2, ease: "expo.out" }, 0.7)
+              .from(".intro-skip", { opacity: 0, duration: 0.4 }, 0.5)
+              .addLabel("lift", "+=0.35")
+              .to(".intro-inner", { y: -32, opacity: 0, duration: 0.5, ease: "power2.in" }, "lift")
+              .to(curtain, { clipPath: "inset(0 0 100% 0)", duration: 0.9, ease: "expo.inOut" }, "lift+=0.1")
+              .add(arrive, "lift+=0.45")
+              .call(end, [], "lift+=1");
+            // Only unlock here: React's dev double run reverts this once, and the opening must survive it.
+            cleanups.push(unlock);
+          }
 
           // The bar slides away while reading down and comes back on the way up.
           ScrollTrigger.create({
@@ -781,6 +852,17 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
     { scope: root },
   );
 
+  // Skipping jumps to the lift, so the page still arrives rather than snapping in.
+  const skipIntro = () => {
+    const tl = introTl.current;
+    if (tl && tl.time() < tl.labels.lift) tl.seek("lift");
+  };
+  useEffect(() => {
+    if (intro !== "on") return;
+    document.addEventListener("keydown", skipIntro);
+    return () => document.removeEventListener("keydown", skipIntro);
+  }, [intro]);
+
   const turn = (el: HTMLDivElement | null, side: Side) =>
     gsap.to(el, { rotationY: side === "buyer" ? 180 : 0, "--spec": side === "buyer" ? "100%" : "0%", duration: reduced() ? 0 : 0.9, ease: "expo.inOut", overwrite: true });
   const turnHero = contextSafe((side: Side) => {
@@ -793,7 +875,8 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
   });
 
   return (
-    <div className="landing lattice" id="top" ref={root}>
+    <div className="landing lattice" id="top" ref={root} data-intro={intro === "off" ? undefined : ""}>
+      {intro === "on" && <Intro onSkip={skipIntro} />}
       <a href="#main" className="sr-only rounded-md bg-primary px-4 py-2 text-primary-foreground focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-10">
         Skip to content
       </a>

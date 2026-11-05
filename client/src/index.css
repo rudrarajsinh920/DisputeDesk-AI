@@ -693,3 +693,86 @@
     transition: none !important;
   }
 }
+
+/* The opening: one sheet of the smoked glass over the whole screen, lifted away once the name is etched. */
+.intro {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background:
+    radial-gradient(60% 50% at 50% 46%, color-mix(in oklab, var(--signal) 9%, transparent), transparent 70%),
+    linear-gradient(to right, var(--glass-line) 1px, transparent 1px) -1px -1px / var(--u) var(--u),
+    linear-gradient(to bottom, var(--glass-line) 1px, transparent 1px) -1px -1px / var(--u) var(--u),
+    var(--glass);
+  color: var(--glass-fg);
+  clip-path: inset(0 0 0 0);
+  cursor: pointer;
+}
+.intro-inner {
+  display: grid;
+  justify-items: center;
+  gap: 20px;
+  text-align: center;
+}
+.intro-mark {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background: var(--signal);
+  color: var(--signal-foreground);
+  font-size: 20px;
+  font-weight: 700;
+  box-shadow: 0 0 48px -8px color-mix(in oklab, var(--signal) 60%, transparent);
+}
+.intro-word {
+  font-size: clamp(2.5rem, 9vw, 5.5rem);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.045em;
+}
+.intro-word span {
+  color: var(--signal);
+}
+.intro-rule {
+  display: block;
+  width: min(320px, 70vw);
+  height: 2px;
+  transform-origin: left;
+  background: linear-gradient(90deg, var(--merchant), var(--buyer));
+}
+.intro-line {
+  max-width: 34rem;
+  font-size: clamp(1rem, 2.6vw, 1.25rem);
+  color: var(--glass-muted);
+}
+.intro-line span {
+  display: inline-block;
+}
+.intro-line span:last-child {
+  color: var(--glass-fg);
+}
+.intro-skip {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  color: var(--glass-muted);
+  font-size: 0.875rem;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.intro-skip:hover {
+  color: var(--glass-fg);
+  border-color: var(--glass-muted);
+}
+/* GSAP brings the hero text in as the glass lifts, so its own CSS rise must not run under the glass. */
+.landing[data-intro] [data-arrive] {
+  animation: none;
+}
