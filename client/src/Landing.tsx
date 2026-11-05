@@ -456,6 +456,138 @@ const STEPS: { title: string; body: string; extra?: ReactNode }[] = [
   },
 ];
 
+// The example rows the laptop's dispute list shows. Illustrative only: no demo records reach this page.
+const SHOW_ROWS = [
+  { reason: "Item not received", amount: "$84.00", status: "Awaiting seller", active: true },
+  { reason: "Not as described", amount: "$129.00", status: "Under review", active: false },
+  { reason: "Unauthorised payment", amount: "$42.50", status: "Closed", active: false },
+];
+
+// Two devices drawn in HTML: the merchant's workspace on a laptop, the buyer's view of the same dispute on a phone.
+function Showcase() {
+  return (
+    <section id="showcase" aria-labelledby="showcase-h" className="mx-auto max-w-[90rem] px-4 pt-8 pb-20 md:px-8 md:pb-24 lg:px-12">
+      <SectionHead id="showcase-h" title="Your dispute desk, on every screen." lead="Merchants work the case on a laptop. Buyers follow it on a phone. Both read the same checked record." />
+      <figure data-ui aria-label="Illustrative example of the merchant workspace on a laptop and the buyer’s view on a phone" className="devices mt-12 md:mt-16">
+        <div className="device-laptop">
+          <div className="laptop-screen">
+            <div className="scr-bar" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <p>DisputeDesk · Merchant workspace</p>
+            </div>
+            <div className="scr-body">
+              <div className="scr-rail" aria-hidden="true">
+                <span className="scr-logo">D</span>
+                <span className="scr-nav" data-on="">
+                  <FileSearch className="size-4" />
+                </span>
+                <span className="scr-nav">
+                  <ScanLine className="size-4" />
+                </span>
+                <span className="scr-nav">
+                  <Lock className="size-4" />
+                </span>
+              </div>
+              <div className="scr-list">
+                <p className="scr-label">Disputes</p>
+                <ul>
+                  {SHOW_ROWS.map((r) => (
+                    <li key={r.reason} data-on={r.active ? "" : undefined}>
+                      <span className="scr-row-top">
+                        <b>{r.reason}</b>
+                        <span>{r.amount}</span>
+                      </span>
+                      <span className="scr-status">{r.status}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="scr-detail">
+                <div className="scr-case">
+                  <p className="scr-case-kicker">Example dispute</p>
+                  <p className="scr-case-title">Item not received</p>
+                  <span className="scr-pill">Awaiting seller</span>
+                </div>
+                <p className="scr-label">Evidence</p>
+                <ul className="scr-evidence">
+                  {EVIDENCE.map((e) => (
+                    <li key={e.label} data-kind={e.kind}>
+                      <span className="ev-dot" aria-hidden="true" />
+                      <span className="ev-label">{e.label}</span>
+                      <span className="ev-word">{e.word}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="scr-draft">
+                  <p>
+                    <Sparkles aria-hidden="true" className="size-3.5" /> Draft reply · needs your review
+                  </p>
+                  <span className="bar w-11/12" />
+                  <span className="bar w-9/12" />
+                  <span className="bar w-7/12" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="laptop-base" aria-hidden="true" />
+        </div>
+
+        <div className="device-phone">
+          <div className="phone-screen">
+            <span className="phone-notch" aria-hidden="true" />
+            <p className="scr-case-kicker">Your dispute</p>
+            <p className="phone-title">Item not received</p>
+            <span className="scr-pill">Awaiting seller</span>
+            <ol className="phone-stages" aria-label="Stage 2 of 4">
+              {STAGES.map((s, i) => (
+                <li key={s} data-done={i < 2 ? "" : undefined} />
+              ))}
+            </ol>
+            <p className="phone-stage">Stage 2 of 4 · Seller and buyer respond</p>
+            <div className="phone-card">
+              <p>What this status means</p>
+              <span className="bar w-full" />
+              <span className="bar w-10/12" />
+              <span className="bar w-8/12" />
+            </div>
+            <div className="phone-card">
+              <p>Not on record yet</p>
+              <span className="bar w-9/12" />
+              <span className="bar w-6/12" />
+            </div>
+          </div>
+        </div>
+
+        <div className="device-chip device-chip-a" aria-hidden="true">
+          <span className="chip-in">
+            <span className="chip-icon">
+              <Check className="size-4" />
+            </span>
+            <span>
+              <b>4 records checked</b>
+              <small>By fixed rules, not the AI</small>
+            </span>
+          </span>
+        </div>
+        <div className="device-chip device-chip-b" aria-hidden="true">
+          <span className="chip-in">
+            <span className="chip-icon" data-tone="ink">
+              <ShieldCheck className="size-4" />
+            </span>
+            <span>
+              <b>Every AI line checked</b>
+              <small>Unsupported lines dropped</small>
+            </span>
+          </span>
+        </div>
+        <figcaption className="devices-cap">Illustrative example. Not a real dispute.</figcaption>
+      </figure>
+    </section>
+  );
+}
+
 function HowItWorks({ step, turnRef, face, onFace }: { step: number; turnRef: RefObject<HTMLDivElement | null>; face: Side; onFace: (side: Side) => void }) {
   return (
     <section id="how" aria-labelledby="how-h" className="how mx-auto max-w-[90rem] px-4 py-20 md:px-8 md:py-24 lg:px-12">
@@ -828,6 +960,17 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
             once: true,
             onEnter: (els) => gsap.to(els, { opacity: 1, y: 0, duration: 0.8, stagger: 0.07, ease: "expo.out", clearProps: "opacity,transform" }),
           });
+
+          // The devices rise in once, then the phone drifts a little faster than the laptop as the page scrolls.
+          const devices = scope.querySelector(".devices");
+          if (devices) {
+            gsap
+              .timeline({ scrollTrigger: { trigger: devices, start: "top 82%", once: true }, defaults: { ease: "expo.out" } })
+              .from(".device-laptop", { y: 70, opacity: 0, duration: 1.2 })
+              .from(".device-phone", { y: 140, opacity: 0, duration: 1.3 }, 0.15)
+              .from(".device-chip", { y: 24, scale: 0.94, opacity: 0, duration: 0.9, stagger: 0.12 }, 0.45);
+            gsap.to(".device-phone", { yPercent: -8, ease: "none", scrollTrigger: { trigger: devices, start: "top bottom", end: "bottom top", scrub: true } });
+          }
         }
 
         if (tilt) {
@@ -935,6 +1078,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
       <Header onSignIn={onSignIn} active={active} />
       <main id="main">
         <Hero onSignIn={onSignIn} face={heroFace} onFace={turnHero} turnRef={heroTurn} />
+        <Showcase />
         <HowItWorks step={step} turnRef={howTurn} face={howFace} onFace={turnHow} />
         <Roles />
         <Safeguards />

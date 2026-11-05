@@ -1012,3 +1012,436 @@ html:has(.landing),
 .landing[data-intro] [data-arrive] {
   animation: none;
 }
+
+/* The devices: a laptop with the merchant workspace and a phone with the buyer view, drawn in HTML. */
+.devices {
+  position: relative;
+}
+.device-laptop {
+  position: relative;
+  width: 100%;
+  max-width: 980px;
+}
+.laptop-screen {
+  overflow: hidden;
+  border: 10px solid var(--bezel);
+  border-bottom-width: 14px;
+  border-radius: 22px 22px 6px 6px;
+  background: var(--background);
+  color: var(--foreground);
+  box-shadow: 0 40px 80px -40px rgb(18 20 18 / 0.45);
+}
+.laptop-base {
+  height: 14px;
+  margin: 0 -4%;
+  border-radius: 0 0 18px 18px;
+  background: linear-gradient(180deg, #d9dcd5, #b9bdb5);
+  box-shadow: 0 18px 30px -18px rgb(18 20 18 / 0.5);
+}
+.laptop-base::before {
+  content: "";
+  display: block;
+  width: 16%;
+  height: 5px;
+  margin: 0 auto;
+  border-radius: 0 0 8px 8px;
+  background: #a9ada5;
+}
+.scr-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+.scr-bar > span {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--input);
+}
+.scr-bar p {
+  margin-left: 10px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.scr-body {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  font-size: 12px;
+}
+@media (min-width: 768px) {
+  .scr-body {
+    grid-template-columns: 56px minmax(0, 0.9fr) minmax(0, 1.25fr);
+    gap: 14px;
+    padding: 14px;
+    font-size: 13px;
+  }
+}
+.scr-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-radius: 18px;
+  background:
+    radial-gradient(120% 60% at 0% 0%, color-mix(in oklab, var(--signal) 22%, transparent), transparent 60%),
+    var(--glass);
+  color: var(--glass-muted);
+}
+.scr-logo,
+.scr-nav {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+}
+.scr-logo {
+  margin-bottom: 8px;
+  background: var(--signal);
+  color: var(--ink);
+  font-weight: 700;
+}
+.scr-nav[data-on] {
+  background: var(--signal);
+  color: var(--ink);
+}
+.scr-label {
+  margin: 2px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
+}
+.scr-list {
+  display: none;
+}
+@media (min-width: 768px) {
+  .scr-list {
+    display: block;
+  }
+}
+.scr-list ul {
+  display: grid;
+  gap: 8px;
+}
+.scr-list li {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+.scr-list li[data-on] {
+  border-color: var(--foreground);
+  box-shadow: var(--lift);
+}
+.scr-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.scr-row-top b {
+  font-weight: 600;
+}
+.scr-row-top span,
+.scr-status {
+  color: var(--muted-foreground);
+}
+.scr-status {
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--muted);
+  font-size: 11px;
+}
+.scr-detail {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+.scr-case {
+  padding: 14px;
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 90% at 100% 0%, color-mix(in oklab, var(--signal) 26%, transparent), transparent 60%),
+    var(--glass);
+  color: var(--glass-fg);
+}
+.scr-case-kicker {
+  font-size: 11px;
+  color: var(--glass-muted);
+}
+.scr-case-title {
+  margin: 2px 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.scr-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--signal);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+.scr-evidence {
+  display: grid;
+  gap: 6px;
+}
+.scr-evidence li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.ev-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 999px;
+  background: #5fae3e;
+}
+[data-kind="cracked"] .ev-dot {
+  background: var(--merchant);
+}
+[data-kind="missing"] .ev-dot {
+  border: 1.5px dashed var(--muted-foreground);
+  background: transparent;
+}
+.ev-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ev-word {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.scr-draft {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px dashed var(--input);
+  border-radius: 14px;
+  background: var(--card);
+}
+.scr-draft p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.devices .bar {
+  display: block;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.device-phone {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: 0;
+  width: 168px;
+  padding: 7px;
+  border-radius: 34px;
+  background: var(--bezel);
+  box-shadow: 0 40px 70px -30px rgb(18 20 18 / 0.55);
+}
+@media (min-width: 768px) {
+  .device-phone {
+    right: 2%;
+    bottom: -12px;
+    width: 248px;
+    padding: 9px;
+    border-radius: 44px;
+  }
+}
+@media (min-width: 1280px) {
+  .device-phone {
+    right: 6%;
+  }
+}
+.phone-screen {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 30px 12px 16px;
+  border-radius: 27px;
+  background:
+    radial-gradient(120% 40% at 100% 0%, color-mix(in oklab, var(--signal) 30%, transparent), transparent 60%),
+    var(--background);
+  color: var(--foreground);
+  font-size: 11px;
+}
+@media (min-width: 768px) {
+  .phone-screen {
+    gap: 10px;
+    padding: 40px 16px 20px;
+    border-radius: 35px;
+    font-size: 12px;
+  }
+}
+.phone-notch {
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  width: 34%;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--ink);
+  transform: translateX(-50%);
+}
+.phone-screen .scr-case-kicker {
+  color: var(--muted-foreground);
+}
+.phone-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+@media (min-width: 768px) {
+  .phone-title {
+    font-size: 19px;
+  }
+}
+.phone-screen .scr-pill {
+  width: fit-content;
+}
+.phone-stages {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-top: 4px;
+}
+.phone-stages li {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--input);
+}
+.phone-stages li[data-done] {
+  background: var(--foreground);
+}
+.phone-stage {
+  color: var(--muted-foreground);
+}
+.phone-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+.phone-card p {
+  font-weight: 600;
+}
+.phone-card:last-child {
+  display: none;
+}
+@media (min-width: 768px) {
+  .phone-card:last-child {
+    display: grid;
+  }
+}
+
+.device-chip {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+}
+.device-chip-a {
+  top: -22px;
+  left: 26%;
+}
+.device-chip-b {
+  bottom: 22px;
+  left: 18%;
+}
+@media (max-width: 767px) {
+  .device-chip-a {
+    top: -26px;
+    left: 12px;
+  }
+  .device-chip-b {
+    display: none;
+  }
+}
+.chip-in {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 10px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 13px;
+  line-height: 1.2;
+  box-shadow: var(--lift);
+}
+.chip-in b {
+  display: block;
+  font-weight: 600;
+}
+.chip-in small {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.chip-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--signal);
+  color: var(--ink);
+}
+.chip-icon[data-tone="ink"] {
+  background: var(--ink);
+  color: var(--signal);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .chip-in {
+    animation: float 6s ease-in-out infinite;
+  }
+  .device-chip-b .chip-in {
+    animation-delay: -3s;
+  }
+}
+.devices-cap {
+  display: block;
+  margin-top: 40px;
+  max-width: calc(100% - 190px);
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+/* Device frames: ink on the light ground, a lifted graphite in dark mode so they still read. */
+.landing {
+  --bezel: var(--ink);
+}
+@media (prefers-color-scheme: dark) {
+  .landing {
+    --bezel: #353a36;
+  }
+}
