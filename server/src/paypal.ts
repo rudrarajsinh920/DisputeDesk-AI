@@ -62,10 +62,10 @@ export function createPayPalClient(
     return token.value;
   }
 
-  // shortcut: first page only (up to 50 disputes); follow the "next" link once accounts hold more.
-  async function listDisputes(): Promise<Dispute[]> {
+  // The only kind of data request this client makes. Returns the JSON object PayPal sent.
+  async function get(path: string, what: string): Promise<Record<string, unknown>> {
     const accessToken = await getToken();
-    const res = await send(`${PAYPAL_SANDBOX_URL}/v1/customer/disputes?page_size=50`, {
+    const res = await send(`${PAYPAL_SANDBOX_URL}${path}`, {
       method: "GET",
       headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
     });
@@ -74,11 +74,15 @@ export function createPayPalClient(
       throw new PayPalError("paypal_auth_failed", "PayPal sandbox rejected the access token.", 401);
     }
     if (!res.ok) throw new PayPalError("paypal_error", `PayPal sandbox answered HTTP ${res.status}.`, res.status);
-
-    if (typeof res.body !== "object" || res.body === null) {
-      throw new PayPalError("paypal_bad_response", "PayPal sandbox sent an unexpected dispute list.");
+    if (typeof res.body !== "object" || res.body === null || Array.isArray(res.body)) {
+      throw new PayPalError("paypal_bad_response", `PayPal sandbox sent an unexpected ${what}.`);
     }
-    const items = (res.body as { items?: unknown }).items;
+    return res.body as Record<string, unknown>;
+  }
+
+  // shortcut: first page only (up to 50 disputes); follow the "next" link once accounts hold more.
+  async function listDisputes(): Promise<Dispute[]> {
+    const items = (await get("/v1/customer/disputes?page_size=50", "dispute list")).items;
     if (items === undefined) return [];
     if (!Array.isArray(items)) {
       throw new PayPalError("paypal_bad_response", "PayPal sandbox sent an unexpected dispute list.");
@@ -86,7 +90,60 @@ export function createPayPalClient(
     return items.map(normalizeDispute);
   }
 
-  return { listDisputes };
+  // The dispute's own record: messages, the disputed transaction, evidence and the response deadline.
+  async function getDisputeDetails(id: string): Promise<DisputeDetails> {
+    return normalizeDetails(await get(`/v1/customer/disputes/${encodeURIComponent(id)}`, "dispute"));
+  }
+
+  return { listDisputes, getDisputeDetails };
+}
+
+export type DisputeDetails = Pick<Dispute, "seller_response_due_date" | "customer_message" | "order" | "evidence">;
+
+const list = (value: unknown): Record<string, unknown>[] =>
+  Array.isArray(value) ? value.filter((v): v is Record<string, unknown> => typeof v === "object" && v !== null) : [];
+
+const DELIVERY_EVIDENCE = ["PROOF_OF_DELIVERY", "PROOF_OF_DELIVERY_SIGNATURE"];
+
+// Maps only what PayPal's record contains. Anything it doesn't contain stays unset ("not supplied"), never false,
+// so the evidence engine reports it as unverified rather than as missing.
+export function normalizeDetails(d: Record<string, unknown>): DisputeDetails {
+  const details: DisputeDetails = {};
+  const due = text(d.seller_response_due_date);
+  if (due) details.seller_response_due_date = due;
+
+  const messages = list(d.messages);
+  const buyer = messages.filter((m) => m.posted_by === "BUYER").map((m) => text(m.content)?.trim()).filter(Boolean);
+  if (buyer.length) details.customer_message = buyer.join("\n\n");
+
+  const order: NonNullable<Dispute["order"]> = {};
+  const evidence: NonNullable<Dispute["evidence"]> = {};
+  if (messages.some((m) => text(m.content)?.trim())) evidence.customer_communication = true;
+
+  const transaction = list(d.disputed_transactions)[0];
+  const transactionId = text(transaction?.seller_transaction_id);
+  if (transactionId) {
+    order.order_id = transactionId;
+    evidence.order_confirmation = true;
+  }
+  const item = list(transaction?.items)[0];
+  const itemName = text(item?.item_name) ?? text(item?.item_description);
+  if (itemName) order.item = itemName;
+
+  const submitted = list(d.evidences);
+  const trackingNumber = submitted
+    .flatMap((e) => list((e.evidence_info as Record<string, unknown> | undefined)?.tracking_info))
+    .map((t) => text(t.tracking_number)?.trim())
+    .find(Boolean);
+  if (trackingNumber) {
+    order.tracking_number = trackingNumber;
+    evidence.shipping_tracking = true;
+  }
+  if (submitted.some((e) => DELIVERY_EVIDENCE.includes(text(e.evidence_type) ?? ""))) evidence.proof_of_delivery = true;
+
+  if (Object.keys(order).length) details.order = order;
+  if (Object.keys(evidence).length) details.evidence = evidence;
+  return details;
 }
 
 const text = (value: unknown) => (typeof value === "string" ? value : undefined);
@@ -106,5 +163,6 @@ export function normalizeDispute(raw: unknown): Dispute {
     status: text(d.status) ?? "UNKNOWN",
     amount: currency && value ? { currency_code: currency, value } : null,
     create_time: text(d.create_time),
+    ...(text(d.seller_response_due_date) ? { seller_response_due_date: text(d.seller_response_due_date) } : {}),
   };
 }

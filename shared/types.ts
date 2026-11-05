@@ -24,6 +24,8 @@ export interface Dispute {
   // null when PayPal sends no amount; never filled in.
   amount: Money | null;
   create_time?: string;
+  // PayPal's deadline for the seller's response, only when the record has one.
+  seller_response_due_date?: string;
   customer_message?: string;
   // Every field may be missing in incomplete records; missing means "not supplied", never "false".
   order?: {

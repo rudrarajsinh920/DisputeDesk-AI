@@ -146,6 +146,8 @@ export function createApp(
     const match = records.find((d) => d.dispute_id === dispute_id);
     const dispute = match && canAccess(account, match) ? match : undefined;
     if (match && !dispute) audit(db, now(), "dispute_access_denied", { account_id: account.id, dispute_id, detail: source });
+    // A sandbox dispute is analysed from its full PayPal record, read only after the account is cleared to see it.
+    if (dispute && source === "paypal_sandbox") return { ...dispute, ...(await paypal!.getDisputeDetails(dispute.dispute_id)) };
     if (!dispute) {
       res.status(404).json({
         error: {

@@ -11,7 +11,7 @@ import { LOGIN_MAX_FAILURES, hashPassword } from "./auth.ts";
 import { AI_OFF_BAD_MODEL, AI_OFF_NO_KEY } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { createGeminiClient } from "./gemini.ts";
-import { createPayPalClient } from "./paypal.ts";
+import { createPayPalClient, normalizeDetails } from "./paypal.ts";
 
 // Placeholder values only; nothing here talks to PayPal.
 const CREDENTIALS = { clientId: "test-client-id", clientSecret: "test-client-secret" };
@@ -22,7 +22,7 @@ const json = (status: number, body: unknown) =>
 
 type Handler = () => Response | Promise<Response>;
 
-function mockPayPal(handlers: { token?: Handler; disputes?: Handler } = {}) {
+function mockPayPal(handlers: { token?: Handler; disputes?: Handler; detail?: Handler } = {}) {
   const calls: { method: string; url: string }[] = [];
   const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
@@ -30,6 +30,7 @@ function mockPayPal(handlers: { token?: Handler; disputes?: Handler } = {}) {
     if (url.endsWith("/v1/oauth2/token")) {
       return handlers.token ? handlers.token() : json(200, { access_token: TOKEN, token_type: "Bearer", expires_in: 32400 });
     }
+    if (handlers.detail && /\/v1\/customer\/disputes\/[^/?]+$/.test(url)) return handlers.detail();
     if (url.includes("/v1/customer/disputes")) return handlers.disputes ? handlers.disputes() : json(200, { items: [] });
     throw new Error(`Unexpected URL in test: ${url}`);
   }) as typeof fetch;
@@ -287,6 +288,62 @@ test("sandbox analysis uses only what PayPal returned, never fields from the req
 
   const missing = await get(makeApp(client), "/api/analysis", lookup("paypal_sandbox", "PP-D-404"));
   assert.equal(missing.status, 404);
+});
+
+// Synthetic, in the shape of PayPal's dispute details. Only some fields are used.
+const sandboxDetail = {
+  ...sandboxItem,
+  seller_response_due_date: "2026-11-20T23:59:59.000Z",
+  messages: [
+    { posted_by: "BUYER", time_posted: "2026-11-01T10:00:00.000Z", content: "The parcel never arrived." },
+    { posted_by: "SELLER", time_posted: "2026-11-02T10:00:00.000Z", content: "Checking with the carrier." },
+  ],
+  disputed_transactions: [{ seller_transaction_id: "TX-TEST-1", items: [{ item_name: "Test mug" }] }],
+  evidences: [{ evidence_type: "PROOF_OF_FULFILLMENT", evidence_info: { tracking_info: [{ carrier_name: "OTHER", tracking_number: "TRK-TEST-1" }] } }],
+};
+
+test("sandbox analysis reads the dispute's PayPal record and marks only what it contains", async () => {
+  const { client, calls } = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }), detail: () => json(200, sandboxDetail) });
+  const res = await get(makeApp(client), "/api/analysis", lookup("paypal_sandbox", "PP-D-1"));
+  assert.equal(res.status, 200);
+  const status = Object.fromEntries(res.body.evidence.map((e: { id: string; status: string }) => [e.id, e.status]));
+  assert.deepEqual(status, {
+    order_confirmation: "available",
+    shipping_tracking: "available",
+    customer_communication: "available",
+    // Not in PayPal's record: unverified, never "missing".
+    proof_of_delivery: "unverified",
+  });
+  assert.ok(res.body.draft.text.includes("The parcel never arrived."));
+  assert.ok(!res.body.draft.text.includes("Checking with the carrier."));
+  assert.ok(calls.some((c) => c.method === "GET" && c.url.endsWith("/v1/customer/disputes/PP-D-1")));
+  // Read-only: the token request is the only POST.
+  assert.ok(calls.every((c) => c.method === "GET" || c.url.endsWith("/v1/oauth2/token")));
+  assertNoSecrets(res.text);
+});
+
+test("PayPal dispute details map only fields that are present", () => {
+  assert.deepEqual(normalizeDetails({}), {});
+  assert.deepEqual(normalizeDetails({ messages: "nope", evidences: [null, 3], disputed_transactions: [{}] }), {});
+  const full = normalizeDetails({ ...sandboxDetail, evidences: [...sandboxDetail.evidences, { evidence_type: "PROOF_OF_DELIVERY_SIGNATURE" }] });
+  assert.deepEqual(full, {
+    seller_response_due_date: "2026-11-20T23:59:59.000Z",
+    customer_message: "The parcel never arrived.",
+    order: { order_id: "TX-TEST-1", item: "Test mug", tracking_number: "TRK-TEST-1" },
+    evidence: { customer_communication: true, order_confirmation: true, shipping_tracking: true, proof_of_delivery: true },
+  });
+});
+
+test("a failed detail request is passed on, and details are never read for an account without sandbox access", async () => {
+  const failing = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }), detail: () => json(500, {}) });
+  const res = await get(makeApp(failing.client), "/api/analysis", lookup("paypal_sandbox", "PP-D-1"));
+  assert.equal(res.status, 502);
+  assert.equal(res.body.error.code, "paypal_error");
+
+  const blocked = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }), detail: () => json(200, sandboxDetail) });
+  const denied = await get(makeApp(blocked.client), "/api/analysis", lookup("paypal_sandbox", "PP-D-1"), "merchant-b");
+  assert.equal(denied.status, 403);
+  assert.ok(!blocked.calls.some((c) => /\/v1\/customer\/disputes\/PP-D-1$/.test(c.url)));
 });
 
 test("sandbox analysis without credentials is 503, and PayPal failures are 502 without secrets", async () => {

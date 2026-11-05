@@ -54,6 +54,12 @@ export function DisputeDetail({ dispute, canDraft = true }: { dispute: Dispute; 
             <dd>{formatDate(dispute.create_time)}</dd>
           </div>
         )}
+        {dispute.seller_response_due_date && (
+          <div>
+            <dt>Respond by</dt>
+            <dd>{formatDate(dispute.seller_response_due_date)}</dd>
+          </div>
+        )}
       </dl>
 
       {dispute.customer_message && (
