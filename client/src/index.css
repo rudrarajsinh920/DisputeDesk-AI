@@ -29,41 +29,42 @@
    Amber is the merchant's side, blue the buyer's, lime the etch highlight (always under ink text). */
 .landing {
   --u: 48px;
-  --radius: 0.5rem;
-  --ink: #10181b;
-  --background: #dfe6e3;
-  --foreground: #10181b;
-  --card: #e9eeec;
-  --card-foreground: #10181b;
-  --popover: #e9eeec;
-  --popover-foreground: #10181b;
-  --primary: #10181b;
-  --primary-foreground: #eef2f0;
-  --secondary: #d2dbd7;
-  --secondary-foreground: #10181b;
-  --muted: #d2dbd7;
-  --muted-foreground: #43524f;
-  --accent: #d2dbd7;
-  --accent-foreground: #10181b;
+  --radius: 0.75rem;
+  --ink: #121412;
+  --background: #f3f4f1;
+  --foreground: #121412;
+  --card: #ffffff;
+  --card-foreground: #121412;
+  --popover: #ffffff;
+  --popover-foreground: #121412;
+  --primary: #121412;
+  --primary-foreground: #f6f7f4;
+  --secondary: #eceee9;
+  --secondary-foreground: #121412;
+  --muted: #eceee9;
+  --muted-foreground: #565b56;
+  --accent: #eceee9;
+  --accent-foreground: #121412;
   --destructive: #b42318;
-  --border: #b7c4bf;
-  --input: #b7c4bf;
-  --ring: #10181b;
-  --lattice: rgb(16 24 27 / 0.065);
+  --border: #e2e4df;
+  --input: #d9dcd5;
+  --ring: #121412;
+  --lattice: transparent;
+  --lift: 0 1px 2px rgb(18 20 18 / 0.04), 0 24px 48px -28px rgb(18 20 18 / 0.22);
 
-  --signal: #d8f65a;
-  --signal-foreground: #10181b;
+  --signal: #cdf86a;
+  --signal-foreground: #121412;
   --merchant: #e9a23b;
   --buyer: #5aa9d8;
 
   /* Smoked glass. */
-  --glass: #121c1f;
-  --glass-2: #1b282c;
-  --glass-fg: #e6ecea;
-  --glass-muted: #a1b2ad;
-  --glass-line: rgb(230 236 234 / 0.14);
+  --glass: #0e110f;
+  --glass-2: #181c19;
+  --glass-fg: #eef1ec;
+  --glass-muted: #a3aaa2;
+  --glass-line: rgb(238 241 236 / 0.12);
   --crack: #ff9d86;
-  --smoke: rgb(16 24 27 / 0.84);
+  --smoke: #111412;
 
   --ok-bg: #e2f3e7;
   --ok-fg: #14532d;
@@ -75,28 +76,28 @@
 
 @media (prefers-color-scheme: dark) {
   .landing {
-    --background: #0c1316;
-    --foreground: #dfe6e3;
-    --card: #131d20;
-    --card-foreground: #dfe6e3;
-    --popover: #131d20;
-    --popover-foreground: #dfe6e3;
-    --primary: #dfe6e3;
-    --primary-foreground: #10181b;
-    --secondary: #1a272b;
-    --secondary-foreground: #dfe6e3;
-    --muted: #1a272b;
-    --muted-foreground: #95a7a2;
-    --accent: #1a272b;
-    --accent-foreground: #dfe6e3;
-    --border: #26363b;
-    --input: #26363b;
-    --ring: #dfe6e3;
-    --lattice: rgb(223 230 227 / 0.045);
-    --glass: #172327;
-    --glass-2: #223338;
-    --glass-line: rgb(230 236 234 / 0.17);
-    --smoke: rgb(28 42 47 / 0.82);
+    --background: #0b0d0c;
+    --foreground: #eceee9;
+    --card: #151816;
+    --card-foreground: #eceee9;
+    --popover: #151816;
+    --popover-foreground: #eceee9;
+    --primary: #eceee9;
+    --primary-foreground: #121412;
+    --secondary: #1d211e;
+    --secondary-foreground: #eceee9;
+    --muted: #1d211e;
+    --muted-foreground: #9da49c;
+    --accent: #1d211e;
+    --accent-foreground: #eceee9;
+    --border: #252925;
+    --input: #2c312c;
+    --ring: #eceee9;
+    --lift: 0 24px 48px -28px rgb(0 0 0 / 0.8);
+    --glass: #121513;
+    --glass-2: #1c201d;
+    --glass-line: rgb(238 241 236 / 0.13);
+    --smoke: #171a18;
 
     --ok-bg: #10291a;
     --ok-fg: #8ee3ad;
@@ -234,22 +235,22 @@
 
 /* The square unit, ruled across the ground. */
 .lattice {
-  background-image: linear-gradient(to right, var(--lattice) 1px, transparent 1px), linear-gradient(to bottom, var(--lattice) 1px, transparent 1px);
-  background-size: var(--u) var(--u);
-  background-position: -1px -1px;
+  background-image:
+    radial-gradient(48rem 30rem at 85% -6rem, color-mix(in oklab, var(--signal) 26%, transparent), transparent 70%),
+    radial-gradient(36rem 26rem at -8rem 18rem, color-mix(in oklab, var(--foreground) 5%, transparent), transparent 70%);
+  background-repeat: no-repeat;
 }
 
 .logo-mark {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
   background: var(--ink);
   color: var(--signal);
   font-size: 12px;
   font-weight: 700;
-  box-shadow: inset 0 0 0 1px var(--border);
 }
 /* Section links glide instead of jumping. */
 @media (prefers-reduced-motion: no-preference) {
@@ -263,19 +264,33 @@
   position: sticky;
   top: 0;
   z-index: 30;
-  background: color-mix(in oklab, var(--background) 78%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
-  backdrop-filter: blur(14px) saturate(1.2);
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  padding: 12px 12px 0;
   transition: transform 420ms var(--ease-out-strong);
 }
+/* The bar is a floating white pill. */
+.l-header > header {
+  max-width: 76rem;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: color-mix(in oklab, var(--card) 86%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  backdrop-filter: blur(16px) saturate(1.3);
+  box-shadow: var(--lift);
+  padding-inline: 14px 10px;
+}
+@media (min-width: 768px) {
+  .l-header > header {
+    padding-inline: 20px 10px;
+  }
+}
 .l-header[data-away]:not([data-open]):not(:focus-within) {
-  transform: translateY(-100%);
+  transform: translateY(calc(-100% - 12px));
 }
 /* How far down the page you are, drawn in both sides' colours like the closing pane's edge. */
 .l-progress {
   position: absolute;
-  inset: auto 0 -1px;
+  inset: auto 40px -4px;
+  border-radius: 2px;
   height: 2px;
   transform: scaleX(0);
   transform-origin: left;
@@ -321,29 +336,36 @@
 .press:active {
   transform: scale(0.97);
 }
+.landing [data-slot="button"] {
+  border-radius: 999px;
+}
+/* The call to action: a lime pill with an arrow that nudges forward on hover. */
 .cta {
-  background: var(--ink);
-  color: #eef2f0;
+  gap: 10px;
+  background: var(--signal);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 10px 24px -12px color-mix(in oklab, var(--signal) 90%, black);
 }
 .cta:hover {
-  background: color-mix(in oklab, var(--ink) 84%, white);
+  background: color-mix(in oklab, var(--signal) 86%, white);
 }
-/* On dark ground and on the glass the call to action is mist on ink, never lime. */
+.cta::after {
+  content: "\2192";
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  transition: transform 200ms var(--ease-out-strong);
+}
+.cta:hover::after {
+  transform: translateX(3px);
+}
+/* On the lime closing card the call to action turns ink. */
 .close .cta {
-  background: #dfe6e3;
-  color: var(--ink);
+  background: var(--ink);
+  color: #f6f7f4;
+  box-shadow: none;
 }
 .close .cta:hover {
-  background: color-mix(in oklab, #dfe6e3 80%, white);
-}
-@media (prefers-color-scheme: dark) {
-  .cta {
-    background: #dfe6e3;
-    color: var(--ink);
-  }
-  .cta:hover {
-    background: color-mix(in oklab, #dfe6e3 80%, white);
-  }
+  background: color-mix(in oklab, var(--ink) 82%, white);
 }
 
 /* Smoked glass. Inside it the shadcn tokens point at the glass palette, so utilities keep working. */
@@ -368,12 +390,11 @@
   /* Translucent smoke: the ground's lattice shows through. Inside, the lattice is redrawn a few pixels off the
      ground's, which is what reads as refraction through a thick pane. */
   background:
-    linear-gradient(160deg, rgb(255 255 255 / 0.06), transparent 45%),
-    linear-gradient(to right, rgb(230 236 234 / 0.07) 1px, transparent 1px) 6px 5px / var(--u) var(--u),
-    linear-gradient(to bottom, rgb(230 236 234 / 0.07) 1px, transparent 1px) 6px 5px / var(--u) var(--u),
+    radial-gradient(120% 80% at 0% 0%, color-mix(in oklab, var(--signal) 16%, transparent), transparent 55%),
+    linear-gradient(160deg, rgb(255 255 255 / 0.05), transparent 45%),
     var(--smoke);
   border: 1px solid var(--glass-line);
-  border-radius: 18px;
+  border-radius: 24px;
   /* Edge thickness: a light lip on top, a darker one below, then the cast shadow. */
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.12),
@@ -419,7 +440,7 @@
   transform: rotateY(180deg);
 }
 .hero-pane .pane-face {
-  border-radius: 22px;
+  border-radius: 28px;
 }
 /* The hero pane rests turned slightly toward the copy. GSAP turns the inner .pane-turn, not this. */
 @media (min-width: 1280px) {
@@ -494,7 +515,9 @@
 .gl-mark {
   position: relative;
   padding: 12px 14px;
-  border: 1px solid rgb(230 236 234 / 0.3);
+  border-radius: 14px;
+  border: 1px solid rgb(238 241 236 / 0.16);
+  background: rgb(238 241 236 / 0.04);
   overflow: hidden;
 }
 .gl-mark-present .mark-word svg {
@@ -533,7 +556,8 @@
 
 .gl-stages li {
   padding: 12px 14px;
-  border: 1px solid rgb(230 236 234 / 0.3);
+  border-radius: 14px;
+  border: 1px solid rgb(238 241 236 / 0.16);
 }
 .gl-stages li[aria-current] {
   --muted-foreground: var(--ink);
@@ -549,7 +573,8 @@
   gap: 9px;
   min-height: 88px;
   padding: 14px;
-  border: 1px solid rgb(230 236 234 / 0.18);
+  border-radius: 14px;
+  border: 1px solid rgb(238 241 236 / 0.12);
   background:
     radial-gradient(rgb(255 255 255 / 0.11) 0.8px, transparent 1.2px) 0 0 / 3px 5px,
     radial-gradient(rgb(255 255 255 / 0.07) 0.8px, transparent 1.2px) 1px 2px / 7px 4px,
@@ -578,13 +603,14 @@
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 999px;
   background: var(--card);
+  box-shadow: var(--lift);
 }
 .side-toggle button {
   min-height: 44px;
-  padding: 0 16px;
-  border-radius: 9px;
+  padding: 0 18px;
+  border-radius: 999px;
   color: var(--muted-foreground);
   font-size: 0.9375rem;
   font-weight: 500;
@@ -621,15 +647,16 @@
   width: var(--u);
   height: var(--u);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 999px;
+  background: var(--card);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   transition: background-color 250ms ease, color 250ms ease, border-color 250ms ease;
 }
 [data-crank="on"] .step[data-active] .step-num {
-  border-color: var(--foreground);
-  background: var(--foreground);
-  color: var(--background);
+  border-color: transparent;
+  background: var(--signal);
+  color: var(--ink);
 }
 [data-crank="on"] .step:nth-child(4)[data-active] .step-num {
   border-color: transparent;
@@ -639,8 +666,12 @@
 
 .role-tabs {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 999px;
   background: var(--card);
+  box-shadow: var(--lift);
+}
+.role-tab {
+  border-radius: 999px;
 }
 .role-tab[data-state="active"] {
   background: var(--foreground);
@@ -672,17 +703,136 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+.rules {
+  gap: 12px;
+}
 .rules li {
-  padding: 24px 0 32px;
-  border-top: 1px solid var(--border);
+  padding: 22px 22px 26px;
+  border: 1px solid var(--glass-line);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgb(238 241 236 / 0.05), rgb(238 241 236 / 0.015));
+}
+.rule-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 18px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--signal) 14%, transparent);
+  color: var(--signal);
 }
 
-.close {
-  --side: var(--merchant);
-  border-radius: 28px;
+/* One dark rounded section, lit from its top corner. Tokens swap like the glass, so utilities keep working. */
+.dark-panel {
+  --background: var(--glass);
+  --foreground: var(--glass-fg);
+  --muted-foreground: var(--glass-muted);
+  --border: var(--glass-line);
+  --ring: var(--signal);
+  color: var(--glass-fg);
+  border-radius: 36px;
+  background:
+    radial-gradient(60rem 30rem at 0% 0%, color-mix(in oklab, var(--signal) 22%, transparent), transparent 60%),
+    radial-gradient(40rem 24rem at 100% 100%, color-mix(in oklab, var(--buyer) 10%, transparent), transparent 60%),
+    var(--glass);
 }
-.close::before {
-  background: linear-gradient(90deg, var(--merchant), transparent 38%, transparent 62%, var(--buyer));
+
+/* White cards on the grey ground. */
+.card-white {
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background: var(--card);
+  box-shadow: var(--lift);
+}
+
+/* The closing card: lime, with ink type in both modes. */
+.close {
+  --foreground: var(--ink);
+  --muted-foreground: #3a4a1a;
+  --ring: var(--ink);
+  border-radius: 36px;
+  color: var(--ink);
+  background:
+    radial-gradient(40rem 20rem at 100% 0%, rgb(255 255 255 / 0.55), transparent 60%),
+    var(--signal);
+}
+
+/* Hero: the label chip, and round icons that float around the record. */
+.hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: var(--lift);
+}
+.hero-chip-dot {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--signal);
+  color: var(--ink);
+}
+.hero-art {
+  position: relative;
+}
+/* The icons hang past the edge; never let them widen the page. */
+html:has(.landing),
+.landing {
+  overflow-x: clip;
+}
+.float-icon {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--lift);
+  pointer-events: none;
+}
+.float-icon svg {
+  width: 22px;
+  height: 22px;
+}
+.float-icon[data-tone="lime"] {
+  border-color: transparent;
+  background: var(--signal);
+  color: var(--ink);
+}
+.float-icon:nth-child(1) { top: -24px; left: 8%; }
+.float-icon:nth-child(2) { top: 16%; right: -18px; }
+.float-icon:nth-child(3) { bottom: 24%; left: -24px; }
+.float-icon:nth-child(4) { bottom: -22px; right: 16%; }
+@media (max-width: 767px) {
+  .float-icon:nth-child(n + 3) {
+    display: none;
+  }
+  .float-icon:nth-child(2) {
+    right: -6px;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .float-icon {
+    animation: float 6s ease-in-out infinite;
+  }
+  .float-icon:nth-child(2) { animation-delay: -1.5s; }
+  .float-icon:nth-child(3) { animation-delay: -3s; }
+  .float-icon:nth-child(4) { animation-delay: -4.5s; }
+}
+@keyframes float {
+  50% { transform: translateY(-10px); }
 }
 
 @media (prefers-reduced-motion: reduce) {

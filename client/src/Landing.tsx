@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
-import { ArrowDown, Check, CircleDashed, Menu, TriangleAlert, X } from "lucide-react";
+import { ArrowDown, Ban, Check, CircleDashed, EyeOff, FileSearch, Lock, Menu, MessageSquare, ScanLine, ShieldCheck, Sparkles, TriangleAlert, Truck, X } from "lucide-react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
@@ -320,7 +320,13 @@ function Hero({ onSignIn, face, onFace, turnRef }: { onSignIn: () => void; face:
     <section aria-labelledby="hero-h">
       <div className="mx-auto grid max-w-[90rem] gap-12 px-4 pt-10 pb-20 md:px-8 md:pt-14 lg:px-12 lg:pb-28 xl:grid-cols-12 xl:items-center xl:gap-10">
         <div className="xl:col-span-5">
-          <h1 id="hero-h" data-arrive className="motion-safe:animate-rise text-[2.75rem] leading-[1] font-semibold tracking-[-0.04em] sm:text-6xl xl:text-[4.25rem]">
+          <p data-arrive className="hero-chip mb-6 motion-safe:animate-rise">
+            <span aria-hidden="true" className="hero-chip-dot">
+              <Sparkles className="size-3.5" />
+            </span>
+            AI dispute review, read-only with PayPal
+          </p>
+          <h1 id="hero-h" data-arrive className="motion-safe:animate-rise text-[2.9rem] leading-[0.98] font-semibold tracking-[-0.05em] sm:text-7xl xl:text-[5rem]">
             Every dispute, checked against the record.
           </h1>
           <div data-arrive className="mt-6 motion-safe:animate-rise motion-safe:[animation-delay:120ms]">
@@ -337,7 +343,22 @@ function Hero({ onSignIn, face, onFace, turnRef }: { onSignIn: () => void; face:
             </div>
           </div>
         </div>
-        <div className="xl:col-span-7">
+        <div className="hero-art xl:col-span-7">
+          {/* Decorative: the records the rules read, floating around the one dispute. */}
+          <div aria-hidden="true">
+            <span className="float-icon" data-tone="lime">
+              <FileSearch />
+            </span>
+            <span className="float-icon">
+              <Truck />
+            </span>
+            <span className="float-icon">
+              <MessageSquare />
+            </span>
+            <span className="float-icon">
+              <ShieldCheck />
+            </span>
+          </div>
           <Pane label="Illustrative example of one dispute record, read from the merchant’s and the buyer’s side" face={face} turnRef={turnRef} className="hero-pane" />
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <SideToggle face={face} onFace={onFace} />
@@ -580,18 +601,19 @@ function Roles() {
   );
 }
 
-const SAFEGUARDS: { title: string; body: string }[] = [
-  { title: "The records decide", body: "Evidence statuses and contradictions come from fixed rules, not from the AI." },
-  { title: "The AI only words", body: "Every AI line is checked against the records. Lines they don’t support are dropped." },
-  { title: "No invented facts", body: "No made-up tracking numbers, carriers, dates, people, messages or delivery claims." },
-  { title: "Gaps stay gaps", body: "A missing record is never treated as proof that something didn’t happen." },
-  { title: "Read-only with PayPal", body: "DisputeDesk never submits responses, uploads evidence or changes a dispute." },
-  { title: "Each account kept apart", body: "Another account’s dispute answers exactly like one that doesn’t exist." },
+const SAFEGUARDS: { title: string; body: string; icon: typeof Check }[] = [
+  { title: "The records decide", body: "Evidence statuses and contradictions come from fixed rules, not from the AI.", icon: ScanLine },
+  { title: "The AI only words", body: "Every AI line is checked against the records. Lines they don’t support are dropped.", icon: Sparkles },
+  { title: "No invented facts", body: "No made-up tracking numbers, carriers, dates, people, messages or delivery claims.", icon: Ban },
+  { title: "Gaps stay gaps", body: "A missing record is never treated as proof that something didn’t happen.", icon: CircleDashed },
+  { title: "Read-only with PayPal", body: "DisputeDesk never submits responses, uploads evidence or changes a dispute.", icon: Lock },
+  { title: "Each account kept apart", body: "Another account’s dispute answers exactly like one that doesn’t exist.", icon: EyeOff },
 ];
 
 function Safeguards() {
   return (
-    <section id="safeguards" aria-labelledby="safeguards-h" className="mx-auto grid max-w-[90rem] gap-14 px-4 py-20 md:px-8 md:py-24 lg:grid-cols-12 lg:gap-12 lg:px-12">
+    <section id="safeguards" aria-labelledby="safeguards-h" className="px-2 py-8 md:px-4 md:py-12">
+      <div className="dark-panel mx-auto grid max-w-[90rem] gap-14 px-5 py-16 md:px-10 md:py-20 lg:grid-cols-12 lg:gap-12 lg:px-14">
       <div className="lg:col-span-5">
         <h2 id="safeguards-h" data-reveal className="text-[2rem] leading-[1.06] font-semibold tracking-[-0.035em] md:text-5xl lg:text-[3.5rem]">
           What DisputeDesk will and won’t do.
@@ -606,13 +628,17 @@ function Safeguards() {
         </Plate>
       </div>
       <ul className="rules lg:col-span-7">
-        {SAFEGUARDS.map((s) => (
-          <li key={s.title}>
-            <h3 className="text-lg font-semibold tracking-tight">{s.title}</h3>
-            <p className="mt-2 text-muted-foreground">{s.body}</p>
+        {SAFEGUARDS.map(({ title, body, icon: Icon }) => (
+          <li key={title}>
+            <span aria-hidden="true" className="rule-icon">
+              <Icon className="size-5" />
+            </span>
+            <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
+            <p className="mt-2 text-muted-foreground">{body}</p>
           </li>
         ))}
       </ul>
+      </div>
     </section>
   );
 }
@@ -631,7 +657,7 @@ function Questions() {
       <h2 id="faq-h" data-reveal className="text-[2rem] leading-[1.06] font-semibold tracking-[-0.035em] md:col-span-4 md:text-5xl">
         Questions
       </h2>
-      <Accordion type="single" collapsible className="border-t md:col-span-8">
+      <Accordion type="single" collapsible className="card-white px-5 md:col-span-8 md:px-8 [&>*:last-child]:border-b-0">
         {FAQ.map((f, i) => (
           <AccordionItem key={f.q} value={`q${i}`}>
             <AccordionTrigger className="py-5 text-base md:text-lg">{f.q}</AccordionTrigger>
@@ -646,7 +672,7 @@ function Questions() {
 function Close({ onSignIn }: { onSignIn: () => void }) {
   return (
     <section aria-labelledby="close-h" className="px-2 md:px-4">
-      <div className="close glass mx-auto flex max-w-[90rem] flex-col items-start gap-8 px-6 py-16 md:flex-row md:items-end md:justify-between md:px-12 md:py-24">
+      <div className="close mx-auto flex max-w-[90rem] flex-col items-start gap-8 px-6 py-16 md:flex-row md:items-end md:justify-between md:px-12 md:py-24">
         <div>
           <h2 id="close-h" data-reveal className="etch max-w-3xl text-4xl leading-[1.02] font-semibold tracking-[-0.04em] md:text-6xl">
             See a dispute checked against its records.

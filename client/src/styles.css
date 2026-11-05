@@ -6,27 +6,27 @@
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, monospace;
 
-  --bg: #dfe6e3;
-  --surface: #eef2f0;
-  --surface-2: #dde5e1;
-  --border: #b7c4bf;
-  --rule: #cdd7d3;
-  --text: #10181b;
-  --muted: #43524f;
-  --accent: #10181b;
-  --accent-text: #eef2f0;
-  --focus: #10181b;
-  --signal: #d8f65a;
-  --signal-text: #10181b;
-  --lattice: rgb(16 24 27 / 0.06);
-  --lift: 0 1px 2px rgb(16 24 27 / 0.06), 0 18px 40px -26px rgb(16 24 27 / 0.45);
+  --bg: #f3f4f1;
+  --surface: #ffffff;
+  --surface-2: #f1f2ee;
+  --border: #e2e4df;
+  --rule: #eceee9;
+  --text: #121412;
+  --muted: #565b56;
+  --accent: #121412;
+  --accent-text: #f6f7f4;
+  --focus: #121412;
+  --signal: #cdf86a;
+  --signal-text: #121412;
+  --lattice: transparent;
+  --lift: 0 1px 2px rgb(18 20 18 / 0.04), 0 24px 48px -30px rgb(18 20 18 / 0.25);
 
   /* Smoked glass, as on the landing page: the rail and each case's header. Stays dark in both modes. */
-  --glass: #121c1f;
-  --glass-2: #1f2e33;
-  --glass-fg: #e6ecea;
-  --glass-muted: #a1b2ad;
-  --glass-line: rgb(230 236 234 / 0.14);
+  --glass: #0e110f;
+  --glass-2: #1c211d;
+  --glass-fg: #eef1ec;
+  --glass-muted: #a3aaa2;
+  --glass-line: rgb(238 241 236 / 0.12);
 
   --warn-bg: #fbefd5;
   --warn-text: #6b3d0a;
@@ -36,8 +36,8 @@
   --ok-text: #14532d;
   --gap-bg: #fbe3df;
   --gap-text: #7f1d1d;
-  --neutral-bg: #dde5e1;
-  --neutral-text: #2c3936;
+  --neutral-bg: #eceee9;
+  --neutral-text: #2f342f;
   --error-text: #b42318;
 
   --demo-bg: #fbefd5;
@@ -48,27 +48,27 @@
   --sandbox-text: #1d2742;
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --radius: 10px;
+  --radius: 20px;
   --rail: 232px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0c1316;
-    --surface: #131d20;
-    --surface-2: #1a272b;
-    --border: #26363b;
-    --rule: #1f2d31;
-    --text: #dfe6e3;
-    --muted: #95a7a2;
-    --accent: #dfe6e3;
-    --accent-text: #10181b;
-    --focus: #dfe6e3;
-    --lattice: rgb(223 230 227 / 0.045);
-    --lift: 0 18px 40px -28px rgb(0 0 0 / 0.7);
-    --glass: #172327;
-    --glass-2: #243439;
-    --glass-line: rgb(230 236 234 / 0.17);
+    --bg: #0b0d0c;
+    --surface: #151816;
+    --surface-2: #1d211e;
+    --border: #252925;
+    --rule: #202420;
+    --text: #eceee9;
+    --muted: #9da49c;
+    --accent: #eceee9;
+    --accent-text: #121412;
+    --focus: #eceee9;
+    --lattice: transparent;
+    --lift: 0 24px 48px -28px rgb(0 0 0 / 0.8);
+    --glass: #121513;
+    --glass-2: #1f2420;
+    --glass-line: rgb(238 241 236 / 0.13);
 
     --warn-bg: #2d220c;
     --warn-text: #f6cd78;
@@ -78,8 +78,8 @@
     --ok-text: #8ee3ad;
     --gap-bg: #331513;
     --gap-text: #f8a9a0;
-    --neutral-bg: #1a272b;
-    --neutral-text: #c9d4d0;
+    --neutral-bg: #1d211e;
+    --neutral-text: #cfd4ce;
     --error-text: #f8a9a0;
 
     --demo-bg: #2d220c;
@@ -1952,10 +1952,8 @@ details summary {
 
 body {
   background-color: var(--bg);
-  background-image:
-    linear-gradient(var(--lattice) 1px, transparent 1px),
-    linear-gradient(90deg, var(--lattice) 1px, transparent 1px);
-  background-size: 48px 48px;
+  background-image: radial-gradient(52rem 28rem at 100% -8rem, color-mix(in oklab, var(--signal) 22%, transparent), transparent 70%);
+  background-repeat: no-repeat;
   background-attachment: fixed;
 }
 
@@ -2043,6 +2041,98 @@ body {
 @keyframes rise-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }
+}
+
+/* Fintech pass: white cards on a light grey ground, pill controls, lime for the main action and the selection. */
+.brand-mark,
+.rail .brand-mark {
+  border-radius: 999px;
+}
+
+.button,
+.chip,
+.segmented,
+.segmented button,
+.search,
+.select,
+.login-form input,
+.rail-nav button {
+  border-radius: 999px;
+}
+
+.button:not(.button-secondary) {
+  border-color: var(--signal);
+  background: var(--signal);
+  color: var(--signal-text);
+  box-shadow: 0 10px 22px -14px color-mix(in oklab, var(--signal) 90%, black);
+}
+
+@media (hover: hover) {
+  .button:not(.button-secondary, :disabled, [aria-disabled='true']):hover {
+    border-color: color-mix(in oklab, var(--signal) 86%, white);
+    background: color-mix(in oklab, var(--signal) 86%, white);
+  }
+}
+
+.chip[aria-pressed='true'],
+.segmented button[aria-pressed='true'] {
+  border-color: var(--text);
+  background: var(--text);
+  color: var(--bg);
+}
+
+.banner,
+.notice,
+.example-note,
+.finding,
+.draft,
+.source-key,
+.stage,
+.rec,
+blockquote {
+  border-radius: 16px;
+}
+
+.panel,
+.state-panel {
+  border-color: var(--border);
+}
+
+/* The rail is the one dark panel: a floating rounded column on wide screens. */
+@media (min-width: 1024px) {
+  .rail {
+    top: 12px;
+    height: calc(100svh - 24px);
+    margin: 12px 0 12px 12px;
+    border-radius: 28px;
+    border: 0;
+    background:
+      radial-gradient(28rem 18rem at 0% 0%, color-mix(in oklab, var(--signal) 18%, transparent), transparent 60%),
+      var(--glass);
+  }
+}
+
+.rail-nav button[aria-pressed='true'] {
+  background: var(--signal);
+  color: var(--signal-text);
+  box-shadow: none;
+}
+
+.case-head {
+  background:
+    radial-gradient(36rem 16rem at 0% 0%, color-mix(in oklab, var(--signal) 16%, transparent), transparent 60%),
+    var(--glass);
+}
+
+.page-head h1 {
+  font-size: 2.25rem;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+}
+
+.stat-value {
+  font-size: 1.75rem;
+  letter-spacing: -0.03em;
 }
 
 /* Fingers need bigger targets than a mouse. Last in the file so it wins over each control's own height. */
