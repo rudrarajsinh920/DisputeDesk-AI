@@ -1311,3 +1311,282 @@ html:has(.landing),
     --bezel: #353a36;
   }
 }
+
+/* Hero proof row: three plain facts under the call to action. */
+.hero-proof {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+.hero-proof li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hero-proof svg {
+  color: var(--foreground);
+}
+
+/* Numbers band: four facts about how the product is built, set large. */
+.num-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-block: 1px solid var(--border);
+}
+@media (min-width: 1024px) {
+  .num-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.num-grid li {
+  padding: 28px 20px 30px 0;
+}
+.num-grid li + li {
+  padding-left: 20px;
+  border-left: 1px solid var(--border);
+}
+@media (max-width: 1023px) {
+  .num-grid li:nth-child(3) {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .num-grid li:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+}
+.num-n {
+  font-size: clamp(3.5rem, 8vw, 6.5rem);
+  font-weight: 600;
+  line-height: 0.9;
+  letter-spacing: -0.06em;
+}
+.num-grid li:first-child .num-n {
+  color: transparent;
+  -webkit-text-stroke: 1.5px var(--foreground);
+}
+
+/* The reasons ticker: a slow loop of every dispute reason the product reads. */
+.ticker {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  overflow: hidden;
+  padding-block: 14px;
+}
+.ticker-label {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--signal);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.ticker-track {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.ticker-row {
+  display: flex;
+  flex: none;
+  gap: 40px;
+  padding-right: 40px;
+  font-size: 15px;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+}
+.ticker-row li::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 14px;
+  border-radius: 999px;
+  background: var(--input);
+  vertical-align: middle;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ticker-row {
+    animation: ticker 42s linear infinite;
+  }
+  .ticker:hover .ticker-row {
+    animation-play-state: paused;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track {
+    flex-wrap: wrap;
+    mask-image: none;
+  }
+  .ticker-row[aria-hidden] {
+    display: none;
+  }
+  .ticker-row {
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    white-space: normal;
+  }
+}
+@keyframes ticker {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+/* The pipeline: five stages on one rail that fills as you scroll. */
+.pipe-wrap {
+  position: relative;
+}
+.pipe {
+  display: grid;
+  gap: 28px;
+}
+@media (min-width: 1024px) {
+  .pipe {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 24px;
+  }
+}
+.pipe li {
+  position: relative;
+  padding-left: 64px;
+}
+@media (min-width: 1024px) {
+  .pipe li {
+    padding: 72px 0 0;
+  }
+}
+.pipe-node {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  box-shadow: var(--lift);
+  color: var(--foreground);
+  transition: background-color 300ms ease, color 300ms ease, border-color 300ms ease;
+}
+.pipe li[data-lit] .pipe-node,
+.pipe li:last-child .pipe-node {
+  border-color: transparent;
+  background: var(--signal);
+  color: var(--ink);
+}
+.pipe-tag {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
+}
+.pipe-rail {
+  position: absolute;
+  top: 24px;
+  bottom: 24px;
+  left: 23.5px;
+  width: 1px;
+  background: var(--border);
+}
+@media (min-width: 1024px) {
+  .pipe-rail {
+    top: 23.5px;
+    right: 10%;
+    bottom: auto;
+    left: 24px;
+    width: auto;
+    height: 1px;
+  }
+}
+.pipe-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--foreground);
+  transform-origin: top;
+}
+@media (min-width: 1024px) {
+  .pipe-fill {
+    transform-origin: left;
+  }
+}
+
+/* Key evidence table. */
+.matrix {
+  overflow-x: auto;
+  padding: 8px;
+}
+.matrix table {
+  width: 100%;
+  min-width: 620px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+}
+.matrix th,
+.matrix td {
+  padding: 16px 14px;
+  text-align: left;
+  vertical-align: middle;
+}
+.matrix thead th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+.matrix tbody th {
+  font-weight: 600;
+}
+.matrix tbody tr + tr > * {
+  border-top: 1px solid var(--border);
+}
+.m-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--signal);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.m-sup {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+/* Footer column titles and the oversized wordmark along the foot. */
+.foot-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted-foreground);
+}
+.foot-word {
+  margin-top: 24px;
+  font-size: clamp(4rem, 15.5vw, 15rem);
+  font-weight: 600;
+  line-height: 0.8;
+  letter-spacing: -0.065em;
+  white-space: nowrap;
+  color: var(--foreground);
+  opacity: 0.08;
+  user-select: none;
+}
+@media (max-width: 639px) {
+  .ticker {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .ticker-track {
+    width: 100%;
+  }
+}

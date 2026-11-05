@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
-import { ArrowDown, Ban, Check, CircleDashed, EyeOff, FileSearch, Lock, Menu, MessageSquare, ScanLine, ShieldCheck, Sparkles, TriangleAlert, Truck, X } from "lucide-react";
+import { ArrowDown, Ban, Check, CircleDashed, EyeOff, FileSearch, Lock, Menu, MessageSquare, ScanLine, ShieldCheck, Sparkles, TriangleAlert, Truck, UserCheck, X } from "lucide-react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
@@ -8,6 +8,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { REASON_LABELS } from "../../shared/disputes.ts";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
@@ -44,6 +45,7 @@ const STAGES = ["Opened", "Seller and buyer respond", "Payment provider review",
 const LINKS = [
   { href: "#how", label: "How it works" },
   { href: "#roles", label: "Who it’s for" },
+  { href: "#engine", label: "Under the hood" },
   { href: "#safeguards", label: "Safeguards" },
   { href: "#faq", label: "Questions" },
 ];
@@ -299,6 +301,14 @@ function Hero({ onSignIn, face, onFace, turnRef }: { onSignIn: () => void; face:
                 How it works <ArrowDown aria-hidden="true" className="size-4" />
               </a>
             </div>
+            <ul className="hero-proof mt-8">
+              {["Read-only with PayPal", "Synthetic demo data", "A person reviews every draft"].map((p) => (
+                <li key={p}>
+                  <Check aria-hidden="true" className="size-4 shrink-0" />
+                  {p}
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
         <div className="hero-art xl:col-span-7">
@@ -322,6 +332,131 @@ function Hero({ onSignIn, face, onFace, turnRef }: { onSignIn: () => void; face:
             <SideToggle face={face} onFace={onFace} />
             <p className="text-sm text-muted-foreground">Turn the pane: the reason, status and stage don’t change.</p>
           </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// Facts about how the product is built, not results: nothing here is a business figure.
+const NUMBERS = [
+  { n: "0", label: "Write calls to PayPal", note: "A token, then read requests only." },
+  { n: "4", label: "Records checked", note: "On every dispute, by fixed rules." },
+  { n: "3", label: "Roles, kept apart", note: "Merchant, buyer and read-only admin." },
+  { n: "1", label: "Person decides", note: "Every draft waits for your review." },
+];
+
+function Numbers() {
+  const reasons = Object.values(REASON_LABELS);
+  return (
+    <section aria-labelledby="numbers-h" className="numbers mx-auto max-w-[90rem] px-4 md:px-8 lg:px-12">
+      <h2 id="numbers-h" className="sr-only">
+        DisputeDesk in numbers
+      </h2>
+      <ul className="num-grid">
+        {NUMBERS.map((x) => (
+          <li key={x.label} data-num>
+            <p className="num-n tabular-nums">{x.n}</p>
+            <h3 className="mt-3 text-base font-semibold tracking-tight">{x.label}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">{x.note}</p>
+          </li>
+        ))}
+      </ul>
+      <div className="ticker mt-6">
+        <p className="ticker-label">Reads every dispute reason</p>
+        <div className="ticker-track">
+          {[0, 1].map((copy) => (
+            <ul key={copy} className="ticker-row" aria-hidden={copy === 1 || undefined}>
+              {reasons.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const PIPELINE = [
+  { icon: Lock, tag: "Token + read", title: "PayPal, read-only", body: "The server asks PayPal for a token, then only reads disputes. The token never reaches the browser." },
+  { icon: ScanLine, tag: "Source of truth", title: "The evidence engine", body: "Fixed rules mark each record available, unverified or missing, and flag records that disagree." },
+  { icon: Sparkles, tag: "Words only", title: "Gemini puts it in words", body: "The AI turns the checked facts into an explanation or a draft. It decides nothing." },
+  { icon: ShieldCheck, tag: "Every line", title: "The server checks each line", body: "Each AI line is matched against the records. Lines they don’t support are dropped before you see them." },
+  { icon: UserCheck, tag: "Human decision", title: "You review and send", body: "Every draft is marked for review. DisputeDesk never submits: you send any response yourself." },
+];
+
+// The engine's own table of key evidence per reason (server/src/evidence.ts). Every other reason: all supporting.
+const EV_COLS = ["Order confirmation", "Shipping tracking", "Proof of delivery", "Customer communication"];
+const KEY_ROWS: [string, string[]][] = [
+  ["Item not received", ["Shipping tracking", "Proof of delivery"]],
+  ["Not as described", ["Order confirmation", "Customer communication"]],
+  ["Unauthorized transaction", ["Order confirmation", "Customer communication"]],
+];
+
+function Engine() {
+  return (
+    <section id="engine" aria-labelledby="engine-h" className="mx-auto max-w-[90rem] px-4 py-20 md:px-8 md:py-24 lg:px-12">
+      <SectionHead id="engine-h" title="Rules first. Words second." lead="Five stages, in the same order on every dispute. Each one can only narrow what the next may say." />
+      <div className="pipe-wrap mt-14 md:mt-16">
+      <span aria-hidden="true" className="pipe-rail">
+        <span className="pipe-fill" />
+      </span>
+      <ol className="pipe">
+        {PIPELINE.map(({ icon: Icon, tag, title, body }, i) => (
+          <li key={title} data-pipe>
+            <span aria-hidden="true" className="pipe-node">
+              <Icon className="size-5" />
+            </span>
+            <p className="pipe-tag">
+              <span className="tabular-nums">0{i + 1}</span> · {tag}
+            </p>
+            <h3 className="mt-2 text-lg font-semibold tracking-tight">{title}</h3>
+            <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+          </li>
+        ))}
+      </ol>
+      </div>
+
+      <div className="mt-16 grid gap-10 md:mt-20 lg:grid-cols-12 lg:gap-12">
+        <div className="lg:col-span-4">
+          <h3 className="text-2xl font-semibold tracking-tight md:text-3xl">Which records matter most.</h3>
+          <p className="mt-3 text-muted-foreground">
+            The engine checks all four records on every dispute. For these reasons it marks two of them as key evidence. For every other reason, all four count as supporting.
+          </p>
+        </div>
+        <div className="matrix card-white lg:col-span-8">
+          <table>
+            <caption className="sr-only">Key evidence by dispute reason</caption>
+            <thead>
+              <tr>
+                <th scope="col">Reason</th>
+                {EV_COLS.map((c) => (
+                  <th key={c} scope="col">
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {KEY_ROWS.map(([reason, keys]) => (
+                <tr key={reason}>
+                  <th scope="row">{reason}</th>
+                  {EV_COLS.map((c) => (
+                    <td key={c} data-key={keys.includes(c) || undefined}>
+                      {keys.includes(c) ? (
+                        <span className="m-key">
+                          <Check aria-hidden="true" className="size-3.5" /> Key
+                        </span>
+                      ) : (
+                        <span className="m-sup">Supporting</span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -738,6 +873,9 @@ const FAQ: { q: string; a: string }[] = [
   { q: "Is the data in the demo real?", a: "No. The demo uses synthetic disputes, labelled as demo data and kept apart from PayPal sandbox data." },
   { q: "What does the AI do?", a: "Gemini only puts the checked facts into words for explanations and drafts. The server checks each line against the records and drops anything they don’t support. The rule-based checks work without it." },
   { q: "Can a buyer see the merchant’s evidence?", a: "No. Buyers see only buyer-visible fields: never the order, the evidence, the merchant’s messages or drafts." },
+  { q: "What if the AI writes something the records don’t support?", a: "The server drops that line before you see it. For buyers, an explanation that fails a check isn’t shown at all; the rule-based guidance is shown instead." },
+  { q: "Can one merchant see another merchant’s disputes?", a: "No. Every request is checked against the signed-in account on the server. Another account’s dispute answers exactly like one that doesn’t exist." },
+  { q: "Where do PayPal tokens and passwords go?", a: "PayPal access tokens stay on the server and never reach the browser. Passwords are stored only as scrypt hashes, and sessions store only a hash of their token." },
   { q: "How do I try it?", a: "Sign in with one of the synthetic demo accounts listed in the project README: a merchant, a buyer or the read-only admin." },
 ];
 
@@ -777,23 +915,49 @@ function Close({ onSignIn }: { onSignIn: () => void }) {
   );
 }
 
+const FOOT_COLS: { title: string; items: (string | { href: string; label: string })[] }[] = [
+  { title: "On this page", items: LINKS },
+  { title: "The demo", items: ["Synthetic disputes", "Merchant, buyer, admin", "Accounts in the README"] },
+  { title: "Built with", items: ["React and TypeScript", "Express and SQLite", "Gemini, words only", "PayPal REST, read-only"] },
+];
+
 function Footer() {
   return (
-    <footer className="mx-auto max-w-[90rem] px-4 py-12 md:px-8 lg:px-12">
-      <div className="flex flex-col gap-6 border-b pb-8 md:flex-row md:items-center md:justify-between">
-        <p className="text-base font-semibold tracking-tight" translate="no">
-          DisputeDesk
-        </p>
-        <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-          {LINKS.map((l) => (
-            <li key={l.href}>
-              <a href={l.href} className="nav-link">
-                {l.label}
-              </a>
-            </li>
-          ))}
-        </ul>
+    <footer className="mx-auto max-w-[90rem] px-4 pt-16 pb-10 md:px-8 lg:px-12">
+      <div className="grid gap-10 border-b pb-12 md:grid-cols-12 md:gap-8">
+        <div className="md:col-span-6">
+          <p className="flex items-center gap-2.5 text-base font-semibold tracking-tight" translate="no">
+            <span aria-hidden="true" className="logo-mark">
+              DD
+            </span>
+            DisputeDesk
+          </p>
+          <p className="mt-4 max-w-sm text-sm text-muted-foreground">AI-assisted dispute review for merchants and buyers. Rules decide the facts, the AI words them, a person decides.</p>
+        </div>
+        {FOOT_COLS.map((col) => (
+          <div key={col.title} role={col.title === "On this page" ? "navigation" : undefined} aria-label={col.title === "On this page" ? col.title : undefined} className="md:col-span-2">
+            <p className="foot-title">{col.title}</p>
+            <ul className="mt-4 space-y-2.5 text-sm">
+              {col.items.map((it) =>
+                typeof it === "string" ? (
+                  <li key={it} className="text-muted-foreground">
+                    {it}
+                  </li>
+                ) : (
+                  <li key={it.href}>
+                    <a href={it.href} className="nav-link">
+                      {it.label}
+                    </a>
+                  </li>
+                ),
+              )}
+            </ul>
+          </div>
+        ))}
       </div>
+      <p aria-hidden="true" className="foot-word" translate="no">
+        DisputeDesk
+      </p>
       <p className="mt-6 text-sm text-muted-foreground">
         Synthetic demo. Not affiliated with or endorsed by PayPal or Google. DisputeDesk never submits dispute responses.
       </p>
@@ -917,6 +1081,31 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
               .from(".device-chip", { y: 24, scale: 0.94, opacity: 0, duration: 0.9, stagger: 0.12 }, 0.45);
             gsap.to(".device-phone", { yPercent: -8, ease: "none", scrollTrigger: { trigger: devices, start: "top bottom", end: "bottom top", scrub: true } });
           }
+
+          // The four numbers rise in together; the pipeline rail fills with the scroll and lights each stage it reaches.
+          gsap.from("[data-num]", { y: 28, opacity: 0, duration: 1, stagger: 0.08, ease: "expo.out", clearProps: "opacity,transform", scrollTrigger: { trigger: ".num-grid", start: "top 88%", once: true } });
+          const pipe = scope.querySelector<HTMLElement>(".pipe-wrap");
+          if (pipe) {
+            const stages = gsap.utils.toArray<HTMLElement>("[data-pipe]", pipe);
+            gsap.from(stages, { y: 24, opacity: 0, duration: 0.9, stagger: 0.09, ease: "expo.out", clearProps: "opacity,transform", scrollTrigger: { trigger: pipe, start: "top 85%", once: true } });
+            gsap.fromTo(
+              ".pipe-fill",
+              { scaleX: wide ? 0 : 1, scaleY: wide ? 1 : 0 },
+              {
+                scaleX: 1,
+                scaleY: 1,
+                ease: "none",
+                scrollTrigger: {
+                  trigger: pipe,
+                  start: "top 70%",
+                  end: wide ? "top 30%" : "bottom 60%",
+                  scrub: 0.6,
+                  onUpdate: (self) => stages.forEach((el, i) => (self.progress >= i / (stages.length - 1) - 0.02 ? (el.dataset.lit = "") : delete el.dataset.lit)),
+                },
+              },
+            );
+            cleanups.push(() => stages.forEach((el) => delete el.dataset.lit));
+          }
         }
 
         if (tilt) {
@@ -1029,9 +1218,11 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
       <Header onSignIn={onSignIn} active={active} />
       <main id="main">
         <Hero onSignIn={onSignIn} face={heroFace} onFace={turnHero} turnRef={heroTurn} />
+        <Numbers />
         <Showcase />
         <HowItWorks step={step} turnRef={howTurn} face={howFace} onFace={turnHow} />
         <Roles />
+        <Engine />
         <Safeguards />
         <Questions />
         <Close onSignIn={onSignIn} />
