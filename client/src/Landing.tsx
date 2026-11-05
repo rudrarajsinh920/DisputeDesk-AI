@@ -51,32 +51,57 @@ const LINKS = [
 const REDUCED = "(prefers-reduced-motion: reduce)";
 const reduced = () => typeof window !== "undefined" && window.matchMedia(REDUCED).matches;
 
-// The opening plays once per browser session, and never for reduced motion. Storage can throw (private windows), so
-// a failed read just shows it.
-const INTRO_KEY = "dd-intro-seen";
-function shouldIntro(): boolean {
-  if (typeof window === "undefined" || reduced()) return false;
-  try {
-    return window.sessionStorage.getItem(INTRO_KEY) === null;
-  } catch {
-    return true;
-  }
-}
+// The opening plays on every load, never for reduced motion.
+const shouldIntro = () => typeof window !== "undefined" && !reduced();
+
+// The same example record the hero pane shows, checked item by item while the name settles.
+const INTRO_CHECKS = [
+  { label: "Order confirmation", word: "Available", kind: "present" },
+  { label: "Tracking", word: "Unverified", kind: "cracked" },
+  { label: "Proof of delivery", word: "Missing", kind: "missing" },
+  { label: "Messages", word: "Available", kind: "present" },
+] as const;
+const INTRO_ICON = { present: Check, missing: CircleDashed, cracked: TriangleAlert };
 
 // Decorative: the page under it is fully rendered, so assistive tech skips straight to it. Any click or key skips it.
 function Intro({ onSkip }: { onSkip: () => void }) {
   return (
     <div className="intro" aria-hidden="true" onClick={onSkip}>
+      <span className="intro-scan" />
       <div className="intro-inner">
-        <span className="intro-mark">DD</span>
+        <span className="intro-mark">
+          <span className="intro-ring" />
+          DD
+        </span>
         <p className="intro-word" translate="no">
-          DisputeDesk <span>AI</span>
+          {[..."DisputeDesk"].map((ch, i) => (
+            <span key={i} className="intro-ch">
+              {ch}
+            </span>
+          ))}{" "}
+          <span className="intro-ch intro-ai">AI</span>
         </p>
         <span className="intro-rule" />
+        <div className="intro-record">
+          <p className="intro-eyebrow">Checking an example record</p>
+          <ul>
+            {INTRO_CHECKS.map(({ label, word, kind }) => {
+              const Icon = INTRO_ICON[kind];
+              return (
+                <li key={label} className={`intro-check intro-${kind}`}>
+                  <Icon className="intro-icon" />
+                  <span>{label}</span>
+                  <b>{word}</b>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
         <p className="intro-line">
           <span>Rules check the record.</span> <span>AI words it.</span> <span>You decide.</span>
         </p>
       </div>
+      <span className="intro-edge" />
       <button type="button" tabIndex={-1} className="intro-skip">
         Skip intro
       </button>
@@ -718,8 +743,8 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
             .from(hero.querySelector('[data-side="merchant"] .crack path'), { strokeDashoffset: 1, duration: 0.6, ease: "power2.out" }, 0.95);
 
           if (curtain) {
-            // The opening: the mark, the name etched in, the rule drawn in both sides' colours, the three lines,
-            // then the glass lifts and the hero arrives underneath it.
+            // The opening: the mark lands with a ring, the name settles letter by letter, a scan passes over the
+            // glass while the example record is checked, then the glass slides up on a lit edge and the hero arrives.
             arrive.from(scope.querySelectorAll("[data-arrive]"), { opacity: 0, y: 14, duration: 0.64, stagger: 0.12, ease: "expo.out", clearProps: "opacity,transform" }, 0);
             const html = document.documentElement;
             html.style.overflow = "hidden";
@@ -728,23 +753,24 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
               unlock();
               setIntro((v) => (v === "on" ? "done" : v));
             };
-            try {
-              window.sessionStorage.setItem(INTRO_KEY, "1");
-            } catch {
-              // Storage is blocked: it plays again next visit, nothing else changes.
-            }
             introTl.current = gsap
               .timeline()
-              .from(".intro-mark", { opacity: 0, scale: 0.9, duration: 0.6, ease: "expo.out" })
-              .from(".intro-word", { clipPath: "inset(-20% 100% -20% 0)", duration: 0.9, ease: "expo.out" }, 0.15)
-              .from(".intro-rule", { scaleX: 0, duration: 1.1, ease: "power2.inOut" }, 0.3)
-              .from(".intro-line span", { opacity: 0, y: 10, filter: "blur(6px)", duration: 0.5, stagger: 0.2, ease: "expo.out" }, 0.7)
+              .from(".intro-mark", { opacity: 0, scale: 0.8, rotation: -12, duration: 0.8, ease: "expo.out" })
+              .fromTo(".intro-ring", { scale: 0.7, opacity: 0.9 }, { scale: 2.4, opacity: 0, duration: 1.3, ease: "power2.out" }, 0.25)
+              .from(".intro-ch", { opacity: 0, yPercent: 70, rotationX: -70, filter: "blur(10px)", duration: 0.8, stagger: 0.035, ease: "expo.out" }, 0.15)
+              .fromTo(".intro-scan", { yPercent: -100, opacity: 0 }, { yPercent: 1100, opacity: 1, duration: 1.6, ease: "power1.inOut" }, 0.3)
+              .to(".intro-scan", { opacity: 0, duration: 0.3 }, 1.6)
+              .from(".intro-rule", { scaleX: 0, duration: 1, ease: "power2.inOut" }, 0.5)
+              .from(".intro-eyebrow", { opacity: 0, y: 8, duration: 0.4, ease: "expo.out" }, 0.7)
+              .from(".intro-check", { opacity: 0, y: 14, duration: 0.5, stagger: 0.12, ease: "expo.out" }, 0.8)
+              .from(".intro-icon", { scale: 0.4, opacity: 0, duration: 0.45, stagger: 0.12, ease: "back.out(2.4)" }, 0.95)
+              .from(".intro-line span", { opacity: 0, y: 10, filter: "blur(6px)", duration: 0.5, stagger: 0.16, ease: "expo.out" }, 1.4)
               .from(".intro-skip", { opacity: 0, duration: 0.4 }, 0.5)
-              .addLabel("lift", "+=0.35")
-              .to(".intro-inner", { y: -32, opacity: 0, duration: 0.5, ease: "power2.in" }, "lift")
-              .to(curtain, { clipPath: "inset(0 0 100% 0)", duration: 0.9, ease: "expo.inOut" }, "lift+=0.1")
+              .addLabel("lift", "+=0.3")
+              .to(".intro-inner", { y: -40, opacity: 0, filter: "blur(6px)", duration: 0.45, ease: "power2.in" }, "lift")
+              .to(curtain, { yPercent: -100, duration: 1, ease: "expo.inOut" }, "lift+=0.1")
               .add(arrive, "lift+=0.45")
-              .call(end, [], "lift+=1");
+              .call(end, [], "lift+=1.1");
             // Only unlock here: React's dev double run reverts this once, and the opening must survive it.
             cleanups.push(unlock);
           }

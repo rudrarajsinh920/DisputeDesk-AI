@@ -694,56 +694,134 @@
   }
 }
 
-/* The opening: one sheet of the smoked glass over the whole screen, lifted away once the name is etched. */
+/* The opening: one sheet of the smoked glass over the whole screen. A record is checked on it, then it slides away. */
 .intro {
   position: fixed;
   inset: 0;
   z-index: 60;
   display: grid;
   place-items: center;
-  padding: 24px 16px;
+  padding: 24px 16px 72px;
+  overflow: hidden;
   background:
-    radial-gradient(60% 50% at 50% 46%, color-mix(in oklab, var(--signal) 9%, transparent), transparent 70%),
+    radial-gradient(55% 45% at 50% 40%, color-mix(in oklab, var(--signal) 11%, transparent), transparent 70%),
+    radial-gradient(40% 35% at 15% 90%, color-mix(in oklab, var(--merchant) 10%, transparent), transparent 70%),
+    radial-gradient(40% 35% at 85% 90%, color-mix(in oklab, var(--buyer) 10%, transparent), transparent 70%),
     linear-gradient(to right, var(--glass-line) 1px, transparent 1px) -1px -1px / var(--u) var(--u),
     linear-gradient(to bottom, var(--glass-line) 1px, transparent 1px) -1px -1px / var(--u) var(--u),
     var(--glass);
   color: var(--glass-fg);
-  clip-path: inset(0 0 0 0);
   cursor: pointer;
 }
+/* A band of light passing down the glass while the record is checked. */
+.intro-scan {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 10%;
+  background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--signal) 12%, transparent) 85%, color-mix(in oklab, var(--signal) 55%, transparent));
+  pointer-events: none;
+}
 .intro-inner {
+  position: relative;
   display: grid;
   justify-items: center;
-  gap: 20px;
+  gap: 22px;
   text-align: center;
 }
 .intro-mark {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
+  width: 60px;
+  height: 60px;
+  border-radius: 14px;
   background: var(--signal);
   color: var(--signal-foreground);
-  font-size: 20px;
+  font-size: 21px;
   font-weight: 700;
-  box-shadow: 0 0 48px -8px color-mix(in oklab, var(--signal) 60%, transparent);
+  box-shadow: 0 0 56px -6px color-mix(in oklab, var(--signal) 65%, transparent);
+}
+.intro-ring {
+  position: absolute;
+  inset: -2px;
+  border-radius: 16px;
+  border: 1.5px solid var(--signal);
+  opacity: 0;
 }
 .intro-word {
-  font-size: clamp(2.5rem, 9vw, 5.5rem);
+  font-size: clamp(2.6rem, 10vw, 6rem);
   line-height: 1;
   font-weight: 600;
   letter-spacing: -0.045em;
+  perspective: 600px;
 }
-.intro-word span {
+.intro-ch {
+  display: inline-block;
+  transform-origin: 50% 100%;
+}
+.intro-ai {
+  margin-left: 0.18em;
   color: var(--signal);
+  text-shadow: 0 0 32px color-mix(in oklab, var(--signal) 45%, transparent);
 }
 .intro-rule {
   display: block;
-  width: min(320px, 70vw);
+  width: min(360px, 72vw);
   height: 2px;
   transform-origin: left;
   background: linear-gradient(90deg, var(--merchant), var(--buyer));
+}
+.intro-record {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+.intro-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--glass-muted);
+}
+.intro-record ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: min(560px, 92vw);
+}
+@media (min-width: 720px) {
+  .intro-record ul {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+.intro-check {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--glass-2) 70%, transparent);
+  font-size: 0.8125rem;
+  text-align: left;
+  color: var(--glass-muted);
+}
+.intro-check b {
+  font-weight: 600;
+  color: var(--glass-fg);
+}
+.intro-icon {
+  width: 16px;
+  height: 16px;
+}
+.intro-present .intro-icon {
+  color: var(--signal);
+}
+.intro-cracked .intro-icon {
+  color: var(--crack);
+}
+.intro-missing .intro-icon {
+  color: var(--glass-muted);
 }
 .intro-line {
   max-width: 34rem;
@@ -755,6 +833,14 @@
 }
 .intro-line span:last-child {
   color: var(--glass-fg);
+}
+/* The glass's lower edge catches the light as it slides up. */
+.intro-edge {
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--merchant), var(--signal), var(--buyer));
+  box-shadow: 0 0 24px 2px color-mix(in oklab, var(--signal) 45%, transparent);
 }
 .intro-skip {
   position: absolute;
