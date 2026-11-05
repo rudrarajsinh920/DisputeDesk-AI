@@ -4,6 +4,10 @@ DisputeDesk helps a merchant prepare a response to a PayPal dispute. Rules check
 word those findings, and the server checks every line it writes. The merchant reviews the result. DisputeDesk never
 submits anything to PayPal.
 
+It has three parts: **Merchant Evidence Intelligence** (evidence analysis and response drafts, for demo disputes and
+real PayPal sandbox disputes), **Buyer Dispute Clarity** (a plain-language view of a buyer's own disputes) and
+**Insights** (rule-based counts and patterns across a merchant's disputes, with practical suggestions).
+
 - **Rules decide.** Evidence statuses (Available, Missing, Unverified) and contradictions come from fixed rules in
   `server/src/evidence.ts`. Missing evidence is never treated as proof that something did not happen.
 - **AI only words.** Gemini sees only the listed record values. The server drops any line that adds a fact not on record
@@ -16,7 +20,23 @@ submits anything to PayPal.
 | Source | What it is |
 |---|---|
 | **Demo data** | Synthetic records in `sample-dispute.json` and `demo-disputes.json`, served by the server only to the accounts they belong to (`demo-accounts.json`). Labeled "DEMO DATA — NOT A REAL PAYPAL DISPUTE". Never sent to PayPal. |
-| **PayPal sandbox** | Read-only list of disputes from PayPal's test environment. Shows an empty state when the sandbox has none. Demo records never fill it. |
+| **PayPal sandbox** | Read-only disputes from PayPal's test environment. Each one is analysed from its own PayPal record (buyer messages, the disputed transaction and item, any submitted tracking or delivery evidence, the response deadline) with the same rules as demo data. Shows an empty state when the sandbox has none. Demo records never fill it, and sandbox disputes are never stored. |
+
+## Tools used
+
+| Tool | How DisputeDesk uses it |
+|---|---|
+| **PayPal REST APIs (sandbox)** | `POST /v1/oauth2/token` (client credentials) for an access token, `GET /v1/customer/disputes` for the merchant's dispute list, and `GET /v1/customer/disputes/{id}` for each dispute's full record. Calls run only on the server; the token never reaches the browser. No other PayPal call is made. |
+| **Google Gemini API** | `generativelanguage.googleapis.com`, model set by `GEMINI_MODEL`. Words evidence explanations, response drafts, buyer explanations and Insights summaries from the listed record values only. The server checks every line and drops invented facts. |
+| **Node.js 24 + Express** | The API server, run directly from TypeScript. Sessions, sign-in limits, access control and security headers. |
+| **SQLite (`node:sqlite`)** | Built into Node: accounts, demo disputes, sessions and the append-only audit log. |
+| **React 19, Vite, TypeScript** | The browser app: merchant workspace, buyer view and Insights. |
+| **Tailwind CSS, Radix UI, lucide-react, GSAP** | The landing page's styling, accessible components, icons and motion (motion respects reduced-motion settings). |
+
+**Making sandbox disputes to analyse:** on developer.paypal.com, under **Testing tools → Sandbox accounts**, use the
+Business account your app belongs to and a **Personal** account with country **United States**. Log in to
+`sandbox.paypal.com` as the Personal account, send the Business account a **goods and services** payment, then open
+**Resolution Center → Report a problem** on it. A new dispute can take a few minutes to appear in the API.
 
 ## Setup
 
@@ -157,8 +177,10 @@ Before you start: both terminals running, and the server log says `AI drafting: 
    it reaches a draft.
 6. **DEMO-1002 (contradiction).** The order says "Delivered" but proof of delivery is marked not available. The
    contradiction is listed with both records, and the draft carries a `[CONFLICT: …]` marker instead of choosing a side.
-7. **PayPal sandbox.** Switch sources: blue banner, test environment only. With no sandbox disputes, it says so; demo
-   records never appear here.
+7. **PayPal sandbox.** Switch sources: blue banner, test environment only. Open a sandbox dispute: the buyer's message,
+   the transaction and item, and PayPal's "Respond by" date come from PayPal's own record. Tracking and proof of delivery
+   show as Unverified when the record has none, never as Missing. With no sandbox disputes, it says so; demo records
+   never appear here.
 8. **Sign out, sign in as Demo Merchant B.** Only DEMO-1003 (complete evidence): everything Available, no contradictions.
    The rules don't invent problems either, and Merchant B cannot see Merchant A's disputes or the sandbox.
 9. **Sign in as Demo Buyer B.** The buyer sees DEMO-1002 and DEMO-1003, no merchant records. DEMO-1002 marks
@@ -190,8 +212,8 @@ Keep screenshots or a screen recording of a successful run as a backup.
 - Evidence statuses come from flags in the records. DisputeDesk does not open or inspect the documents themselves.
 - The AI checks are rules and patterns. They catch the listed kinds of invented detail, not every possible one, which is
   why merchant review stays mandatory.
-- The PayPal integration only reads (an access token and the dispute list). It never creates, changes or answers a
-  dispute.
+- The PayPal integration only reads (an access token, the dispute list and each dispute's record). It never creates,
+  changes or answers a dispute, and never submits evidence. The list reads the first 50 disputes.
 - Drafts are not saved. Accounts are six synthetic demo accounts with no sign-up. The server answers only on this
   machine (127.0.0.1).
 - One server process per database. The sign-in limit is still kept in memory, so a restart lifts a lockout.
