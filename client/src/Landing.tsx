@@ -492,7 +492,7 @@ function Roles() {
       <div className="mx-auto max-w-[90rem] px-4 py-20 md:px-8 md:py-24 lg:px-12">
         <SectionHead id="roles-h" title="One set of facts, four views." lead="Each account sees only its own disputes, and only the parts its role needs." />
         <Tabs defaultValue="merchants" className="mt-12 gap-10">
-          <TabsList className="role-tabs h-auto w-full flex-wrap justify-start gap-1 p-1 sm:w-fit">
+          <TabsList className="role-tabs h-auto group-data-[orientation=horizontal]/tabs:h-auto w-full flex-wrap justify-start gap-1 p-1 sm:w-fit">
             {ROLES.map((r) => (
               <TabsTrigger key={r.id} value={r.id} data-side={r.side} className="role-tab h-11 flex-none px-4 md:h-10">
                 {r.tab}
