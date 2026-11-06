@@ -674,13 +674,21 @@ test("the edit check is offered to merchants only and its result is advisory", (
           dispute_id: demo.dispute_id,
           checked: 2,
           markers_left: 1,
-          flagged: [{ paragraph: 3, excerpt: "We shipped it with UPS.", reasons: ["names a carrier; no carrier is in the supplied records"] }],
+          flagged: [
+            {
+              paragraph: 2,
+              excerpt: "We shipped it with UPS.",
+              reasons: ["Names a carrier. No carrier is in DisputeDesk's records.", "Mentions a date or time. No dates are in DisputeDesk's records."],
+            },
+          ],
         },
       }),
     ),
   );
   assert.match(flagged, /1 paragraph mentions something that is not in the records DisputeDesk has. Confirm it from your own records before sending. 1 marker left/);
-  assert.match(flagged, /Paragraph 3.*We shipped it with UPS..*names a carrier/);
+  assert.match(flagged, /Your paragraph 2.*We shipped it with UPS..*Names a carrier/);
+  const reasonItems = html(createElement(CheckResult, { result: { source: "demo", dispute_id: "D", checked: 2, markers_left: 0, flagged: [{ paragraph: 2, excerpt: "x", reasons: ["A.", "B."] }] } }));
+  assert.match(reasonItems, /<li>A\.<\/li><li>B\.<\/li>/, "each reason is its own line");
   assert.match(flagged, /never edits or blocks your text/);
   assert.doesNotMatch(flagged, /(removed|deleted|rejected|false|lie|wrong)/i, "flags ask for a check, they do not accuse");
 

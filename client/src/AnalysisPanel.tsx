@@ -643,9 +643,13 @@ export function CheckResult({ result }: { result: DraftCheck }) {
           <ul className="check-flags">
             {result.flagged.map((f) => (
               <li key={f.paragraph}>
-                <strong>Paragraph {f.paragraph}</strong>
+                <strong>Your paragraph {f.paragraph}</strong>
                 <q>{f.excerpt}</q>
-                <span>{f.reasons.join("; ")}</span>
+                <ul className="check-reasons">
+                  {f.reasons.map((r) => (
+                    <li key={r}>{r}</li>
+                  ))}
+                </ul>
               </li>
             ))}
           </ul>

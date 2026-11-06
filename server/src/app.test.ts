@@ -672,7 +672,15 @@ test("the edit check flags invented facts in the merchant's own text and leaves 
   assert.equal(flagOf("is what the buyer typed"), undefined, "quoted buyer lines are not checked");
   assert.equal(flagOf("ORDER-1001"), undefined, "values already on the rule-based draft count as on record");
   assert.equal(res.body.flagged.length, 2);
-  assert.ok(res.body.flagged.every((f: { paragraph: number }) => Number.isInteger(f.paragraph) && f.paragraph > 0));
+  assert.deepEqual(
+    res.body.flagged.map((f: { paragraph: number }) => f.paragraph),
+    [1, 2],
+    "paragraphs are numbered among the merchant's own, not across the whole draft",
+  );
+  for (const r of res.body.flagged.flatMap((f: { reasons: string[] }) => f.reasons)) {
+    assert.match(r, /^[A-Z][^;]*\.$/, `one plain sentence per reason: ${r}`);
+    assert.doesNotMatch(r, /supplied/, "worded for the merchant, not for the model");
+  }
 
   assert.equal((await check("x".repeat(MAX_CHECK_TEXT + 1))).status, 400, "oversized text is refused");
   assert.equal((await check(42)).status, 400, "text must be a string");

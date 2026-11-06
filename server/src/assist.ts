@@ -278,6 +278,17 @@ const AI_NOTICE = "AI-ASSISTED — CHECK EVERY STATEMENT AGAINST YOUR RECORDS.";
 const AI_GAPS = "Gaps found by the evidence rules (resolve before responding):";
 const MARKER_LINE = /\[(MISSING|UNVERIFIED|UNSUPPORTED|NEEDS MERCHANT INPUT|CONFLICT):/;
 
+// The checks are worded for model text ("the supplied records"). The merchant reads each one as its own sentence about
+// DisputeDesk's records: "names a carrier; no carrier is in the supplied records" becomes
+// "Names a carrier. No carrier is in DisputeDesk's records."
+function forMerchant(reason: string): string {
+  const text = reason
+    .replace(/the supplied records/g, "DisputeDesk's records")
+    .replace(/were not supplied/g, "are not in DisputeDesk's records")
+    .replace(/; (\w)/g, (_, c: string) => `. ${c.toUpperCase()}`);
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+}
+
 // Runs the merchant's own edits through the same checks as AI text. Lines DisputeDesk wrote, quoted buyer lines (">")
 // and lines still holding a marker are skipped. Values the rule-based draft already shows (dispute and order IDs) count
 // as on record. Advisory only: nothing is removed, stored or sent to Gemini.
@@ -297,7 +308,7 @@ export function checkMerchantDraft(dispute: Dispute, analysis: Analysis, text: s
     .split(/\r?\n\s*\r?\n/)
     .map((p) => p.trim())
     .filter(Boolean)
-    .forEach((p, i) => {
+    .forEach((p) => {
       const own = p
         .split(/\r?\n/)
         .map((l) => l.trim())
@@ -305,8 +316,9 @@ export function checkMerchantDraft(dispute: Dispute, analysis: Analysis, text: s
         .join(" ");
       if (own === "") return;
       checked++;
-      const reasons = problems(own, [], ctx);
-      if (reasons.length > 0) flagged.push({ paragraph: i + 1, excerpt: own.length > 120 ? `${own.slice(0, 117)}...` : own, reasons });
+      const reasons = problems(own, [], ctx).map(forMerchant);
+      // Numbered among the merchant's own paragraphs, so "paragraph 1" is the first one they wrote.
+      if (reasons.length > 0) flagged.push({ paragraph: checked, excerpt: own.length > 120 ? `${own.slice(0, 117)}...` : own, reasons });
     });
   return { source: dispute.source, dispute_id: dispute.dispute_id, checked, flagged, markers_left: countMarkers(text) };
 }

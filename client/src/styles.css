@@ -58,6 +58,8 @@
     --surface: #151816;
     --surface-2: #1d211e;
     --border: #252925;
+    /* A control's edge: 3:1 against --surface and --surface-2, which --border is not. */
+    --control-line: #6b726a;
     --rule: #202420;
     --text: #eceee9;
     --muted: #9da49c;
@@ -975,7 +977,7 @@ blockquote {
   list-style: none;
 }
 
-.check-flags li {
+.check-flags > li {
   display: grid;
   gap: 4px;
   padding: 10px 12px;
@@ -988,6 +990,14 @@ blockquote {
 .check-flags q {
   font-family: var(--font-mono);
   font-size: 0.8125rem;
+}
+
+/* One reason per line. */
+.check-reasons {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding-left: 1.1em;
 }
 
 .button {
@@ -1628,6 +1638,8 @@ details summary {
     color: var(--muted);
     font-weight: 400;
     font-family: var(--font-sans);
+    /* Fixed size: a .mono cell would otherwise shrink its label to 0.92em. */
+    font-size: 0.875rem;
   }
 
   .data-table .num {
@@ -2252,7 +2264,7 @@ blockquote {
   .rail-section .rail-label {
     display: block;
     padding: 0 14px 6px;
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -2667,6 +2679,69 @@ blockquote {
 .side-conflict .records {
   color: inherit;
   opacity: 0.85;
+}
+
+/* Dark theme: on a panel, a secondary button needs its own fill and a 3:1 edge, or it reads as plain text. */
+@media (prefers-color-scheme: dark) {
+  .button-secondary {
+    border-color: var(--control-line);
+    background: var(--surface-2);
+  }
+}
+
+@media (prefers-color-scheme: dark) and (hover: hover) and (pointer: fine) {
+  .button-secondary:not(:disabled, [aria-disabled="true"]):hover {
+    border-color: var(--muted);
+  }
+}
+
+/* Below 1024px the rail is a top bar. The views sit on one row that scrolls sideways, so the menu never fills a
+   phone's first screen. */
+@media (max-width: 1023px) {
+  .rail-views {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow-x: auto;
+    /* A cut-off last view shows the row scrolls; focus scrolls a view into sight. */
+    scrollbar-width: none;
+  }
+
+  .rail-section {
+    flex: none;
+    flex-wrap: nowrap;
+  }
+
+  .rail-nav {
+    flex-wrap: nowrap;
+  }
+
+  .rail-nav button {
+    flex: none;
+    white-space: nowrap;
+  }
+}
+
+/* Phones: figures two to a row. With an odd count the first, lit one takes the whole row. */
+@media (max-width: 639px) {
+  .summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .summary .stat:first-child:nth-last-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .stat {
+    gap: 8px;
+    padding: 14px 16px;
+    border-radius: 18px;
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+  }
 }
 
 /* Fingers need bigger targets than a mouse. Last in the file so it wins over each control's own height. */
