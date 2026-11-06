@@ -649,9 +649,14 @@ test("the dispute list shows each demo dispute's readiness counts in words, neve
   const counts = Object.fromEntries(demoDisputes.map((d) => [d.dispute_id, readiness(analyzeDispute(d))]));
   const row = (list: Dispute[], r?: typeof counts) => text(html(createElement(DisputeList, { disputes: list, selectedId: undefined, onSelect: () => {}, readiness: r })));
   const all = row(demoDisputes, counts);
-  for (const d of demoDisputes) assert.ok(all.includes(readinessLine(counts[d.dispute_id])), d.dispute_id);
+  for (const d of demoDisputes) assert.ok(all.includes(readinessLine(counts[d.dispute_id], d.reason)), d.dispute_id);
   assert.equal(readinessLine({ ...counts[demo.dispute_id], key_total: 2, key_on_record: 1, conflicts: 1 }), "Key evidence 1 of 2 · 1 conflict");
   assert.equal(readinessLine({ key_total: 0, key_on_record: 0, on_record: 3, total: 4, missing: 1, unverified: 0, conflicts: 0, markers: 1 }), "Evidence 3 of 4");
+  // Every flag set still leaves the refund ID as a gap for refund reasons; other reasons get no such note.
+  const allFlags = { key_total: 0, key_on_record: 0, on_record: 4, total: 4, missing: 0, unverified: 0, conflicts: 0, markers: 1 };
+  assert.equal(readinessLine(allFlags, "CREDIT_NOT_PROCESSED"), "Evidence 4 of 4 · refund ID needed");
+  assert.equal(readinessLine({ ...allFlags, conflicts: 1 }, "DUPLICATE_TRANSACTION"), "Evidence 4 of 4 · 1 conflict · refund ID needed");
+  assert.equal(readinessLine(allFlags, "INCORRECT_AMOUNT"), "Evidence 4 of 4");
   assert.doesNotMatch(all, /score|ready to|strong|weak|win|chance|likely|%/i);
   assert.doesNotMatch(row(sandbox), /Key evidence|Evidence d/, "sandbox rows carry no counts");
 });

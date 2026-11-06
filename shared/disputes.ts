@@ -1,5 +1,9 @@
 import type { Dispute, Money } from "./types.ts";
 
+// PayPal's dispute reasons reference lists proof of refund (the refund ID) for these reasons. DisputeDesk's records
+// have no refund field, so for these the refund ID is always a gap the merchant fills.
+export const REFUND_ID_REASONS = ["CREDIT_NOT_PROCESSED", "DUPLICATE_TRANSACTION"];
+
 export const STATUS_LABELS: Record<string, string> = {
   OPEN: "Open",
   WAITING_FOR_SELLER_RESPONSE: "Awaiting seller",

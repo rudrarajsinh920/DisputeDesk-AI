@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import sample from "../../sample-dispute.json" with { type: "json" };
-import { humanize } from "../../shared/disputes.ts";
+import { REFUND_ID_REASONS, humanize } from "../../shared/disputes.ts";
+import { readiness } from "../../shared/readiness.ts";
 import type { Analysis, Dispute } from "../../shared/types.ts";
 import { analyzeDispute, findContradictions } from "./evidence.ts";
 import { validateDispute } from "./validate.ts";
@@ -76,7 +77,8 @@ test("missing evidence is never presented as proof that something did not happen
 });
 
 test("credit and duplicate disputes ask for the refund ID without claiming a refund or marking other evidence key", () => {
-  for (const reason of ["CREDIT_NOT_PROCESSED", "DUPLICATE_TRANSACTION"]) {
+  // The list rows (client) use REFUND_ID_REASONS, so the rules must treat exactly these reasons as refund reasons.
+  for (const reason of REFUND_ID_REASONS) {
     const a = analyzeDispute(withChanges({ reason }));
     assert.ok(a.next_steps.some((s) => /proof of refund \(the refund ID\)/.test(s) && /no refund field/.test(s)), reason);
     const inputs = a.draft.lines.filter((l) => l.kind === "input").map((l) => l.text);
@@ -90,6 +92,49 @@ test("credit and duplicate disputes ask for the refund ID without claiming a ref
   }
   for (const reason of ["MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED", "UNAUTHORISED"]) {
     assert.ok(!analyzeDispute(withChanges({ reason })).next_steps.some((s) => /refund/i.test(s)), `${reason} is unchanged`);
+  }
+});
+
+// Synthetic test-only fixture: every evidence flag set, a tracking number on record and a delivered order, so no rule
+// finds a gap or a conflict. It changes no demo file.
+const complete = (reason: string): Dispute =>
+  withChanges({
+    reason,
+    order: { ...demo.order, shipping_status: "DELIVERED", tracking_number: "TEST-TRK-0001" },
+    evidence: { order_confirmation: true, shipping_tracking: true, proof_of_delivery: true, customer_communication: true },
+  });
+
+test("with every key item on record, each is available and no evidence gap or conflict is left", () => {
+  for (const reason of ["MERCHANDISE_OR_SERVICE_NOT_RECEIVED", "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED", "UNAUTHORISED"]) {
+    const dispute = complete(reason);
+    const a = analyzeDispute(dispute);
+    assert.ok(a.evidence.some((e) => e.priority === "key"), reason);
+    assert.ok(a.evidence.every((e) => e.status === "available"), reason);
+    assert.deepEqual(a.contradictions, [], reason);
+    assert.ok(!a.next_steps.some((s) => s.startsWith("Find or confirm")), reason);
+    assert.ok(!a.draft.lines.some((l) => ["missing", "unverified", "unsupported", "conflict"].includes(l.kind)), reason);
+    const r = readiness(a);
+    assert.equal(r.key_on_record, r.key_total, reason);
+    assert.equal(r.missing + r.unverified + r.conflicts, 0, reason);
+    assertFactsComeFromRecords(dispute, a);
+    // Complete evidence never removes the review notice.
+    assert.match(a.draft.text, /REQUIRES MERCHANT REVIEW/, reason);
+  }
+  const received = analyzeDispute(complete("MERCHANDISE_OR_SERVICE_NOT_RECEIVED")).draft.lines.map((l) => l.text);
+  assert.ok(received.includes("The shipment has tracking number TEST-TRK-0001."));
+  assert.ok(received.includes("Proof of delivery is on record."));
+});
+
+test("reasons with no key evidence get the generic merchant-input line and no refund step", () => {
+  for (const reason of ["INCORRECT_AMOUNT", "PAYMENT_BY_OTHER_MEANS", "CANCELED_RECURRING_BILLING", "PROBLEM_WITH_REMITTANCE"]) {
+    const dispute = complete(reason);
+    const a = analyzeDispute(dispute);
+    assert.ok(a.evidence.every((e) => e.priority === "supporting"), reason);
+    const inputs = a.draft.lines.filter((l) => l.kind === "input").map((l) => l.text);
+    assert.deepEqual(inputs, ["[NEEDS MERCHANT INPUT: state your position on this dispute and the evidence that supports it.]"], reason);
+    assert.ok(!a.next_steps.some((s) => /refund/i.test(s)), reason);
+    assert.equal(readiness(a).key_total, 0, reason);
+    assertFactsComeFromRecords(dispute, a);
   }
 });
 
