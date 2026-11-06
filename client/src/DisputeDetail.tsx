@@ -6,6 +6,8 @@ import { StatusBadge } from "./ui.tsx";
 
 const CASE_PARTS = [
   ["#case-facts", "Facts"],
+  ["#case-readiness", "Readiness"],
+  ["#case-sides", "Claim and records"],
   ["#case-evidence", "Evidence"],
   ["#case-contradictions", "Contradictions"],
   ["#case-steps", "Next steps"],
@@ -89,13 +91,6 @@ export function DisputeDetail({ dispute, canDraft = true }: { dispute: Dispute; 
           </div>
         )}
       </dl>
-
-      {dispute.customer_message && (
-        <section className="detail-section">
-          <h3>Customer message</h3>
-          <blockquote>{dispute.customer_message}</blockquote>
-        </section>
-      )}
 
       {dispute.order && (
         <section className="detail-section">

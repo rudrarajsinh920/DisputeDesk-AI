@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis } from "./analysis.ts";
+import { countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis, readiness } from "./analysis.ts";
+import { humanize } from "../../shared/disputes.ts";
 import type { AiAssist, AiStatus, Analysis, Dispute, EvidenceStatus, RecordRef } from "../../shared/types.ts";
 import { StatePanel } from "./ui.tsx";
 
@@ -59,9 +60,133 @@ export function AnalysisPanel({ dispute, canDraft = true }: { dispute: Dispute; 
   return <AnalysisView dispute={dispute} analysis={load.analysis} canDraft={canDraft} />;
 }
 
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+// Counts from the evidence rules, read at a glance. Deliberately no score, percentage or outcome.
+export function ReadinessSummary({ analysis }: { analysis: Analysis }) {
+  const r = readiness(analysis);
+  return (
+    <section className="detail-section" id="case-readiness" aria-labelledby="readiness-title">
+      <h3 id="readiness-title">Evidence readiness</h3>
+      <dl className="readiness">
+        <div className={r.key_total > 0 && r.key_on_record === r.key_total ? "is-ok" : "is-warn"}>
+          <dt>Key evidence on record</dt>
+          <dd>{r.key_total > 0 ? `${r.key_on_record} of ${r.key_total}` : `${r.on_record} of ${r.total}`}</dd>
+          {r.key_total === 0 && <p className="muted">No key evidence is defined for this reason, so this counts every item.</p>}
+        </div>
+        <div className={r.missing + r.unverified > 0 ? "is-warn" : "is-ok"}>
+          <dt>Missing or unverified</dt>
+          <dd>{r.missing + r.unverified}</dd>
+          <p className="muted">
+            {plural(r.missing, "missing", "missing")}, {plural(r.unverified, "unverified", "unverified")}
+          </p>
+        </div>
+        <div className={r.conflicts > 0 ? "is-conflict" : "is-ok"}>
+          <dt>Conflicting records</dt>
+          <dd>{r.conflicts}</dd>
+        </div>
+        <div className={r.markers > 0 ? "is-warn" : "is-ok"}>
+          <dt>Gaps to fill in the draft</dt>
+          <dd>{r.markers}</dd>
+        </div>
+      </dl>
+      <p className="muted">Counts from the evidence rules below. This is not a score and does not predict the outcome.</p>
+    </section>
+  );
+}
+
+// The buyer's claim next to what the records show and what they leave out. It reports; it never decides who is right.
+// Merchant and admin view only: buyers never receive the order, evidence or each other's words through this.
+export function ClaimAndRecords({ dispute, analysis }: { dispute: Dispute; analysis: Analysis }) {
+  const contested = new Set(analysis.contradictions.flatMap((c) => c.records.map((r) => r.path)));
+  const shipping = dispute.order?.shipping_status;
+  const tracking = dispute.order?.tracking_number?.trim();
+  const shown = analysis.evidence.filter((e) => e.status === "available");
+  const gaps = analysis.evidence.filter((e) => e.status !== "available");
+  const orderGaps = [!shipping && "Shipping status", !tracking && "Tracking number"].filter((g): g is string => !!g);
+  return (
+    <section className="detail-section" id="case-sides" aria-labelledby="sides-title">
+      <h3 id="sides-title">Claim and records</h3>
+      <div className="sides">
+        <div className="side">
+          <h4>
+            Buyer's claim <span className="tag tag-record">From the record</span>
+          </h4>
+          {dispute.customer_message ? (
+            <blockquote>{dispute.customer_message}</blockquote>
+          ) : (
+            <p className="muted">The buyer's message was not supplied.</p>
+          )}
+        </div>
+        <div className="side">
+          <h4>
+            What the records show <span className="tag tag-record">From the record</span>
+          </h4>
+          <ul className="side-list">
+            {shipping && !contested.has("order.shipping_status") && (
+              <li>
+                Shipping status: {humanize(shipping)}
+                <span className="records">order.shipping_status</span>
+              </li>
+            )}
+            {tracking && !contested.has("order.tracking_number") && (
+              <li>
+                Tracking number: <span className="mono">{tracking}</span>
+                <span className="records">order.tracking_number</span>
+              </li>
+            )}
+            {shown.map((e) => (
+              <li key={e.id}>
+                {e.label}: marked available
+                <span className="records">evidence.{e.id}</span>
+              </li>
+            ))}
+            {analysis.contradictions.map((c) => (
+              <li key={c.message} className="side-conflict">
+                Records disagree: {c.message}
+                <span className="records">{c.records.map((r) => r.path).join(", ")}</span>
+              </li>
+            ))}
+          </ul>
+          {shown.length === 0 && !shipping && !tracking && analysis.contradictions.length === 0 && (
+            <p className="muted">No evidence is marked available.</p>
+          )}
+        </div>
+        <div className="side">
+          <h4>
+            What the records leave out <span className="tag tag-missing">Not on record</span>
+          </h4>
+          {gaps.length + orderGaps.length === 0 ? (
+            <p className="muted">Every evidence item is marked available.</p>
+          ) : (
+            <ul className="side-list">
+              {orderGaps.map((g) => (
+                <li key={g}>{g}</li>
+              ))}
+              {gaps.map((e) => (
+                <li key={e.id}>
+                  {e.label}: {e.status === "missing" ? "missing" : "unverified"}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="muted">Missing from the records does not show that it did not happen.</p>
+        </div>
+      </div>
+      <p className="muted">
+        DisputeDesk lays the buyer's claim next to the records. It does not decide who is right; the payment provider reviews the
+        dispute.
+      </p>
+    </section>
+  );
+}
+
 export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: Dispute; analysis: Analysis; canDraft?: boolean }) {
   return (
     <>
+      <ReadinessSummary analysis={analysis} />
+      <ClaimAndRecords dispute={dispute} analysis={analysis} />
+
       <section className="detail-section" id="case-evidence">
         <h3>Evidence analysis</h3>
         <p className="muted">

@@ -2530,6 +2530,103 @@ blockquote {
   padding-block: 12px;
 }
 
+/* Evidence readiness: four counts from the rules. Tone follows the count, never a score. */
+.readiness {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.readiness > div {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.readiness dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.readiness dd {
+  margin: 0;
+  font-size: 1.625rem;
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.readiness p {
+  font-size: 0.75rem;
+}
+
+.readiness .is-ok dd { color: var(--ok-text); }
+.readiness .is-warn dd { color: var(--warn-text); }
+.readiness .is-conflict { background: var(--gap-bg); border-color: var(--gap-text); }
+.readiness .is-conflict dt,
+.readiness .is-conflict dd { color: var(--gap-text); }
+
+/* Claim and records: the buyer's words, what is on record, what is not. Equal columns, no side is weighted. */
+.sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.side {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.side h4 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.side blockquote {
+  margin: 0;
+}
+
+.side-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+}
+
+.side-list .records {
+  display: block;
+  margin-top: 2px;
+}
+
+.side-conflict {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--gap-bg);
+  color: var(--gap-text);
+}
+
+.side-conflict .records {
+  color: inherit;
+  opacity: 0.85;
+}
+
 /* Fingers need bigger targets than a mouse. Last in the file so it wins over each control's own height. */
 @media (pointer: coarse) {
   .chip,

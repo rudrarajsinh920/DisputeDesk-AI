@@ -62,6 +62,33 @@ export const countMarkers = (text: string) =>
     .join("\n")
     .match(MARKER)?.length ?? 0;
 
+// Evidence readiness: counts taken straight from the rules' analysis. Not a score and not a prediction of the outcome.
+export interface Readiness {
+  key_total: number;
+  key_on_record: number;
+  on_record: number;
+  total: number;
+  missing: number;
+  unverified: number;
+  conflicts: number;
+  markers: number;
+}
+
+export function readiness(analysis: Analysis): Readiness {
+  const count = (status: string, list = analysis.evidence) => list.filter((e) => e.status === status).length;
+  const key = analysis.evidence.filter((e) => e.priority === "key");
+  return {
+    key_total: key.length,
+    key_on_record: count("available", key),
+    on_record: count("available"),
+    total: analysis.evidence.length,
+    missing: count("missing"),
+    unverified: count("unverified"),
+    conflicts: analysis.contradictions.length,
+    markers: countMarkers(analysis.draft.text),
+  };
+}
+
 // Whether the server has AI drafting on, so the page can say so before anyone clicks. Never calls Gemini.
 export async function fetchAiStatus(signal?: AbortSignal): Promise<AiStatus> {
   const response = await fetch("/api/health", { signal });

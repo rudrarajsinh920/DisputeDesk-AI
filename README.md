@@ -1,5 +1,9 @@
 # DisputeDesk
 
+**The evidence intelligence layer for payment disputes.** It checks the evidence records behind a dispute (it does not
+open or inspect the documents themselves), shows what is on record, missing or in conflict, and explains the dispute to
+both sides without deciding who is right.
+
 DisputeDesk helps a merchant prepare a response to a PayPal dispute. Rules check the evidence first. Gemini can then
 word those findings, and the server checks every line it writes. The merchant reviews the result. DisputeDesk never
 submits anything to PayPal.

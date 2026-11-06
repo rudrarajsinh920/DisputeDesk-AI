@@ -284,14 +284,14 @@ function Hero({ onSignIn, face, onFace, turnRef }: { onSignIn: () => void; face:
             <span aria-hidden="true" className="hero-chip-dot">
               <Sparkles className="size-3.5" />
             </span>
-            AI dispute review, read-only with PayPal
+            The evidence intelligence layer for payment disputes
           </p>
           <h1 id="hero-h" data-arrive className="motion-safe:animate-rise text-[2.9rem] leading-[0.98] font-semibold tracking-[-0.05em] sm:text-7xl xl:text-[5rem]">
             Every dispute, checked against the record.
           </h1>
           <div data-arrive className="mt-6 motion-safe:animate-rise motion-safe:[animation-delay:120ms]">
             <p className="max-w-md text-lg">
-              DisputeDesk reviews PayPal disputes for merchants and buyers. Both sides read the same facts, gaps stay marked as gaps, and a person makes every decision.
+              DisputeDesk checks the evidence records behind PayPal disputes, for merchants and buyers. Both sides read the same facts, gaps stay marked as gaps, and a person makes every decision.
             </p>
             <div className="mt-6 flex flex-wrap items-center gap-2">
               <SignIn onSignIn={onSignIn} className="cta h-12 px-6 text-base">

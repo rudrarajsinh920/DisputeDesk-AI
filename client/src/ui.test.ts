@@ -10,7 +10,8 @@ import { buildAiRequest, composeAiAssist } from "../../server/src/assist.ts";
 import { analyzeDispute } from "../../server/src/evidence.ts";
 import { VALIDATION_EXAMPLE_MODEL, validationExampleAnswer } from "../../server/src/assist.ts";
 import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
-import { AiResult, AiSectionView, AnalysisView, DISCARD_EDITS, DraftEditor, ValidationExampleView } from "./AnalysisPanel.tsx";
+import { AiResult, AiSectionView, AnalysisView, ClaimAndRecords, DISCARD_EDITS, DraftEditor, ReadinessSummary, ValidationExampleView } from "./AnalysisPanel.tsx";
+import { readiness } from "./analysis.ts";
 import type { AiState, ExampleState } from "./AnalysisPanel.tsx";
 import { AccountView } from "./Account.tsx";
 import { AdminAccounts, AdminAudit, AdminOverview, AdminSettings, AdminSystem, ownerNames } from "./Admin.tsx";
@@ -448,6 +449,69 @@ test("the rule-based draft shows the merchant-review warning and its review head
   assert.match(markup, /DRAFT — REQUIRES MERCHANT REVIEW\. NOT SUBMITTED TO PAYPAL\./);
   assert.match(markup, /DEMO DATA — NOT A REAL PAYPAL DISPUTE\./);
   assert.match(text(markup), /5 markers to resolve/);
+});
+
+// ---- Evidence readiness and claim-and-records ----
+
+const OUTCOME_WORDS = /%|\blikel|\bchances?\b|\bodds\b|\bwin|\blos[et]\b|\bpredict/i;
+const FAULT_WORDS = /\b(fault|guilty|lying|liar|fraud\w*|blame\w*|in the right|in the wrong)\b/i;
+
+test("readiness shows the rules' own counts, with no score or outcome", () => {
+  const conflict = text(html(createElement(ReadinessSummary, { analysis: analyzeDispute(sandbox[0]) })));
+  assert.match(conflict, /Key evidence on record 1 of 2/);
+  assert.match(conflict, /Missing or unverified 2 2 missing, 0 unverified/);
+  assert.match(conflict, /Conflicting records 1/);
+  assert.match(conflict, /This is not a score and does not predict the outcome\./);
+
+  assert.match(text(html(createElement(ReadinessSummary, { analysis: analyzeDispute(demo) }))), /Key evidence on record 0 of 2/);
+  const credit = demoDisputes.find((d) => d.reason === "CREDIT_NOT_PROCESSED")!;
+  assert.match(text(html(createElement(ReadinessSummary, { analysis: analyzeDispute(credit) }))), /No key evidence is defined for this reason, so this counts every item\./);
+
+  for (const d of [...demoDisputes, ...sandbox]) {
+    const analysis = analyzeDispute(d);
+    const r = readiness(analysis);
+    assert.equal(r.conflicts, analysis.contradictions.length, d.dispute_id);
+    assert.equal(r.on_record + r.missing + r.unverified, r.total, d.dispute_id);
+    assert.ok(r.key_on_record <= r.key_total, d.dispute_id);
+    // The one disclaimer sentence is the only place "score" or "predict" may appear.
+    const out = text(html(createElement(ReadinessSummary, { analysis }))).replace("This is not a score and does not predict the outcome.", "");
+    assert.doesNotMatch(out, OUTCOME_WORDS, d.dispute_id);
+    assert.doesNotMatch(out, /score/i, d.dispute_id);
+  }
+});
+
+test("claim and records puts the buyer's words beside the records, never cites contested records, and assigns no fault", () => {
+  const out = text(html(createElement(ClaimAndRecords, { dispute: sandbox[0], analysis: analyzeDispute(sandbox[0]) })));
+  assert.match(out, /The buyer's message was not supplied\./);
+  assert.match(out, /Tracking number: TRK-MOCK-1 order\.tracking_number/);
+  assert.doesNotMatch(out, /Shipping status: Delivered/, "a contested record is not shown as a fact");
+  assert.match(out, /Records disagree: The shipping status is "Delivered", but proof of delivery is marked not available\./);
+  assert.match(out, /What the records leave out Not on record .*Proof of delivery: missing/);
+  assert.match(out, /Missing from the records does not show that it did not happen\./);
+  assert.match(out, /It does not decide who is right/);
+
+  for (const d of demoDisputes) {
+    const markup = text(html(createElement(ClaimAndRecords, { dispute: d, analysis: analyzeDispute(d) })));
+    if (d.customer_message) assert.ok(markup.includes(text(d.customer_message).trim()), d.dispute_id);
+    assert.doesNotMatch(markup, FAULT_WORDS, d.dispute_id);
+  }
+});
+
+test("the open dispute links to readiness and claim and records, and quotes the buyer once", () => {
+  const withMessage = demoDisputes.find((d) => d.customer_message)!;
+  const out = text(html(createElement(DisputeDetail, { dispute: withMessage })));
+  assert.match(out, /Facts Readiness Claim and records Evidence Contradictions Next steps Draft AI draft/);
+  assert.doesNotMatch(out, /Customer message/);
+});
+
+test("buyers never see the merchant's claim-and-records view or the buyer message held on the merchant record", () => {
+  for (const d of demoDisputes.filter((x) => x.customer_message)) {
+    const shown = buyerView(d);
+    assert.equal("customer_message" in shown, false);
+    const out = text(buyerReady([shown]));
+    assert.doesNotMatch(out, /Claim and records|What the records show|Evidence readiness|Key evidence on record/, d.dispute_id);
+    assert.ok(!out.includes(text(d.customer_message!).trim()), d.dispute_id);
+  }
 });
 
 // ---- AI-assisted draft ----
