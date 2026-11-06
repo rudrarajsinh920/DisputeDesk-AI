@@ -1,5 +1,5 @@
 import { serverError } from "./sandbox.ts";
-import type { AiAssist, AiStatus, Analysis, Dispute } from "../../shared/types.ts";
+import type { AiAssist, AiStatus, Analysis, Dispute, DraftCheck } from "../../shared/types.ts";
 
 // Sends only which record to analyze; the server loads the record itself. Nothing here talks to PayPal.
 export async function fetchAnalysis(dispute: Dispute, signal?: AbortSignal): Promise<Analysis> {
@@ -51,43 +51,25 @@ export async function fetchAiAssist(dispute: Dispute, signal?: AbortSignal, exam
   return assist;
 }
 
-const MARKER =/\[(MISSING|UNVERIFIED|UNSUPPORTED|NEEDS MERCHANT INPUT|CONFLICT):/g;
-
-// Gaps the merchant still has to fill or remove before the draft can be used.
-// Lines starting with ">" are quoted buyer text, so brackets typed by the buyer are not counted.
-export const countMarkers = (text: string) =>
-  text
-    .split(/\r?\n/)
-    .filter((line) => !line.startsWith(">"))
-    .join("\n")
-    .match(MARKER)?.length ?? 0;
-
-// Evidence readiness: counts taken straight from the rules' analysis. Not a score and not a prediction of the outcome.
-export interface Readiness {
-  key_total: number;
-  key_on_record: number;
-  on_record: number;
-  total: number;
-  missing: number;
-  unverified: number;
-  conflicts: number;
-  markers: number;
+// Sends the merchant's edited text for the same checks as AI text. The server stores nothing and calls no AI.
+export async function fetchDraftCheck(target: Pick<Dispute, "source" | "dispute_id">, text: string, signal?: AbortSignal): Promise<DraftCheck> {
+  const response = await fetch("/api/analysis/check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source: target.source, dispute_id: target.dispute_id, text }),
+    signal,
+  });
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw serverError(response, body);
+  const check = body as DraftCheck | null;
+  if (check?.dispute_id !== target.dispute_id || !Array.isArray(check.flagged) || typeof check.markers_left !== "number") {
+    throw new Error("The DisputeDesk server sent an unexpected check result.");
+  }
+  return check;
 }
 
-export function readiness(analysis: Analysis): Readiness {
-  const count = (status: string, list = analysis.evidence) => list.filter((e) => e.status === status).length;
-  const key = analysis.evidence.filter((e) => e.priority === "key");
-  return {
-    key_total: key.length,
-    key_on_record: count("available", key),
-    on_record: count("available"),
-    total: analysis.evidence.length,
-    missing: count("missing"),
-    unverified: count("unverified"),
-    conflicts: analysis.contradictions.length,
-    markers: countMarkers(analysis.draft.text),
-  };
-}
+export { countMarkers, readiness } from "../../shared/readiness.ts";
+export type { Readiness } from "../../shared/readiness.ts";
 
 // Whether the server has AI drafting on, so the page can say so before anyone clicks. Never calls Gemini.
 export async function fetchAiStatus(signal?: AbortSignal): Promise<AiStatus> {

@@ -1,5 +1,6 @@
 import { REASON_LABELS, labelFor } from "../../shared/disputes.ts";
-import type { AiAssist, AiExplanation, AiFact, AiFlag, Analysis, Dispute, DraftLine, EvidenceKey } from "../../shared/types.ts";
+import { countMarkers } from "../../shared/readiness.ts";
+import type { AiAssist, AiExplanation, AiFact, AiFlag, Analysis, Dispute, DraftCheck, DraftLine, EvidenceKey } from "../../shared/types.ts";
 import { DEMO_LABEL, DRAFT_FOOTER, DRAFT_HEADER } from "./evidence.ts";
 import { AiError } from "./gemini.ts";
 import type { JsonRequest } from "./gemini.ts";
@@ -257,14 +258,12 @@ const clean = (text: string) =>
     .join("\n")
     .trim();
 
-export function composeAiAssist(dispute: Dispute, analysis: Analysis, facts: AiFact[], raw: unknown, model: string): AiAssist {
-  const { explanations: rawExplanations, sections } = readShape(raw);
-  const flags: AiFlag[] = [];
+function checkContext(dispute: Dispute, analysis: Analysis, facts: AiFact[]): CheckContext {
   const status = Object.fromEntries(analysis.evidence.map((e) => [e.id, e.status])) as Record<EvidenceKey, string>;
   const shippingFact = facts.find((f) => f.path === "order.shipping_status");
   const itemFact = facts.find((f) => f.path === "order.item" && f.value !== WITHHELD);
   const reasonLabel = REASON_LABELS[dispute.reason];
-  const ctx: CheckContext = {
+  return {
     facts,
     status,
     shippedOnRecord: !!shippingFact && !shippingFact.contested && SHIPPED_STATES.includes(shippingFact.value),
@@ -272,6 +271,50 @@ export function composeAiAssist(dispute: Dispute, analysis: Analysis, facts: AiF
     reasonPhrases: reasonLabel ? [`${reasonLabel} (${dispute.reason})`, reasonLabel] : [],
     item: itemFact?.value ?? null,
   };
+}
+
+export const MAX_CHECK_TEXT = 8000;
+const AI_NOTICE = "AI-ASSISTED — CHECK EVERY STATEMENT AGAINST YOUR RECORDS.";
+const AI_GAPS = "Gaps found by the evidence rules (resolve before responding):";
+const MARKER_LINE = /\[(MISSING|UNVERIFIED|UNSUPPORTED|NEEDS MERCHANT INPUT|CONFLICT):/;
+
+// Runs the merchant's own edits through the same checks as AI text. Lines DisputeDesk wrote, quoted buyer lines (">")
+// and lines still holding a marker are skipped. Values the rule-based draft already shows (dispute and order IDs) count
+// as on record. Advisory only: nothing is removed, stored or sent to Gemini.
+export function checkMerchantDraft(dispute: Dispute, analysis: Analysis, text: string): DraftCheck {
+  const recordText = analysis.draft.lines.map((l) => l.text).filter((t) => !t.startsWith(">")).join(" ");
+  const serverLines = new Set([...analysis.draft.lines.map((l) => l.text.trim()), DRAFT_HEADER, DEMO_LABEL, AI_NOTICE, AI_GAPS, ...DRAFT_FOOTER]);
+  const facts = buildAiFacts(dispute, analysis);
+  const base = checkContext(dispute, analysis, facts);
+  const ctx: CheckContext = {
+    ...base,
+    facts: [...facts, { id: "", path: "", label: "", value: recordText, contested: false }],
+    vocabulary: new Set([...base.vocabulary, ...words(recordText)]),
+  };
+  const flagged: DraftCheck["flagged"] = [];
+  let checked = 0;
+  text
+    .split(/\r?\n\s*\r?\n/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .forEach((p, i) => {
+      const own = p
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l !== "" && !l.startsWith(">") && !MARKER_LINE.test(l) && !serverLines.has(l))
+        .join(" ");
+      if (own === "") return;
+      checked++;
+      const reasons = problems(own, [], ctx);
+      if (reasons.length > 0) flagged.push({ paragraph: i + 1, excerpt: own.length > 120 ? `${own.slice(0, 117)}...` : own, reasons });
+    });
+  return { source: dispute.source, dispute_id: dispute.dispute_id, checked, flagged, markers_left: countMarkers(text) };
+}
+
+export function composeAiAssist(dispute: Dispute, analysis: Analysis, facts: AiFact[], raw: unknown, model: string): AiAssist {
+  const { explanations: rawExplanations, sections } = readShape(raw);
+  const flags: AiFlag[] = [];
+  const ctx = checkContext(dispute, analysis, facts);
   const pathOf = (id: string) => facts.find((f) => f.id === id)?.path;
 
   // The merchant must check withheld record text themselves; Gemini never saw it.

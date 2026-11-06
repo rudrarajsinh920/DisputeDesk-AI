@@ -39,7 +39,17 @@ const KEY_EVIDENCE: Record<string, EvidenceKey[]> = {
   UNAUTHORISED: ["order_confirmation", "customer_communication"],
 };
 
-const NOT_PROOF = "Missing from the supplied records does not show that it did not happen.";
+// PayPal's dispute reasons reference lists proof of refund (the refund ID) for these reasons. The records here have no
+// refund field, so the draft asks the merchant instead of marking any existing evidence as key.
+const REFUND_REASONS: Record<string, string> = {
+  CREDIT_NOT_PROCESSED: "[NEEDS MERCHANT INPUT: state whether a refund was issued and give its refund ID, from your PayPal or payment records.]",
+  DUPLICATE_TRANSACTION:
+    "[NEEDS MERCHANT INPUT: state whether this charge duplicates another payment and, if it was refunded, give the refund ID from your records.]",
+};
+const REFUND_STEP =
+  "PayPal's dispute reasons reference lists proof of refund (the refund ID) for this reason. DisputeDesk's records have no refund field, so find it in PayPal or your payment records.";
+
+const NOT_PROOF ="Missing from the supplied records does not show that it did not happen.";
 
 // Written only by the server, in every draft (rule-based and AI-assisted).
 export const DRAFT_HEADER = "DRAFT — REQUIRES MERCHANT REVIEW. NOT SUBMITTED TO PAYPAL.";
@@ -218,6 +228,8 @@ function buildDraft(dispute: Dispute, evidence: EvidenceFinding[], contradiction
     add("input", "[NEEDS MERCHANT INPUT: explain how the item matched its listing.]");
     if (found("order_confirmation").status === "available") add("fact", "An order confirmation is on record.", "evidence.order_confirmation");
     else add("unsupported", "[UNSUPPORTED: do not describe the order terms until an order confirmation is on record.]");
+  } else if (REFUND_REASONS[dispute.reason]) {
+    add("input", REFUND_REASONS[dispute.reason]);
   } else {
     add("input", "[NEEDS MERCHANT INPUT: state your position on this dispute and the evidence that supports it.]");
   }
@@ -244,6 +256,7 @@ export function analyzeDispute(dispute: Dispute): Analysis {
     ...evidence
       .filter((e) => e.priority === "key" && e.status !== "available")
       .map((e) => `Find or confirm the ${e.label.toLowerCase()} record.`),
+    ...(REFUND_REASONS[dispute.reason] ? [REFUND_STEP] : []),
     ...contradictions.map((c) => `Resolve: ${c.message}`),
     "Fill every [MISSING], [UNVERIFIED] and [NEEDS MERCHANT INPUT] marker, or remove the statement.",
     "Confirm every fact in the draft before responding in PayPal.",

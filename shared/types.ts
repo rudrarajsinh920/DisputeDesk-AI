@@ -265,6 +265,17 @@ export interface IntelligenceExplanation {
 // From /api/health: whether the server can write AI drafts, and why not.
 export type AiStatus = { on: true; model: string } | { on: false; reason: string };
 
+// From /api/analysis/check: the merchant's edited draft run through the same checks as AI text. Advisory only:
+// the merchant may hold records DisputeDesk does not, so nothing is removed or stored.
+export interface DraftCheck {
+  source: Source;
+  dispute_id: string;
+  // Paragraphs with merchant-written text (lines DisputeDesk wrote, quoted buyer lines and markers are skipped).
+  checked: number;
+  flagged: { paragraph: number; excerpt: string; reasons: string[] }[];
+  markers_left: number;
+}
+
 export interface AiAssist {
   source: Source;
   dispute_id: string;

@@ -950,6 +950,45 @@ blockquote {
   margin-top: 0;
 }
 
+.draft-check {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.draft-check p {
+  margin: 0 0 8px;
+}
+
+.draft-check p:last-child {
+  margin-bottom: 0;
+}
+
+.check-flags {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.check-flags li {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  overflow-wrap: anywhere;
+}
+
+.check-flags q {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
 .button {
   display: inline-flex;
   align-items: center;
@@ -1610,12 +1649,14 @@ details summary {
   overflow-wrap: anywhere;
 }
 
-.row-owner {
+.row-owner,
+.row-readiness {
   color: var(--muted);
   font-size: 0.8125rem;
 }
 
-.dispute-row[aria-current="true"] .row-owner {
+.dispute-row[aria-current="true"] .row-owner,
+.dispute-row[aria-current="true"] .row-readiness {
   color: var(--signal-text);
 }
 

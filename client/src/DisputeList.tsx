@@ -1,18 +1,29 @@
 import { REASON_LABELS, formatMoney, labelFor } from "../../shared/disputes.ts";
+import type { Readiness } from "../../shared/readiness.ts";
 import type { Dispute } from "../../shared/types.ts";
 import { StatusBadge } from "./ui.tsx";
+
+// Plain counts from the rules, never a score: key evidence on record (or all evidence when the reason has no key items)
+// and conflicting records.
+export function readinessLine(r: Readiness): string {
+  const evidence = r.key_total > 0 ? `Key evidence ${r.key_on_record} of ${r.key_total}` : `Evidence ${r.on_record} of ${r.total}`;
+  return r.conflicts > 0 ? `${evidence} · ${r.conflicts} conflict${r.conflicts === 1 ? "" : "s"}` : evidence;
+}
 
 export function DisputeList({
   disputes,
   selectedId,
   onSelect,
   owners,
+  readiness,
 }: {
   disputes: Dispute[];
   selectedId: string | undefined;
   onSelect: (id: string) => void;
   // Admin only: the merchant account each dispute belongs to.
   owners?: Map<string, string>;
+  // Demo data only: the rules' evidence counts per dispute ID.
+  readiness?: Record<string, Readiness>;
 }) {
   return (
     <ul className="dispute-list">
@@ -32,6 +43,7 @@ export function DisputeList({
               <span className="muted">{labelFor(REASON_LABELS, d.reason)}</span>
               <StatusBadge status={d.status} />
             </span>
+            {readiness?.[d.dispute_id] && <span className="row-readiness">{readinessLine(readiness[d.dispute_id])}</span>}
             {owners && <span className="row-owner">{owners.get(d.dispute_id) ?? "Owner not listed"}</span>}
           </button>
         </li>

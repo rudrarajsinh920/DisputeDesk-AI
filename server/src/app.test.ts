@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
+import type { Dispute } from "../../shared/types.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { DEMO_ACCOUNTS, DEMO_DISPUTES, createApp } from "./app.ts";
-import { VALIDATION_EXAMPLE_MODEL } from "./assist.ts";
+import { countMarkers, readiness } from "../../shared/readiness.ts";
+import { MAX_CHECK_TEXT, VALIDATION_EXAMPLE_MODEL } from "./assist.ts";
 import { buyerGuidance, toBuyerRecord } from "./buyer.ts";
 import { LOGIN_MAX_FAILURES, hashPassword } from "./auth.ts";
 import { AI_OFF_BAD_MODEL, AI_OFF_NO_KEY } from "./config.ts";
 import { openDatabase } from "./db.ts";
+import { analyzeDispute } from "./evidence.ts";
 import { createGeminiClient } from "./gemini.ts";
 import { createPayPalClient, normalizeDetails } from "./paypal.ts";
 
@@ -637,6 +640,47 @@ test("the validation example runs a fixed wrong answer through the real checks, 
   assert.equal(paypal.calls.length, 0, "demo records never call PayPal");
 });
 
+// ---- Merchant edit check (/api/analysis/check) ----
+
+test("the edit check flags invented facts in the merchant's own text and leaves DisputeDesk's lines alone", async () => {
+  const ai = mockAi();
+  const paypal = mockPayPal();
+  const app = makeApp(paypal.client, ai.client);
+  const rules = await get(app, "/api/analysis", lookup("demo", "DEMO-1001"));
+  const check = (text: unknown) => get(app, "/api/analysis/check", lookup("demo", "DEMO-1001", { text }));
+
+  const untouched = await check(rules.body.draft.text);
+  assert.equal(untouched.status, 200);
+  assert.equal(untouched.body.source, "demo");
+  assert.deepEqual(untouched.body.flagged, [], "the unchanged rule-based draft has nothing to flag");
+  assert.equal(untouched.body.markers_left, countMarkers(rules.body.draft.text));
+
+  const edited = [
+    rules.body.draft.text,
+    "We shipped it with UPS, tracking 1Z999AA10123456784, on 2 October.",
+    "The buyer signed for the parcel at the front door.",
+    "> UPS 1Z999 is what the buyer typed",
+    "We sent order ORDER-1001 for USD 49.99 and kept the receipt.",
+  ].join("\n\n");
+  const res = await check(edited);
+  assert.equal(res.status, 200);
+  const flagOf = (needle: string) => res.body.flagged.find((f: { excerpt: string }) => f.excerpt.includes(needle));
+  const shipped = flagOf("1Z999AA10123456784");
+  assert.ok(shipped, "the invented tracking number is flagged");
+  for (const caught of [/1Z999AA10123456784/, /carrier/, /date/]) assert.match(shipped.reasons.join(" "), caught);
+  assert.match(flagOf("signed for the parcel").reasons.join(" "), /signature, pickup or handoff/);
+  assert.equal(flagOf("is what the buyer typed"), undefined, "quoted buyer lines are not checked");
+  assert.equal(flagOf("ORDER-1001"), undefined, "values already on the rule-based draft count as on record");
+  assert.equal(res.body.flagged.length, 2);
+  assert.ok(res.body.flagged.every((f: { paragraph: number }) => Number.isInteger(f.paragraph) && f.paragraph > 0));
+
+  assert.equal((await check("x".repeat(MAX_CHECK_TEXT + 1))).status, 400, "oversized text is refused");
+  assert.equal((await check(42)).status, 400, "text must be a string");
+  assert.equal((await get(app, "/api/analysis/check", lookup("demo", "DEMO-9999", { text: "Our reply." }))).status, 404);
+  assert.equal(ai.calls.length, 0, "the check never calls Gemini");
+  assert.equal(paypal.calls.length, 0, "demo records never call PayPal");
+});
+
 test("the validation example rejects bad lookups like the other analysis routes", async () => {
   const app = makeApp(null);
   assert.equal((await get(app, "/api/analysis/ai/example", lookup("demo", "DEMO-9999"))).status, 404);
@@ -767,6 +811,7 @@ const PROTECTED: [string, string][] = [
   ["POST", "/api/analysis"],
   ["POST", "/api/analysis/ai"],
   ["POST", "/api/analysis/ai/example"],
+  ["POST", "/api/analysis/check"],
   ["GET", "/api/health"],
   ["GET", "/api/intelligence"],
   ["POST", "/api/intelligence/explain"],
@@ -825,6 +870,7 @@ test("each route allows exactly the intended roles", async () => {
     ["rules analysis of DEMO-1001", "/api/analysis", body("DEMO-1001"), [200, 200, 404, 403, 403]],
     ["AI draft of DEMO-1001 (admin is read-only)", "/api/analysis/ai", body("DEMO-1001"), [403, 200, 404, 403, 403]],
     ["validation example of DEMO-1003", "/api/analysis/ai/example", body("DEMO-1003"), [200, 404, 200, 403, 403]],
+    ["edit check of DEMO-1001 (admin is read-only)", "/api/analysis/check", lookup("demo", "DEMO-1001", { text: "Our reply." }), [403, 200, 404, 403, 403]],
     ["sandbox analysis", "/api/analysis", lookup("paypal_sandbox", "PP-D-1"), [200, 200, 403, 403, 403]],
     ["health", "/api/health", undefined, [200, 200, 200, 403, 403]],
     ["insights", "/api/intelligence", undefined, [200, 200, 200, 403, 403]],
@@ -842,6 +888,21 @@ test("each route allows exactly the intended roles", async () => {
     }
   }
   assert.ok(paypal.calls.every((c) => c.method === "GET" || c.url.endsWith("/v1/oauth2/token")));
+});
+
+test("the merchant list carries the rules' readiness counts for exactly the disputes it lists", async () => {
+  const app = makeApp(null);
+  for (const as of ["admin", "merchant-a", "merchant-b", "merchant-c"]) {
+    const res = await get(app, "/api/disputes", {}, as);
+    assert.equal(res.status, 200);
+    const listed: Dispute[] = res.body.disputes;
+    assert.deepEqual(Object.keys(res.body.readiness).sort(), listed.map((d) => d.dispute_id).sort(), `${as}: one entry per listed dispute, no others`);
+    for (const d of listed) assert.deepEqual(res.body.readiness[d.dispute_id], readiness(analyzeDispute(d)), `${as} ${d.dispute_id}`);
+    assert.ok(listed.every((d) => !("readiness" in d)), "the dispute records themselves are unchanged");
+    assert.doesNotMatch(JSON.stringify(res.body.readiness), /score|win|chance|likely|percent|%/i);
+  }
+  const buyer = await get(app, "/api/buyer/disputes", {}, "buyer-b");
+  assert.equal(buyer.body.readiness, undefined, "buyers get no evidence counts");
 });
 
 test("each account sees only its own disputes, and buyers see no merchant records", async () => {
@@ -870,9 +931,9 @@ test("no account can analyse another account's dispute, whatever the request cla
   const owners: Record<string, string[]> = { "DEMO-1001": ["merchant-a"], "DEMO-1002": ["merchant-a"], "DEMO-1003": ["merchant-b"] };
   for (const as of ["merchant-a", "merchant-b"]) {
     for (const [id, owner] of Object.entries(owners)) {
-      for (const path of ["/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example"]) {
+      for (const path of ["/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/analysis/check"]) {
         // Forged ownership fields are ignored; the session decides.
-        const res = await get(app, path, lookup("demo", id, { account_id: as === "merchant-a" ? "merchant-b" : "merchant-a", role: "admin", owner: as }), as);
+        const res = await get(app, path, lookup("demo", id, { account_id: as === "merchant-a" ? "merchant-b" : "merchant-a", role: "admin", owner: as, text: "Our reply." }), as);
         const allowed = owner.includes(as);
         assert.equal(res.status, allowed ? 200 : 404, `${as} ${path} ${id}`);
         if (!allowed) {

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis, readiness } from "./analysis.ts";
+import { countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis, fetchDraftCheck, readiness } from "./analysis.ts";
 import { humanize } from "../../shared/disputes.ts";
-import type { AiAssist, AiStatus, Analysis, Dispute, EvidenceStatus, RecordRef } from "../../shared/types.ts";
+import type { AiAssist, AiStatus, Analysis, Dispute, DraftCheck, EvidenceStatus, RecordRef } from "../../shared/types.ts";
 import { StatePanel } from "./ui.tsx";
 
 type Load = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; analysis: Analysis };
@@ -241,6 +241,7 @@ export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: 
         title="Response draft"
         note="Draft only. It requires merchant review, is never sent to PayPal, and edits are not saved when you leave this dispute."
         generated={analysis.draft.text}
+        checkFor={canDraft ? dispute : undefined}
       />
 
       {canDraft ? (
@@ -375,6 +376,7 @@ export function AiResult({
         title="AI-assisted response draft"
         note="AI-assisted draft. Check every statement against your records. It is never sent to PayPal, and edits are not saved."
         generated={assist.draft.text}
+        checkFor={assist}
         extraAction={(edited) => (
           <button
             type="button"
@@ -514,7 +516,11 @@ function factText(assist: AiAssist, id: string) {
   return fact ? `${id} ${fact.label} = ${fact.value}` : id;
 }
 
-// Editable draft with a live count of markers left, Copy and Reset. Edits are local and never saved or sent.
+type CheckState = { pending: boolean; result: DraftCheck | null; error: string | null };
+const NO_CHECK: CheckState = { pending: false, result: null, error: null };
+
+// Editable draft with a live count of markers left, Copy and Reset. Edits are never saved. With checkFor (merchants
+// only), "Check my edits" sends the text for the same checks as AI text; the result is advisory and changes nothing.
 export function DraftEditor({
   id,
   sectionId,
@@ -522,6 +528,7 @@ export function DraftEditor({
   note,
   generated,
   extraAction,
+  checkFor,
 }: {
   id: string;
   sectionId?: string;
@@ -530,13 +537,29 @@ export function DraftEditor({
   generated: string;
   // Gets whether the merchant has edited the draft, so an action can warn before discarding edits.
   extraAction?: (edited: boolean) => ReactNode;
+  checkFor?: Pick<Dispute, "source" | "dispute_id">;
 }) {
   const [draft, setDraft] = useState(generated);
   const [copyStatus, setCopyStatus] = useState("");
+  const [check, setCheck] = useState<CheckState>(NO_CHECK);
+  const edit = (text: string) => {
+    setDraft(text);
+    setCheck(NO_CHECK);
+  };
   useEffect(() => {
-    setDraft(generated);
+    edit(generated);
     setCopyStatus("");
   }, [generated]);
+
+  async function checkEdits() {
+    if (!checkFor || check.pending) return;
+    setCheck({ pending: true, result: null, error: null });
+    try {
+      setCheck({ pending: false, result: await fetchDraftCheck(checkFor, draft), error: null });
+    } catch (e) {
+      setCheck({ pending: false, result: null, error: e instanceof Error ? e.message : "The check could not run." });
+    }
+  }
   const remaining = countMarkers(draft);
 
   async function copyDraft() {
@@ -563,7 +586,7 @@ export function DraftEditor({
         </span>
       </div>
       <p className="muted">{note}</p>
-      <textarea id={id} className="draft" value={draft} onChange={(e) => setDraft(e.target.value)} rows={18} />
+      <textarea id={id} className="draft" value={draft} onChange={(e) => edit(e.target.value)} rows={18} />
       <div className="draft-actions">
         <button type="button" className="button" onClick={copyDraft}>
           Copy draft
@@ -573,17 +596,65 @@ export function DraftEditor({
           className="button button-secondary"
           disabled={draft === generated}
           onClick={() => {
-            setDraft(generated);
+            edit(generated);
             setCopyStatus("");
           }}
         >
           Reset to generated draft
         </button>
+        {checkFor ? (
+          <button type="button" className="button button-secondary" aria-disabled={check.pending} onClick={checkEdits}>
+            {check.pending ? "Checking…" : "Check my edits"}
+          </button>
+        ) : null}
         {extraAction?.(draft !== generated)}
         <span className="muted" role="status">
           {copyStatus}
         </span>
       </div>
+      {check.error ? (
+        <p className="error-text" role="alert">
+          {check.error}
+        </p>
+      ) : null}
+      {check.result ? <CheckResult result={check.result} /> : null}
     </section>
+  );
+}
+
+// Advisory: the merchant may hold records DisputeDesk does not have, so flags ask for a check and never change the text.
+export function CheckResult({ result }: { result: DraftCheck }) {
+  const markers = `${result.markers_left} marker${result.markers_left === 1 ? "" : "s"} left to resolve.`;
+  return (
+    <div className="draft-check" role="status">
+      {result.checked === 0 ? (
+        <p>No text of your own to check yet. Lines DisputeDesk wrote, quoted buyer lines and marker lines are skipped. {markers}</p>
+      ) : result.flagged.length === 0 ? (
+        <p>
+          Nothing in the {result.checked === 1 ? "paragraph" : `${result.checked} paragraphs`} you wrote goes beyond the records
+          DisputeDesk has. {markers}
+        </p>
+      ) : (
+        <>
+          <p>
+            {result.flagged.length === 1 ? "1 paragraph mentions" : `${result.flagged.length} paragraphs mention`} something that is not in
+            the records DisputeDesk has. Confirm it from your own records before sending. {markers}
+          </p>
+          <ul className="check-flags">
+            {result.flagged.map((f) => (
+              <li key={f.paragraph}>
+                <strong>Paragraph {f.paragraph}</strong>
+                <q>{f.excerpt}</q>
+                <span>{f.reasons.join("; ")}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <p className="muted">
+        This check compares your text with the records only. You may hold records DisputeDesk does not, so it never edits or blocks your
+        text.
+      </p>
+    </div>
   );
 }

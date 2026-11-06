@@ -1,3 +1,4 @@
+import type { Readiness } from "../../shared/readiness.ts";
 import type { BuyerDispute, BuyerExplanation, Dispute, Intelligence, IntelligenceExplanation, Source } from "../../shared/types.ts";
 
 // Fired when the server says the session is gone, so the app can return to sign-in from any screen.
@@ -15,22 +16,26 @@ export function serverError(response: Response, body: unknown): Error & { code?:
 }
 
 // Checks every record's label rather than overwrite it, so a mislabeled record is caught instead of hidden.
-async function fetchList(path: string, source: Source, signal?: AbortSignal): Promise<Dispute[]> {
+async function fetchListing(path: string, source: Source, signal?: AbortSignal): Promise<{ disputes: Dispute[]; readiness?: Record<string, Readiness> }> {
   const response = await fetch(path, { signal });
-  const body = (await response.json().catch(() => null)) as { source?: unknown; disputes?: unknown } | null;
+  const body = (await response.json().catch(() => null)) as { source?: unknown; disputes?: unknown; readiness?: unknown } | null;
 
   if (!response.ok) throw serverError(response, body);
   if (body?.source !== source || !Array.isArray(body.disputes) || !body.disputes.every((d: Partial<Dispute> | null) => d?.source === source)) {
     throw new Error("The DisputeDesk server sent an unexpected response.");
   }
-  return body.disputes as Dispute[];
+  const readiness = body.readiness && typeof body.readiness === "object" ? (body.readiness as Record<string, Readiness>) : undefined;
+  return { disputes: body.disputes as Dispute[], readiness };
 }
+const fetchList = async (path: string, source: Source, signal?: AbortSignal) => (await fetchListing(path, source, signal)).disputes;
 
 // The server owns PayPal credentials; the browser only sees normalized disputes or an error message.
 export const fetchSandboxDisputes = (signal?: AbortSignal) => fetchList("/api/sandbox/disputes", "paypal_sandbox", signal);
 
 // Demo disputes come from the server, filtered to the signed-in account; none are bundled into the page.
-export const fetchDemoDisputes = (signal?: AbortSignal) => fetchList("/api/disputes", "demo", signal);
+// With each dispute's evidence readiness counts, for the list.
+export const fetchDemoListing = (signal?: AbortSignal) => fetchListing("/api/disputes", "demo", signal);
+export const fetchDemoDisputes = async (signal?: AbortSignal) => (await fetchDemoListing(signal)).disputes;
 
 // Buyers get a reduced record (no order, evidence or message fields) with rule-based guidance.
 export async function fetchBuyerDisputes(signal?: AbortSignal): Promise<BuyerDispute[]> {

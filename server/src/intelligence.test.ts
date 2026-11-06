@@ -129,6 +129,7 @@ test("with too little data, no pattern is called recurring and the limits are st
   assert.deepEqual(a.recommendations.map((r) => [r.id, r.confidence]), [["unresolved_review", "limited"]], "only the dispute waiting for the seller");
   assert.ok(a.notes.some((n) => /fewer than 10 disputes/.test(n)));
   assert.ok(a.notes.some((n) => /at least 3 disputes/.test(n)));
+  assert.ok(a.notes.some((n) => /do not show why any dispute was opened/.test(n)), "patterns are not presented as reasons");
   assert.equal(a.trend.shown, false);
 
   const b = buildIntelligence(merchantB, NOW, "account");

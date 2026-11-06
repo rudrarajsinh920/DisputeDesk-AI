@@ -75,6 +75,24 @@ test("missing evidence is never presented as proof that something did not happen
   assert.ok(!/was not delivered|never shipped|did not ship|not received by/i.test(a.draft.text.replace(/does not show it was not delivered/, "")));
 });
 
+test("credit and duplicate disputes ask for the refund ID without claiming a refund or marking other evidence key", () => {
+  for (const reason of ["CREDIT_NOT_PROCESSED", "DUPLICATE_TRANSACTION"]) {
+    const a = analyzeDispute(withChanges({ reason }));
+    assert.ok(a.next_steps.some((s) => /proof of refund \(the refund ID\)/.test(s) && /no refund field/.test(s)), reason);
+    const inputs = a.draft.lines.filter((l) => l.kind === "input").map((l) => l.text);
+    assert.equal(inputs.length, 1, reason);
+    assert.match(inputs[0], /^\[NEEDS MERCHANT INPUT: state whether .*refund ID/, reason);
+    assert.ok(!inputs.some((t) => /state your position/.test(t)), "the generic marker is replaced");
+    assert.ok(a.evidence.every((e) => e.priority !== "key"), "no existing evidence type is presented as the refund record");
+    const stated = a.draft.lines.filter((l) => l.kind !== "input").map((l) => l.text).join("\n");
+    assert.doesNotMatch(stated, /\b(was|were|has been|have been) refunded\b|refund (was|has been) (issued|processed)/i);
+    assert.ok(!a.draft.lines.some((l) => l.kind === "fact" && /refund/i.test(l.text)), "no refund fact is stated");
+  }
+  for (const reason of ["MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED", "UNAUTHORISED"]) {
+    assert.ok(!analyzeDispute(withChanges({ reason })).next_steps.some((s) => /refund/i.test(s)), `${reason} is unchanged`);
+  }
+});
+
 test("unsupported claims are marked, not made", () => {
   const a = analyzeDispute(demo);
   const unsupported = a.draft.lines.filter((l) => l.kind === "unsupported").map((l) => l.text);

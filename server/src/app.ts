@@ -5,8 +5,9 @@ import type { DatabaseSync } from "node:sqlite";
 import demoAccounts from "../../demo-accounts.json" with { type: "json" };
 import extraDemos from "../../demo-disputes.json" with { type: "json" };
 import sample from "../../sample-dispute.json" with { type: "json" };
+import { readiness } from "../../shared/readiness.ts";
 import type { Dispute, Role } from "../../shared/types.ts";
-import { VALIDATION_EXAMPLE_MODEL, buildAiRequest, composeAiAssist, validationExampleAnswer } from "./assist.ts";
+import { MAX_CHECK_TEXT, VALIDATION_EXAMPLE_MODEL, buildAiRequest, checkMerchantDraft, composeAiAssist, validationExampleAnswer } from "./assist.ts";
 import {
   AI_WORDING_OFF,
   AI_WORDING_UNAVAILABLE,
@@ -266,7 +267,9 @@ export function createApp(
   // Merchants get the demo disputes on their account; admin gets all of them.
   app.get("/api/disputes", requireRole("merchant", "admin"), (_req, res) => {
     const account = signedIn(res);
-    res.json({ source: "demo", disputes: loadDisputes(db).filter((d) => canAccess(account, d)) });
+    const disputes = loadDisputes(db).filter((d) => canAccess(account, d));
+    // Counts from the rules for each listed dispute, keyed by ID. Not a score. Sandbox lists have no evidence detail, so none.
+    res.json({ source: "demo", disputes, readiness: Object.fromEntries(disputes.map((d) => [d.dispute_id, readiness(analyzeDispute(d))])) });
   });
 
   app.get("/api/buyer/disputes", requireRole("buyer"), (_req, res) => {
@@ -433,6 +436,19 @@ export function createApp(
     const { facts } = buildAiRequest(dispute, analysis);
     audit(db, now(), "ai_example_viewed", { account_id: signedIn(res).id, dispute_id: dispute.dispute_id, detail: dispute.source });
     res.json(composeAiAssist(dispute, analysis, facts, validationExampleAnswer(analysis, facts), VALIDATION_EXAMPLE_MODEL));
+  });
+
+  // The merchant's own edits, run through the same checks as AI text. Advisory: nothing is removed, stored or audited,
+  // and Gemini is never called. Merchants only, like the drafts themselves.
+  app.post("/api/analysis/check", requireRole("merchant"), express.json({ limit: "16kb" }), async (req, res) => {
+    const text = (req.body as { text?: unknown } | undefined)?.text;
+    if (typeof text !== "string" || text.length > MAX_CHECK_TEXT) {
+      sendError(res, 400, "invalid_request", `text must be a string of at most ${MAX_CHECK_TEXT} characters.`);
+      return;
+    }
+    const dispute = await findDispute(req, res);
+    if (!dispute) return;
+    res.json(checkMerchantDraft(dispute, analyzeDispute(dispute), text));
   });
 
   app.use("/api", (_req, res) => {

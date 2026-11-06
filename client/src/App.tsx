@@ -22,14 +22,15 @@ import {
   labelFor,
   summarize,
 } from "../../shared/disputes.ts";
-import { SIGNED_OUT_EVENT, fetchBuyerDisputes, fetchDemoDisputes, fetchSandboxDisputes } from "./sandbox.ts";
+import { SIGNED_OUT_EVENT, fetchBuyerDisputes, fetchDemoDisputes, fetchDemoListing, fetchSandboxDisputes } from "./sandbox.ts";
+import type { Readiness } from "../../shared/readiness.ts";
 import type { AccountInfo, Dispute, Role, Source } from "../../shared/types.ts";
 import { ONE_COLUMN, StatePanel } from "./ui.tsx";
 
 export type SandboxLoad =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; disputes: Dispute[] };
+  | { status: "ready"; disputes: Dispute[]; readiness?: Record<string, Readiness> };
 
 const SOURCES: { id: Source; label: string }[] = [
   { id: "demo", label: "Demo data" },
@@ -267,8 +268,8 @@ export function Dashboard({ account, onSignOut, initialView }: { account: Accoun
   useEffect(() => {
     const controller = new AbortController();
     setLoad({ status: "loading" });
-    (source === "demo" ? fetchDemoDisputes : fetchSandboxDisputes)(controller.signal)
-      .then((disputes) => setLoad({ status: "ready", disputes }))
+    (source === "demo" ? fetchDemoListing(controller.signal) : fetchSandboxDisputes(controller.signal).then((disputes) => ({ disputes })))
+      .then((listing) => setLoad({ status: "ready", ...listing }))
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
@@ -425,6 +426,7 @@ export function Dashboard({ account, onSignOut, initialView }: { account: Accoun
             onSelect={setSelectedId}
             canDraft={account.role === "merchant"}
             owners={owners}
+            readiness={load.status === "ready" ? load.readiness : undefined}
           />
         )}
       </main>
@@ -467,6 +469,7 @@ export function DisputesView({
   onSelect: (id: string) => void;
   canDraft?: boolean;
   owners?: Map<string, string>;
+  readiness?: Record<string, Readiness>;
 }) {
   const t = LIST_TEXT[source];
   return disputes === null ? (
@@ -501,6 +504,7 @@ export function Workspace({
   onSelect,
   canDraft = true,
   owners,
+  readiness,
 }: {
   disputes: Dispute[];
   filter: string;
@@ -510,6 +514,8 @@ export function Workspace({
   canDraft?: boolean;
   // Admin, demo data only: dispute ID to the merchant account it belongs to.
   owners?: Map<string, string>;
+  // Demo data only: the rules' evidence counts per dispute ID.
+  readiness?: Record<string, Readiness>;
 }) {
   const [query, setQuery] = useState("");
   const [owner, setOwner] = useState("ALL");
@@ -575,7 +581,7 @@ export function Workspace({
             ))}
           </div>
           {visible.length > 0 ? (
-            <DisputeList disputes={visible} selectedId={selected?.dispute_id} onSelect={select} owners={owners} />
+            <DisputeList disputes={visible} selectedId={selected?.dispute_id} onSelect={select} owners={owners} readiness={readiness} />
           ) : q ? (
             <div className="empty-inline">
               <p>No disputes match “{query.trim()}”.</p>

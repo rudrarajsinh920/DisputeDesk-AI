@@ -10,7 +10,7 @@ import { buildAiRequest, composeAiAssist } from "../../server/src/assist.ts";
 import { analyzeDispute } from "../../server/src/evidence.ts";
 import { VALIDATION_EXAMPLE_MODEL, validationExampleAnswer } from "../../server/src/assist.ts";
 import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
-import { AiResult, AiSectionView, AnalysisView, ClaimAndRecords, DISCARD_EDITS, DraftEditor, ReadinessSummary, ValidationExampleView } from "./AnalysisPanel.tsx";
+import { AiResult, AiSectionView, AnalysisView, CheckResult, ClaimAndRecords, DISCARD_EDITS, DraftEditor, ReadinessSummary, ValidationExampleView } from "./AnalysisPanel.tsx";
 import { readiness } from "./analysis.ts";
 import type { AiState, ExampleState } from "./AnalysisPanel.tsx";
 import { AccountView } from "./Account.tsx";
@@ -22,6 +22,7 @@ import type { ExplainState } from "./Buyer.tsx";
 import { AI_WORDING_OFF, FAILED_CHECKS, buyerGuidance, rulesExplanation, toBuyerRecord } from "../../server/src/buyer.ts";
 import type { SandboxLoad } from "./App.tsx";
 import { DisputeDetail } from "./DisputeDetail.tsx";
+import { DisputeList, readinessLine } from "./DisputeList.tsx";
 import { Landing } from "./Landing.tsx";
 import { Login, emailError, passwordError } from "./Login.tsx";
 import { SIGNED_OUT_EVENT, serverError } from "./sandbox.ts";
@@ -639,9 +640,49 @@ test("no control in the workspace can submit, send or publish to PayPal", () => 
     html(createElement(AnalysisView, { dispute: demo, analysis: analyzeDispute(demo) })) +
     aiView({ ...idle, run: 1, assist: assistFor(demo, demoAnswer) });
   const buttons = new Set([...markup.matchAll(/<button[^>]*>([^]*?)<\/button>/g)].map((m) => text(m[1]).trim()));
-  assert.deepEqual([...buttons].sort(), ["Copy draft", "Generate AI draft", "Generate again", "Reset to generated draft", "Show a validation example"]);
+  assert.deepEqual([...buttons].sort(), ["Check my edits", "Copy draft", "Generate AI draft", "Generate again", "Reset to generated draft", "Show a validation example"]);
   assert.doesNotMatch(markup, /<form|action="/);
   assert.match(text(markup), /DisputeDesk never submits responses to PayPal automatically\./);
+});
+
+test("the dispute list shows each demo dispute's readiness counts in words, never a score", () => {
+  const counts = Object.fromEntries(demoDisputes.map((d) => [d.dispute_id, readiness(analyzeDispute(d))]));
+  const row = (list: Dispute[], r?: typeof counts) => text(html(createElement(DisputeList, { disputes: list, selectedId: undefined, onSelect: () => {}, readiness: r })));
+  const all = row(demoDisputes, counts);
+  for (const d of demoDisputes) assert.ok(all.includes(readinessLine(counts[d.dispute_id])), d.dispute_id);
+  assert.equal(readinessLine({ ...counts[demo.dispute_id], key_total: 2, key_on_record: 1, conflicts: 1 }), "Key evidence 1 of 2 · 1 conflict");
+  assert.equal(readinessLine({ key_total: 0, key_on_record: 0, on_record: 3, total: 4, missing: 1, unverified: 0, conflicts: 0, markers: 1 }), "Evidence 3 of 4");
+  assert.doesNotMatch(all, /score|ready to|strong|weak|win|chance|likely|%/i);
+  assert.doesNotMatch(row(sandbox), /Key evidence|Evidence d/, "sandbox rows carry no counts");
+});
+
+test("the edit check is offered to merchants only and its result is advisory", () => {
+  const analysis = analyzeDispute(demo);
+  assert.match(html(createElement(AnalysisView, { dispute: demo, analysis })), />Check my edits</);
+  assert.doesNotMatch(html(createElement(AnalysisView, { dispute: demo, analysis, canDraft: false })), /Check my edits/, "admin is read-only");
+
+  const flagged = text(
+    html(
+      createElement(CheckResult, {
+        result: {
+          source: "demo",
+          dispute_id: demo.dispute_id,
+          checked: 2,
+          markers_left: 1,
+          flagged: [{ paragraph: 3, excerpt: "We shipped it with UPS.", reasons: ["names a carrier; no carrier is in the supplied records"] }],
+        },
+      }),
+    ),
+  );
+  assert.match(flagged, /1 paragraph mentions something that is not in the records DisputeDesk has. Confirm it from your own records before sending. 1 marker left/);
+  assert.match(flagged, /Paragraph 3.*We shipped it with UPS..*names a carrier/);
+  assert.match(flagged, /never edits or blocks your text/);
+  assert.doesNotMatch(flagged, /(removed|deleted|rejected|false|lie|wrong)/i, "flags ask for a check, they do not accuse");
+
+  const clean = text(html(createElement(CheckResult, { result: { source: "demo", dispute_id: "D", checked: 1, markers_left: 0, flagged: [] } })));
+  assert.match(clean, /Nothing in the paragraph you wrote goes beyond the records DisputeDesk has. 0 markers left/);
+  const empty = text(html(createElement(CheckResult, { result: { source: "demo", dispute_id: "D", checked: 0, markers_left: 4, flagged: [] } })));
+  assert.match(empty, /No text of your own to check yet/);
 });
 
 test("the client calls only DisputeDesk's own read and analysis endpoints", () => {
@@ -651,8 +692,8 @@ test("the client calls only DisputeDesk's own read and analysis endpoints", () =
     .map((f) => readFileSync(new URL(f, dir), "utf8"))
     .join("\n");
   const urls = [...new Set([...sources.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(urls, ["/api/admin/accounts", "/api/admin/audit", "/api/admin/settings", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
-  assert.equal((sources.match(/fetch\(/g) ?? []).length, 14, "each fetch call uses one of the endpoints above");
+  assert.deepEqual(urls, ["/api/admin/accounts", "/api/admin/audit", "/api/admin/settings", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/analysis/check", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
+  assert.equal((sources.match(/fetch\(/g) ?? []).length, 15, "each fetch call uses one of the endpoints above");
   assert.doesNotMatch(sources, /paypal\.com|generativelanguage|method:\s*"(PUT|PATCH|DELETE)"/i);
 });
 

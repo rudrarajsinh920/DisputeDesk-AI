@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis } from "./analysis.ts";
+import { countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis, fetchDraftCheck } from "./analysis.ts";
 import type { Dispute } from "../../shared/types.ts";
 
 const realFetch = globalThis.fetch;
@@ -27,6 +27,19 @@ test("sends only the source and dispute ID, never the record", async () => {
   }) as typeof fetch;
   await fetchAnalysis({ ...dispute, customer_message: "m", order: { tracking_number: "T" }, evidence: { proof_of_delivery: true } });
   assert.deepEqual(sent, { source: "demo", dispute_id: "DEMO-1" });
+});
+
+test("the edit check sends only the record's name and the text, and rejects a result for another dispute", async () => {
+  let sent: unknown;
+  globalThis.fetch = (async (url: string, init?: RequestInit) => {
+    assert.equal(url, "/api/analysis/check");
+    sent = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ source: "demo", dispute_id: "DEMO-1", checked: 1, flagged: [], markers_left: 0 }), { status: 200 });
+  }) as typeof fetch;
+  await fetchDraftCheck({ ...dispute, customer_message: "m" }, "Our reply.");
+  assert.deepEqual(sent, { source: "demo", dispute_id: "DEMO-1", text: "Our reply." });
+  respond(200, { source: "demo", dispute_id: "OTHER", checked: 1, flagged: [], markers_left: 0 });
+  await assert.rejects(fetchDraftCheck(dispute, "x"), /unexpected check result/);
 });
 
 test("rejects an analysis for a different dispute or source", async () => {

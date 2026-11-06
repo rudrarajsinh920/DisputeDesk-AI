@@ -296,6 +296,7 @@ export function buildIntelligence(disputes: Dispute[], now: number, scope: Intel
     trend.undated > 0 ? `${plural(trend.undated, "dispute has", "disputes have")} no opened date, so ${trend.undated === 1 ? "it is" : "they are"} left out of the monthly view and the age check.` : "",
     "No outcome or resolved date is on record, so outcome rates and time to resolution are not shown.",
     "Evidence comes from the flags on each record. DisputeDesk does not inspect documents, and a gap in the records does not show what happened.",
+    "These counts show which gaps appear in the same disputes. They do not show why any dispute was opened.",
   ].filter(Boolean);
 
   return {

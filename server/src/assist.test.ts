@@ -61,6 +61,12 @@ test("a clean answer becomes an AI-assisted draft that keeps the server's labels
   assert.ok(result.draft.text.includes("[UNSUPPORTED: do not state that the order was delivered."));
 });
 
+test("the AI draft keeps the refund ID marker for credit disputes, even when Gemini writes nothing", () => {
+  const credit = checked({ ...sample, source: "demo", reason: "CREDIT_NOT_PROCESSED" });
+  const result = assist(credit, { explanations: [], draft_sections: [] });
+  assert.ok(result.draft.lines.some((l) => l.kind === "input" && /refund ID/.test(l.text)));
+});
+
 test("an invented tracking number is removed and flagged, never placed in the draft", () => {
   const result = assist(demo, answer([section("The parcel left with tracking number 1Z999AA10123456784.", ["R4"])]));
   assert.equal(result.status, "flagged");
