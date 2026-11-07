@@ -6,7 +6,8 @@ import { test } from "node:test";
 import { createElement } from "react";
 import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { buildAiRequest, composeAiAssist } from "../../server/src/assist.ts";
+import { buildAiRequest, checkMerchantDraft, composeAiAssist } from "../../server/src/assist.ts";
+import { assistWithRefs, withProvenance } from "../../server/src/provenance.ts";
 import { analyzeDispute } from "../../server/src/evidence.ts";
 import { VALIDATION_EXAMPLE_MODEL, validationExampleAnswer } from "../../server/src/assist.ts";
 import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
@@ -327,6 +328,11 @@ test("buyers see their own disputes with guidance labelled by source, and nothin
   for (const merchantOnly of ["DEMO-1001", "ORDER-1002", "DEMO-TRK-1002", "Bluetooth speaker", "nothing arrived at my door", "Evidence analysis", "Response draft", "Generate AI draft"]) {
     assert.ok(!out.includes(merchantOnly), merchantOnly);
   }
+  // Provenance (Phase 7.4) is merchant-only.
+  for (const provenance of ["Verified against record", "Conflicting", "No time on record", "Sources for the generated draft", "DisputeDesk's records", "demo:"]) {
+    assert.ok(!out.includes(provenance), provenance);
+  }
+  assert.ok(!/ref-list|draft-sources|tag-v-|tag-claim-/.test(markup), "no provenance markup");
   assert.ok([...markup.matchAll(/<button[^>]*>/g)].every((b) => /type="button"/.test(b[0])), "no button submits a form");
   const levels = headingLevels(markup);
   assert.equal(levels[0], 2);
@@ -939,4 +945,61 @@ test("admin audit logs name accounts and flag refused access; admin settings are
   assert.match(text(page), /Refused by the database/);
   assert.doesNotMatch(page, /<(input|select|textarea|form)/, "nothing on the settings page can be edited");
   assert.ok([...page.matchAll(/<button[^>]*>/g)].length === 0);
+});
+
+// ---- Phase 7.4: provenance in the merchant workspace. Built from the server's own functions, no network. ----
+
+test("evidence shows its verification state and every source: type, record, value, and no invented time", () => {
+  const out = text(html(createElement(AnalysisView, { dispute: demo, analysis: withProvenance(demo, analyzeDispute(demo)) })));
+  assert.match(out, /Order confirmation Verified against record Available/);
+  assert.match(out, /Proof of delivery Key for this reason Missing Proof of delivery is not marked/);
+  assert.match(out, /evidence\.order_confirmation = true Merchant-provided · Demo record ORDER-1001 · No time on record · Verified against record/);
+  assert.match(out, /order\.tracking_number = not on record Delivery record · Demo record ORDER-1001 · No time on record · Missing/);
+  assert.match(out, /DisputeDesk does not inspect the documents themselves/);
+  assert.match(out, /"Verified against record" means the supplied record backs it and nothing in the records contradicts it/);
+  // Reserved types are never shown as if DisputeDesk had them.
+  assert.doesNotMatch(out, /Refund record|Document ·/);
+});
+
+test("contradicted evidence reads Conflicting, and sandbox values say how they were derived", () => {
+  const out = text(html(createElement(AnalysisView, { dispute: sandbox[0], analysis: withProvenance(sandbox[0], analyzeDispute(sandbox[0])) })));
+  assert.match(out, /Proof of delivery Key for this reason Conflicting/);
+  assert.match(out, /Transaction record · PayPal sandbox record ORD-77/);
+  assert.match(out, /Set because the PayPal record has a seller transaction ID\. That is a transaction record, not an order confirmation document\./);
+});
+
+test("the generated draft lists its sources, and an older analysis without provenance still renders as before", () => {
+  const withRefs = text(html(createElement(AnalysisView, { dispute: demo, analysis: withProvenance(demo, analyzeDispute(demo)) })));
+  assert.match(withRefs, /Sources for the generated draft The records each generated line rests on\. Your own edits are covered by Check my edits\./);
+  assert.match(withRefs, /evidence\.order_confirmation/);
+  const plain = text(html(createElement(AnalysisView, { dispute: demo, analysis: analyzeDispute(demo) })));
+  assert.doesNotMatch(plain, /Sources for the generated draft|Verified against record/);
+  assert.match(plain, /Based on: evidence\.order_confirmation = true/);
+});
+
+test("the edit check shows each paragraph's support in advisory words, with the records behind it", () => {
+  const analysis = analyzeDispute(demo);
+  const result = checkMerchantDraft(demo, analysis, "We shipped the order.\n\nWe refunded the payment.\n\nThe buyer received the item.\n\nThank you.");
+  const out = text(html(createElement(CheckResult, { result })));
+  assert.match(out, /1 paragraph mentions something that is not in the records DisputeDesk has/);
+  assert.match(out, /Your paragraph 1 Backed by DisputeDesk's records "?We shipped the order\."? Records: order\.shipping_status/);
+  assert.match(out, /Your paragraph 2 Not in DisputeDesk's records .*No supporting record in DisputeDesk: DisputeDesk holds no refund records\./);
+  assert.match(out, /Your paragraph 3 Check against your records .*Claims delivery, but proof of delivery is not available\./);
+  assert.match(out, /Your paragraph 4 No factual claim found/);
+  assert.doesNotMatch(out, /(removed|deleted|rejected|false|lie|wrong|verified)/i, "claims ask for a check; they never accuse or certify");
+
+  // No flags but an unsupported claim: the summary does not say everything is on record.
+  const unsupported = text(html(createElement(CheckResult, { result: checkMerchantDraft(demo, analysis, "We refunded the payment.") })));
+  assert.match(unsupported, /1 paragraph makes a claim DisputeDesk has no record for\. Confirm it from your own records before sending\./);
+  assert.doesNotMatch(unsupported, /goes beyond/);
+});
+
+test("AI cites name the record field they point to, and the AI draft lists its sources", () => {
+  const analysis = analyzeDispute(demo);
+  const { facts } = buildAiRequest(demo, analysis);
+  const assist = assistWithRefs(demo, composeAiAssist(demo, analysis, facts, validationExampleAnswer(analysis, facts), VALIDATION_EXAMPLE_MODEL));
+  const out = text(html(createElement(AiResult, { assist, id: "ai-draft-DEMO-1001", onRegenerate: noop })));
+  assert.match(out, /Cites: R5 Order confirmation = marked available \(evidence\.order_confirmation\)/);
+  assert.match(out, /Sources for the generated draft/);
+  assert.doesNotMatch(out, /demo:DEMO-1001:/, "raw ref IDs are shown as field names");
 });

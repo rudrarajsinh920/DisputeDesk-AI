@@ -1,10 +1,11 @@
 import { REASON_LABELS, labelFor } from "../../shared/disputes.ts";
 import { countMarkers } from "../../shared/readiness.ts";
 export { MAX_CHECK_TEXT } from "../../shared/readiness.ts";
-import type { AiAssist, AiExplanation, AiFact, AiFlag, Analysis, Dispute, DraftCheck, DraftLine, EvidenceKey } from "../../shared/types.ts";
+import type { AiAssist, AiExplanation, AiFact, AiFlag, Analysis, Dispute, DraftCheck, DraftLine, EvidenceKey, ParagraphClaim, Provenance } from "../../shared/types.ts";
 import { DEMO_LABEL, DRAFT_FOOTER, DRAFT_HEADER } from "./evidence.ts";
 import { AiError } from "./gemini.ts";
 import type { JsonRequest } from "./gemini.ts";
+import { buildProvenance } from "./provenance.ts";
 
 // AI assist runs after the rules: the model only words what the rules found, citing supplied facts by id.
 // Its output is checked here and anything that can't be traced to a supplied fact is flagged and removed.
@@ -174,6 +175,25 @@ export const CARRIER =
 // Model text that talks about its instructions or echoes a withheld placeholder is not merchant wording.
 export const INSTRUCTION_ECHO =
   /\b(ignore|disregard|forget)\b.{0,40}\b(instructions?|rules?|prompts?)\b|\b(system|developer)\s+(prompt|message|instructions?)\b|\bapi[\s_-]*key\b|\b(my|these|the\s+above)\s+instructions\b|\bas\s+an\s+ai\b|<\s*\/?\s*data\b|\bwithheld\b/i;
+// Active-voice and possession claims (Phase 7.3). "Sent", "mailed" and "posted" count as shipping only with goods as the
+// object ("we sent the keyboard"), so "we sent the buyer an email" is not read as a shipping claim.
+export const SHIPPED_ACTIVE = /\b(we|i)\s+(have\s+|had\s+|already\s+|then\s+)?(shipped|dispatched)\b|\b(order|item|package|parcel|shipment)\s+(has\s+|had\s+|already\s+)?shipped\b/i;
+const GOODS = ["order", "orders", "item", "items", "package", "packages", "parcel", "parcels", "product", "products", "goods", "shipment", "replacement", "purchase"];
+const DETERMINER = "(the|their|your|his|her|this|that)\\s+(\\w+\\s+)?";
+const goodsAlternation = (itemWords: string[]) => [...GOODS, ...itemWords.map(escapeRegExp)].join("|");
+const sentGoods = (goods: string) => new RegExp(`\\b(we|i)\\s+(have\\s+|had\\s+|already\\s+)?(sent|mailed|posted)\\s+(out\\s+)?${DETERMINER}(${goods})\\b`, "i");
+// "The buyer has it now", "they had the keyboard": having the goods is a delivery claim.
+const possession = (goods: string) =>
+  new RegExp(`\\b(buyer|customer|recipient|they|he|she)\\s+(now\\s+|already\\s+|still\\s+)?(has|have|had)\\s+(it|them|${DETERMINER}(${goods}))\\b|\\bin\\s+(their|his|her)\\s+possession\\b`, "i");
+export const REFUND_CLAIM =
+  /\b(we|i)\s+(have\s+|had\s+|already\s+|fully\s+)?(refunded|reimbursed)\b|\b(issued|processed|sent|gave|made)\s+(the\s+buyer\s+|them\s+)?(a|the)\s+(full\s+|partial\s+)?refund\b|\brefund\s+(was|has\s+been|is|had\s+been)\s+(issued|processed|sent|completed|made|given)\b|\b(was|were|has\s+been|have\s+been)\s+(fully\s+)?refunded\b/i;
+export const CONTACT_CLAIM =
+  /\b(we|i)\s+(have\s+|had\s+|already\s+)?(told|informed|notified|emailed|messaged|contacted|called|updated|warned|let|replied\s+to|wrote\s+to|spoke\s+(to|with)|explained\s+to)\s+(the\s+)?(buyer|customer|them|him|her)\b/i;
+export const TRACKING_STATEMENT =
+  /\btracking\s+(number|info(rmation)?|details?)\s+(is|was|are|were)\b|\b(we|i)\s+(have\s+|had\s+)?(provided|shared|sent|uploaded|added|gave)\s+(the\s+buyer\s+)?(the\s+|a\s+)?tracking\b|\b(was|is|were)\s+tracked\b/i;
+export const ORDER_CLAIM =
+  /\b(buyer|customer|they|he|she)\s+(placed|made)\s+(an?|the|this)\s+order\b|\b(buyer|customer)\s+(ordered|purchased|bought|paid)\b|\border\s+(was|is|has\s+been)\s+(confirmed|placed|paid)\b|\b(we|i)\s+confirmed\s+(the|their|this)\s+order\b/i;
+
 // Capitalized words DisputeDesk itself may use; every other name must come from the supplied text.
 const KNOWN_NAMES = ["paypal", "disputedesk", "i"];
 export const words = (text: string) => text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
@@ -205,7 +225,19 @@ interface CheckContext {
   reasonPhrases: string[];
   // The item exactly as recorded, so quoting it is never read as a carrier claim.
   item: string | null;
+  // Words that name the goods ("order", "parcel", the recorded item's words), as a regex alternation.
+  goods: string;
 }
+
+// The text with the rules' caution and the server's reason label taken out: neither is a claim by the writer.
+function claimText(text: string, ctx: CheckContext): string {
+  let claims = text.replace(CAUTION, " ");
+  for (const v of ctx.reasonPhrases) claims = claims.replace(new RegExp(escapeRegExp(v), "gi"), " ");
+  return claims;
+}
+const claimsDelivery = (claims: string, ctx: CheckContext) =>
+  DELIVERY_CLAIM.test(claims) || RECEIPT_CLAIM.test(claims) || IMPLIED_PROOF.test(claims) || possession(ctx.goods).test(claims);
+const claimsShipping = (claims: string, ctx: CheckContext) => SHIPPING_CLAIM.test(claims) || SHIPPED_ACTIVE.test(claims) || sentGoods(ctx.goods).test(claims);
 
 // Every reason a piece of model text can't be used. Empty means it passed.
 function problems(text: string, cites: string[], ctx: CheckContext): string[] {
@@ -235,14 +267,12 @@ function problems(text: string, cites: string[], ctx: CheckContext): string[] {
 
   // Naming the server's reason label ("Item not received") and the rules' caution are not claims by the model.
   // A reason code the server doesn't know is record text, so it is checked like any other text.
-  let claims = text.replace(CAUTION, " ");
-  for (const v of ctx.reasonPhrases) claims = claims.replace(new RegExp(escapeRegExp(v), "gi"), " ");
-  const deliveryClaim = DELIVERY_CLAIM.test(claims) || RECEIPT_CLAIM.test(claims) || IMPLIED_PROOF.test(claims);
+  const claims = claimText(text, ctx);
   if (NOT_DELIVERED.test(claims)) found.push("says the order was not delivered; missing evidence does not show that");
-  else if (deliveryClaim && ctx.status.proof_of_delivery !== "available") found.push("claims delivery, but proof of delivery is not available");
+  else if (claimsDelivery(claims, ctx) && ctx.status.proof_of_delivery !== "available") found.push("claims delivery, but proof of delivery is not available");
 
   if (NOT_SHIPPED.test(claims)) found.push("says the order was not shipped; missing evidence does not show that");
-  else if (SHIPPING_CLAIM.test(claims) && !ctx.shippedOnRecord) found.push("claims the order was shipped, which the records do not show");
+  else if (claimsShipping(claims, ctx) && !ctx.shippedOnRecord) found.push("claims the order was shipped, which the records do not show");
 
   if (TRACKING_CLAIM.test(text) && ctx.status.shipping_tracking !== "available") found.push("relies on tracking, but tracking is not available");
   if (META.test(text)) found.push("talks about submission or the demo label, which only DisputeDesk writes");
@@ -271,6 +301,7 @@ function checkContext(dispute: Dispute, analysis: Analysis, facts: AiFact[]): Ch
     vocabulary: new Set([...KNOWN_NAMES, ...words(JSON.stringify(promptData(dispute, analysis, facts)))]),
     reasonPhrases: reasonLabel ? [`${reasonLabel} (${dispute.reason})`, reasonLabel] : [],
     item: itemFact?.value ?? null,
+    goods: goodsAlternation(itemFact ? words(itemFact.value).filter((w) => w.length > 2) : []),
   };
 }
 
@@ -289,6 +320,74 @@ function forMerchant(reason: string): string {
   return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
 }
 
+// ---- Claim mapping (Phase 7.3) ----
+// Each kind of claim needs its own record. A record value merely repeated in the text never backs a different claim:
+// "we delivered order ORDER-1001" is a delivery claim, and only proof of delivery can back it.
+
+const IDENTIFIERS: { field: string; label: string }[] = [
+  { field: "dispute_id", label: "the dispute ID" },
+  { field: "order.order_id", label: "the order ID" },
+  { field: "order.tracking_number", label: "the tracking number" },
+  { field: "amount", label: "the disputed amount" },
+];
+const NO_RECORD = "No supporting record in DisputeDesk";
+
+type Part = { refs: string[] } | { unsupported: string } | { conflict: string };
+
+function mapClaims(dispute: Dispute, analysis: Analysis, provenance: Provenance, own: string, ctx: CheckContext): Omit<ParagraphClaim, "paragraph" | "excerpt"> {
+  const byRef = new Map(provenance.refs.map((r) => [r.ref, r]));
+  const byField = new Map(provenance.refs.map((r) => [r.field, r]));
+  const conflictWith = (field: string) => analysis.contradictions.find((c) => c.records.some((r) => r.path === field))?.message ?? "";
+  // Only verified records back a claim; empty fields a finding cites are left out.
+  const verifiedRefs = (refs: string[]) => refs.filter((r) => byRef.get(r)?.verification === "verified");
+
+  const fromFinding = (id: EvidenceKey): Part => {
+    const finding = provenance.findings.find((f) => f.evidence_id === id)!;
+    const label = analysis.evidence.find((e) => e.id === id)!.label;
+    if (finding.verification === "verified") return { refs: verifiedRefs(finding.refs) };
+    if (finding.verification === "conflicting") return { conflict: `Relies on ${label.toLowerCase()}, which DisputeDesk's records contradict. ${conflictWith(`evidence.${id}`)}`.trim() };
+    return { unsupported: `${NO_RECORD}: ${label.toLowerCase()} is ${finding.verification === "missing" ? "marked not available" : "not on record"}.` };
+  };
+
+  const claims = claimText(own, ctx);
+  const parts: Part[] = [];
+  if (claimsDelivery(claims, ctx)) parts.push(fromFinding("proof_of_delivery"));
+  // problems() has already flagged a shipping claim unless an uncontested shipped status is on record.
+  if (claimsShipping(claims, ctx)) parts.push({ refs: verifiedRefs([byField.get("order.shipping_status")?.ref ?? ""]) });
+  if (TRACKING_CLAIM.test(claims) || TRACKING_STATEMENT.test(claims)) parts.push(fromFinding("shipping_tracking"));
+  if (ORDER_CLAIM.test(claims)) parts.push(fromFinding("order_confirmation"));
+  if (CONTACT_CLAIM.test(claims)) {
+    // PayPal's flag is set by a message from either party, so it can't show that the merchant contacted the buyer.
+    parts.push(
+      dispute.source === "paypal_sandbox"
+        ? { unsupported: `${NO_RECORD}: the PayPal record has messages, but DisputeDesk can't tell who wrote them.` }
+        : fromFinding("customer_communication"),
+    );
+  }
+  if (REFUND_CLAIM.test(claims)) parts.push({ unsupported: `${NO_RECORD}: DisputeDesk holds no refund records.` });
+
+  // Identifiers repeated as written: a contested one is always flagged; an uncontested one backs the paragraph only
+  // when it makes no other claim (it then just names the dispute, order or amount).
+  const tokens = new Set(own.split(/\s+/).map((t) => bare(t).toLowerCase()));
+  const claimCount = parts.length;
+  for (const { field, label } of IDENTIFIERS) {
+    const ref = byField.get(field);
+    const value = field === "amount" ? (dispute.amount?.value ?? null) : ref?.value;
+    if (!ref || typeof value !== "string" || !tokens.has(value.toLowerCase())) continue;
+    if (ref.verification === "conflicting") parts.push({ conflict: `Repeats ${label}, which DisputeDesk's records contradict. ${conflictWith(field)}`.trim() });
+    else if (claimCount === 0 && ref.verification === "verified") parts.push({ refs: [ref.ref] });
+  }
+
+  const conflicts = parts.flatMap((p) => ("conflict" in p ? [p.conflict] : []));
+  if (conflicts.length > 0) return { support: "flagged", refs: [], reasons: conflicts };
+  const refs = [...new Set(parts.flatMap((p) => ("refs" in p ? p.refs : [])))];
+  const missing = [...new Set(parts.flatMap((p) => ("unsupported" in p ? [p.unsupported] : [])))];
+  // A claim kind with no verified record left (should not happen after problems()) is unsupported, never supported.
+  if (missing.length === 0 && parts.some((p) => "refs" in p && p.refs.length === 0)) missing.push(`${NO_RECORD}.`);
+  if (missing.length > 0) return { support: "unsupported", refs, reasons: missing };
+  return parts.length > 0 ? { support: "supported", refs, reasons: [] } : { support: "not_a_claim", refs: [], reasons: [] };
+}
+
 // Runs the merchant's own edits through the same checks as AI text. Lines DisputeDesk wrote, quoted buyer lines (">")
 // and lines still holding a marker are skipped. Values the rule-based draft already shows (dispute and order IDs) count
 // as on record. Advisory only: nothing is removed, stored or sent to Gemini.
@@ -302,7 +401,9 @@ export function checkMerchantDraft(dispute: Dispute, analysis: Analysis, text: s
     facts: [...facts, { id: "", path: "", label: "", value: recordText, contested: false }],
     vocabulary: new Set([...base.vocabulary, ...words(recordText)]),
   };
+  const provenance = buildProvenance(dispute, analysis);
   const flagged: DraftCheck["flagged"] = [];
+  const claims: ParagraphClaim[] = [];
   let checked = 0;
   text
     .split(/\r?\n\s*\r?\n/)
@@ -317,10 +418,13 @@ export function checkMerchantDraft(dispute: Dispute, analysis: Analysis, text: s
       if (own === "") return;
       checked++;
       const reasons = problems(own, [], ctx).map(forMerchant);
+      const excerpt = own.length > 120 ? `${own.slice(0, 117)}...` : own;
       // Numbered among the merchant's own paragraphs, so "paragraph 1" is the first one they wrote.
-      if (reasons.length > 0) flagged.push({ paragraph: checked, excerpt: own.length > 120 ? `${own.slice(0, 117)}...` : own, reasons });
+      if (reasons.length > 0) flagged.push({ paragraph: checked, excerpt, reasons });
+      const mapped = reasons.length > 0 ? { support: "flagged" as const, refs: [], reasons } : mapClaims(dispute, analysis, provenance, own, ctx);
+      claims.push({ paragraph: checked, excerpt, ...mapped });
     });
-  return { source: dispute.source, dispute_id: dispute.dispute_id, checked, flagged, markers_left: countMarkers(text) };
+  return { source: dispute.source, dispute_id: dispute.dispute_id, checked, flagged, markers_left: countMarkers(text), claims };
 }
 
 export function composeAiAssist(dispute: Dispute, analysis: Analysis, facts: AiFact[], raw: unknown, model: string): AiAssist {

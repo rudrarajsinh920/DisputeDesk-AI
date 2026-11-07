@@ -2,7 +2,21 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { MAX_CHECK_TEXT, countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis, fetchDraftCheck, readiness } from "./analysis.ts";
 import { humanize } from "../../shared/disputes.ts";
-import type { AiAssist, AiStatus, Analysis, Dispute, DraftCheck, EvidenceStatus, RecordRef } from "../../shared/types.ts";
+import type {
+  AiAssist,
+  AiStatus,
+  Analysis,
+  ClaimSupport,
+  Dispute,
+  DraftCheck,
+  DraftLine,
+  EvidenceRef,
+  EvidenceStatus,
+  ParagraphClaim,
+  RecordRef,
+  SourceType,
+  VerificationState,
+} from "../../shared/types.ts";
 import { StatePanel } from "./ui.tsx";
 
 type Load = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; analysis: Analysis };
@@ -17,6 +31,66 @@ const STATUS: Record<EvidenceStatus, { label: string; tone: string }> = {
 };
 
 const recordText = (r: RecordRef) => `${r.path} = ${r.value === null ? "not on record" : String(r.value)}`;
+
+// "Verified against record" means consistent with the supplied record and not contradicted by it. Nothing more.
+export const VERIFICATION: Record<VerificationState, string> = {
+  verified: "Verified against record",
+  unverified: "Unverified",
+  missing: "Missing",
+  conflicting: "Conflicting",
+};
+const SOURCE_TYPES: Record<SourceType, string> = {
+  dispute_record: "Dispute record",
+  buyer_statement: "Buyer's statement",
+  order_record: "Order record",
+  transaction_record: "Transaction record",
+  delivery_record: "Delivery record",
+  merchant_provided: "Merchant-provided",
+  refund_record: "Refund record",
+  document: "Document",
+};
+// Refs are "<source>:<dispute_id>:<field>"; the field is what a merchant can look up.
+export const fieldOf = (ref: string) => ref.split(":").slice(2).join(":");
+
+// Where each value came from. A null time is said plainly: no evidence field carries one.
+export function RefList({ refs }: { refs: EvidenceRef[] }) {
+  return (
+    <ul className="ref-list">
+      {refs.map((r) => (
+        <li key={r.ref}>
+          <span className="records">
+            {r.field} = {r.value === null ? "not on record" : String(r.value)}
+          </span>
+          <span className="ref-meta">
+            {SOURCE_TYPES[r.source_type]} · {r.origin === "demo_fixture" ? "Demo record" : "PayPal sandbox record"}
+            {r.record_id ? ` ${r.record_id}` : ""} · {r.recorded_at ?? "No time on record"} · {VERIFICATION[r.verification]}
+          </span>
+          {r.derivation && <span className="ref-meta">{r.derivation}</span>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// The generated draft's lines and the records each rests on. Edited text is covered by Check my edits instead.
+export function DraftSources({ lines }: { lines: DraftLine[] }) {
+  const sourced = lines.filter((l) => (l.refs?.length ?? 0) > 0);
+  if (sourced.length === 0) return null;
+  return (
+    <details className="draft-sources">
+      <summary>Sources for the generated draft</summary>
+      <p className="muted">The records each generated line rests on. Your own edits are covered by Check my edits.</p>
+      <ul>
+        {sourced.map((l, i) => (
+          <li key={i}>
+            <q>{l.text}</q>
+            <span className="records">{l.refs!.map(fieldOf).join(", ")}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
 
 // canDraft is false for the read-only admin view: no AI draft button, since the server would refuse it.
 export function AnalysisPanel({ dispute, canDraft = true }: { dispute: Dispute; canDraft?: boolean }) {
@@ -182,6 +256,8 @@ export function ClaimAndRecords({ dispute, analysis }: { dispute: Dispute; analy
 }
 
 export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: Dispute; analysis: Analysis; canDraft?: boolean }) {
+  const provenance = analysis.provenance;
+  const refsById = new Map(provenance?.refs.map((r) => [r.ref, r]));
   return (
     <>
       <ReadinessSummary analysis={analysis} />
@@ -192,21 +268,37 @@ export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: 
         <p className="muted">
           Based only on the supplied records. "Available" means the record marks it available; DisputeDesk does not inspect
           the documents themselves.
+          {provenance && ' "Verified against record" means the supplied record backs it and nothing in the records contradicts it.'}
         </p>
         <ul className="findings ledger">
-          {analysis.evidence.map((e) => (
-            <li key={e.id} className="finding">
-              <div className="finding-head">
-                <span className={`mark mark-${e.status}`} aria-hidden="true" />
-                <span className="check-item">{e.label}</span>
-                {e.priority === "key" && <span className="key-tag">Key for this reason</span>}
-                <span className={`badge badge-${STATUS[e.status].tone}`}>{STATUS[e.status].label}</span>
-              </div>
-              <p>{e.explanation}</p>
-              <p className="muted">Why it matters: {e.relevance}</p>
-              <p className="records">Based on: {e.records.map(recordText).join("; ")}</p>
-            </li>
-          ))}
+          {analysis.evidence.map((e) => {
+            const found = provenance?.findings.find((f) => f.evidence_id === e.id);
+            const refs = found?.refs.flatMap((id) => refsById.get(id) ?? []) ?? [];
+            return (
+              <li key={e.id} className="finding">
+                <div className="finding-head">
+                  <span className={`mark mark-${e.status}`} aria-hidden="true" />
+                  <span className="check-item">{e.label}</span>
+                  {e.priority === "key" && <span className="key-tag">Key for this reason</span>}
+                  {/* Missing and unverified say the same as the status badge, so only the states that add something get a tag. */}
+                  {(found?.verification === "verified" || found?.verification === "conflicting") && (
+                    <span className={`tag tag-v-${found.verification}`}>{VERIFICATION[found.verification]}</span>
+                  )}
+                  <span className={`badge badge-${STATUS[e.status].tone}`}>{STATUS[e.status].label}</span>
+                </div>
+                <p>{e.explanation}</p>
+                <p className="muted">Why it matters: {e.relevance}</p>
+                {refs.length > 0 ? (
+                  <>
+                    <p className="records">Based on:</p>
+                    <RefList refs={refs} />
+                  </>
+                ) : (
+                  <p className="records">Based on: {e.records.map(recordText).join("; ")}</p>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </section>
 
@@ -241,6 +333,7 @@ export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: 
         title="Response draft"
         note="Draft only. It requires merchant review, is never sent to PayPal, and edits are not saved when you leave this dispute."
         generated={analysis.draft.text}
+        sources={analysis.draft.lines}
         checkFor={canDraft ? dispute : undefined}
       />
 
@@ -376,6 +469,7 @@ export function AiResult({
         title="AI-assisted response draft"
         note="AI-assisted draft. Check every statement against your records. It is never sent to PayPal, and edits are not saved."
         generated={assist.draft.text}
+        sources={assist.draft.lines}
         checkFor={assist}
         extraAction={(edited) => (
           <button
@@ -513,7 +607,8 @@ const labelOf = (id: string) => LABELS[id] ?? id;
 
 function factText(assist: AiAssist, id: string) {
   const fact = assist.facts.find((f) => f.id === id);
-  return fact ? `${id} ${fact.label} = ${fact.value}` : id;
+  if (!fact) return id;
+  return `${id} ${fact.label} = ${fact.value}${fact.ref ? ` (${fieldOf(fact.ref)})` : ""}`;
 }
 
 type CheckState = { pending: boolean; result: DraftCheck | null; error: string | null };
@@ -527,6 +622,7 @@ export function DraftEditor({
   title,
   note,
   generated,
+  sources,
   extraAction,
   checkFor,
 }: {
@@ -535,6 +631,8 @@ export function DraftEditor({
   title: string;
   note: string;
   generated: string;
+  // The generated draft's lines with their refs, listed under the editor as "Sources".
+  sources?: DraftLine[];
   // Gets whether the merchant has edited the draft, so an action can warn before discarding edits.
   extraAction?: (edited: boolean) => ReactNode;
   checkFor?: Pick<Dispute, "source" | "dispute_id">;
@@ -632,22 +730,77 @@ export function DraftEditor({
         </p>
       ) : null}
       {check.result ? <CheckResult result={check.result} /> : null}
+      {sources ? <DraftSources lines={sources} /> : null}
     </section>
   );
 }
 
 // Advisory: the merchant may hold records DisputeDesk does not have, so flags ask for a check and never change the text.
+// How far DisputeDesk's records back each paragraph. Never "true" or "false": the merchant may hold other records.
+export const CLAIM_LABELS: Record<ClaimSupport, string> = {
+  supported: "Backed by DisputeDesk's records",
+  unsupported: "Not in DisputeDesk's records",
+  flagged: "Check against your records",
+  not_a_claim: "No factual claim found",
+};
+
+function ClaimList({ claims }: { claims: ParagraphClaim[] }) {
+  return (
+    <ul className="check-claims">
+      {claims.map((c) => (
+        <li key={c.paragraph} className={`claim-${c.support}`}>
+          <span className="claim-head">
+            <strong>Your paragraph {c.paragraph}</strong>
+            <span className={`tag tag-claim-${c.support}`}>{CLAIM_LABELS[c.support]}</span>
+          </span>
+          <q>{c.excerpt}</q>
+          {c.reasons.length > 0 && (
+            <ul className="check-reasons">
+              {c.reasons.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          )}
+          {c.refs.length > 0 && <span className="records">Records: {c.refs.map(fieldOf).join(", ")}</span>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function CheckResult({ result }: { result: DraftCheck }) {
   const markers = `${result.markers_left} marker${result.markers_left === 1 ? "" : "s"} left to resolve.`;
+  // Older servers send no claims; the flag list is then shown on its own, as before.
+  const claims = result.claims ?? [];
+  const unsupported = claims.filter((c) => c.support === "unsupported").length;
   return (
     <div className="draft-check" role="status">
       {result.checked === 0 ? (
         <p>No text of your own to check yet. Lines DisputeDesk wrote, quoted buyer lines and marker lines are skipped. {markers}</p>
+      ) : result.flagged.length === 0 && unsupported > 0 ? (
+        <>
+          <p>
+            {unsupported === 1 ? "1 paragraph makes a claim" : `${unsupported} paragraphs make claims`} DisputeDesk has no record for. Confirm
+            it from your own records before sending. {markers}
+          </p>
+          <ClaimList claims={claims} />
+        </>
       ) : result.flagged.length === 0 ? (
-        <p>
-          Nothing in the {result.checked === 1 ? "paragraph" : `${result.checked} paragraphs`} you wrote goes beyond the records
-          DisputeDesk has. {markers}
-        </p>
+        <>
+          <p>
+            Nothing in the {result.checked === 1 ? "paragraph" : `${result.checked} paragraphs`} you wrote goes beyond the records
+            DisputeDesk has. {markers}
+          </p>
+          {claims.length > 0 && <ClaimList claims={claims} />}
+        </>
+      ) : claims.length > 0 ? (
+        <>
+          <p>
+            {result.flagged.length === 1 ? "1 paragraph mentions" : `${result.flagged.length} paragraphs mention`} something that is not in
+            the records DisputeDesk has. Confirm it from your own records before sending. {markers}
+          </p>
+          <ClaimList claims={claims} />
+        </>
       ) : (
         <>
           <p>

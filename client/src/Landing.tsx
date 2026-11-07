@@ -53,8 +53,9 @@ const LINKS = [
 const REDUCED = "(prefers-reduced-motion: reduce)";
 const reduced = () => typeof window !== "undefined" && window.matchMedia(REDUCED).matches;
 
-// The opening plays on every load, never for reduced motion.
-const shouldIntro = () => typeof window !== "undefined" && !reduced();
+// The opening plays once per page load, never for reduced motion. Coming back from the sign-in form skips it.
+let introPlayed = false;
+const shouldIntro = () => typeof window !== "undefined" && !introPlayed && !reduced();
 
 // The opening reel (reports/intro-reel): decorative, so assistive tech skips straight to the page under it.
 // Any click or key skips it; it also ends early if the video can't load or play.
@@ -1189,6 +1190,7 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
   };
   useEffect(() => {
     if (intro !== "on") return;
+    introPlayed = true;
     document.addEventListener("keydown", skipIntro);
     // If the browser never starts the video (and so never ends it), the page still arrives after the reel's length.
     const cap = window.setTimeout(skipIntro, 16000);

@@ -1107,6 +1107,98 @@ details summary {
 .tag-ai { background: var(--demo-bg); color: var(--demo-text); border-color: var(--demo-border); }
 .tag-standard { background: var(--neutral-bg); color: var(--neutral-text); }
 
+/* Provenance (Phase 7.4): verification states, sources and claim support. Text labels carry the meaning; colour only repeats it. */
+.tag-v-verified,
+.tag-claim-supported { background: var(--ok-bg); color: var(--ok-text); }
+.tag-v-unverified,
+.tag-claim-not_a_claim { background: var(--neutral-bg); color: var(--neutral-text); }
+.tag-v-missing,
+.tag-claim-unsupported { background: var(--neutral-bg); color: var(--neutral-text); border-style: dashed; border-color: var(--neutral-text); }
+.tag-v-conflicting,
+.tag-claim-flagged { background: var(--gap-bg); color: var(--gap-text); }
+/* Tags may wrap on narrow cards rather than push the row wider than the screen. */
+.finding-head .tag,
+.claim-head .tag { white-space: normal; }
+
+.ref-list {
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ref-list > li {
+  display: grid;
+  gap: 1px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+
+.ref-meta {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.draft-sources {
+  margin-top: 14px;
+}
+
+.draft-sources summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.draft-sources ul {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.draft-sources li {
+  display: grid;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+
+.check-claims {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.check-claims > li {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+
+.check-claims > li.claim-flagged {
+  border-color: transparent;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.check-claims q {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.claim-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
 .stages {
   list-style: none;
   margin: 0;
@@ -1468,6 +1560,7 @@ details summary {
 .config dd {
   margin: 0;
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .config-note {
@@ -2584,6 +2677,13 @@ blockquote {
   padding-block: 12px;
 }
 
+/* Narrow settings cards: the label column gives way before the value does. */
+@media (min-width: 640px) {
+  .settings-group .config > div {
+    grid-template-columns: minmax(0, 200px) minmax(8em, 1fr);
+  }
+}
+
 /* Evidence readiness: four counts from the rules. Tone follows the count, never a score. */
 .readiness {
   display: grid;
@@ -2754,6 +2854,11 @@ blockquote {
   .select,
   .link-button,
   .case-nav a {
+    min-height: 44px;
+  }
+  .draft-sources summary {
+    display: flex;
+    align-items: center;
     min-height: 44px;
   }
 }

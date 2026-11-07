@@ -46,6 +46,7 @@ import { buildIntelligence, buildIntelligenceAiRequest, composeIntelligenceExpla
 import type { GeminiClient } from "./gemini.ts";
 import { PayPalError } from "./paypal.ts";
 import type { PayPalClient } from "./paypal.ts";
+import { assistWithRefs, withProvenance } from "./provenance.ts";
 import { audit, findAccountByEmail, getAccount, listAccounts, listAudit, loadDisputes, seedDemo } from "./store.ts";
 import { validateDispute, validateLogin, validateLookup } from "./validate.ts";
 
@@ -439,7 +440,8 @@ export function createApp(
     const dispute = await findDispute(req, res);
     if (!dispute) return;
     audit(db, now(), "analysis_viewed", { account_id: signedIn(res).id, dispute_id: dispute.dispute_id, detail: dispute.source });
-    res.json(analyzeDispute(dispute));
+    // Provenance is derived from the same analysis and only adds keys; statuses, counts and draft text are untouched.
+    res.json(withProvenance(dispute, analyzeDispute(dispute)));
   });
 
   // On demand only. The rules run first; Gemini words their findings; assist.ts checks every line it returns.
@@ -472,7 +474,8 @@ export function createApp(
       const analysis = analyzeDispute(dispute);
       const { request, facts } = buildAiRequest(dispute, analysis);
       const raw = await ai.generateJson(request);
-      const result = composeAiAssist(dispute, analysis, facts, raw, ai.model);
+      // Refs are added after Gemini answers; the request above carries only R ids.
+      const result = assistWithRefs(dispute, composeAiAssist(dispute, analysis, facts, raw, ai.model));
       audit(db, now(), "ai_draft_generated", { account_id: signedIn(res).id, dispute_id: dispute.dispute_id, detail: `${dispute.source}, ${ai.model}` });
       res.json(result);
     } finally {
@@ -488,7 +491,7 @@ export function createApp(
     const analysis = analyzeDispute(dispute);
     const { facts } = buildAiRequest(dispute, analysis);
     audit(db, now(), "ai_example_viewed", { account_id: signedIn(res).id, dispute_id: dispute.dispute_id, detail: dispute.source });
-    res.json(composeAiAssist(dispute, analysis, facts, validationExampleAnswer(analysis, facts), VALIDATION_EXAMPLE_MODEL));
+    res.json(assistWithRefs(dispute, composeAiAssist(dispute, analysis, facts, validationExampleAnswer(analysis, facts), VALIDATION_EXAMPLE_MODEL)));
   });
 
   // The merchant's own edits, run through the same checks as AI text. Advisory: nothing is removed, stored or audited,

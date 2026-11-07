@@ -67,6 +67,54 @@ export interface Contradiction {
   records: RecordRef[];
 }
 
+// ---- Evidence provenance (server/src/provenance.ts). Derived from the record and the rules on every request; never stored. ----
+
+// "verified" means consistent with the supplied record and not contradicted by it ("Verified against record").
+// DisputeDesk does not inspect documents or contact carriers.
+export type VerificationState = "verified" | "unverified" | "missing" | "conflicting";
+
+// What kind of record a field belongs to. "refund_record" and "document" are reserved: DisputeDesk has no refund
+// field and no document upload, so neither is ever produced.
+export type SourceType =
+  | "dispute_record"
+  | "buyer_statement"
+  | "order_record"
+  | "transaction_record"
+  | "delivery_record"
+  | "merchant_provided"
+  | "refund_record"
+  | "document";
+
+export interface EvidenceRef {
+  // Stable: "<source>:<dispute_id>:<path>", e.g. "demo:DEMO-1001:order.tracking_number".
+  ref: string;
+  source_type: SourceType;
+  origin: "demo_fixture" | "paypal_sandbox";
+  // The order (demo) or seller transaction (sandbox) the field belongs to; the dispute ID for dispute-level fields.
+  record_id: string | null;
+  field: string;
+  // null means not on record.
+  value: string | boolean | null;
+  // A real time from the record only. No evidence field has one today, so it is always null; never the import time.
+  recorded_at: string | null;
+  // How DisputeDesk got a value it inferred from a PayPal record; null when the value was read as is.
+  derivation: string | null;
+  verification: VerificationState;
+}
+
+export interface FindingProvenance {
+  evidence_id: EvidenceKey;
+  verification: VerificationState;
+  refs: string[];
+  // How this evidence can support the merchant's response (the rules' relevance text).
+  supports: string;
+}
+
+export interface Provenance {
+  refs: EvidenceRef[];
+  findings: FindingProvenance[];
+}
+
 // "ai" lines are model-written text that passed the server's checks; they are never facts.
 export type DraftLineKind = "notice" | "fact" | "missing" | "unverified" | "unsupported" | "input" | "conflict" | "ai";
 
@@ -75,6 +123,8 @@ export interface DraftLine {
   text: string;
   // Record paths a "fact" line is based on.
   records: string[];
+  // The same records as provenance refs (merchant and admin responses only; never sent to Gemini or buyers).
+  refs?: string[];
 }
 
 export interface Analysis {
@@ -84,6 +134,8 @@ export interface Analysis {
   contradictions: Contradiction[];
   next_steps: string[];
   draft: { lines: DraftLine[]; text: string };
+  // Added by POST /api/analysis; the fields above are unchanged by it.
+  provenance?: Provenance;
 }
 
 // AI-assisted explanations and draft (server/src/assist.ts). The rule-based Analysis stays authoritative.
@@ -95,6 +147,8 @@ export interface AiFact {
   value: string;
   // Named in a contradiction found by the rules.
   contested: boolean;
+  // Provenance ref of the field, added after the Gemini call. Gemini only ever sees the id.
+  ref?: string;
 }
 
 export interface AiExplanation {
@@ -103,6 +157,8 @@ export interface AiExplanation {
   status: EvidenceStatus;
   text: string;
   cites: string[];
+  // The cites as provenance refs.
+  refs?: string[];
   // "rules" when the model's text was missing or failed the checks.
   source: "ai" | "rules";
 }
@@ -274,6 +330,22 @@ export interface DraftCheck {
   checked: number;
   flagged: { paragraph: number; excerpt: string; reasons: string[] }[];
   markers_left: number;
+  // One entry per checked paragraph, numbered like "flagged".
+  claims: ParagraphClaim[];
+}
+
+// How far DisputeDesk's records back a merchant-written paragraph. Advisory: the merchant may hold records DisputeDesk
+// does not. "supported" means a relevant, uncontested record backs every claim found; never that a document was checked.
+export type ClaimSupport = "supported" | "unsupported" | "flagged" | "not_a_claim";
+
+export interface ParagraphClaim {
+  paragraph: number;
+  excerpt: string;
+  support: ClaimSupport;
+  // Provenance refs of the records that back the paragraph's claims; empty when nothing backs it or it is flagged.
+  refs: string[];
+  // Why it is flagged or unsupported; empty otherwise.
+  reasons: string[];
 }
 
 export interface AiAssist {

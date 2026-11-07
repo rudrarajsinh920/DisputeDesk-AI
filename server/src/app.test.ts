@@ -23,6 +23,7 @@ import { openDatabase } from "./db.ts";
 import { analyzeDispute } from "./evidence.ts";
 import { createGeminiClient } from "./gemini.ts";
 import { createPayPalClient, normalizeDetails } from "./paypal.ts";
+import { buildProvenance } from "./provenance.ts";
 
 // Placeholder values only; nothing here talks to PayPal.
 const CREDENTIALS = { clientId: "test-client-id", clientSecret: "test-client-secret" };
@@ -1620,4 +1621,125 @@ test("at start the server clears signed-out and expired sessions and keeps live 
   createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, db, now });
   assert.equal(count(), 1, "the signed-out and the idle session are gone");
   assert.equal(sessions.get(live), "merchant-a", "the live session still works after a restart");
+});
+
+// ---- Phase 7.3: provenance on the analysis and AI routes, claims on the edit check. ----
+
+// Every key anywhere in a JSON value.
+const keysOf = (value: unknown): Set<string> => {
+  const keys = new Set<string>();
+  const walk = (v: unknown) => {
+    if (Array.isArray(v)) v.forEach(walk);
+    else if (typeof v === "object" && v !== null) for (const [k, inner] of Object.entries(v)) (keys.add(k), walk(inner));
+  };
+  walk(value);
+  return keys;
+};
+const PROVENANCE_KEYS = ["provenance", "refs", "ref", "claims"];
+const withoutProvenance = (body: unknown) => JSON.parse(JSON.stringify(body, (k, v) => (PROVENANCE_KEYS.includes(k) ? undefined : v)));
+
+test("the analysis gains provenance and line refs, and every existing field is unchanged on all 16 demo records", async () => {
+  const app = makeApp(null);
+  for (const d of DEMO_DISPUTES) {
+    // Admin reads every demo dispute.
+    const res = await get(app, "/api/analysis", lookup("demo", d.dispute_id), "admin");
+    assert.equal(res.status, 200, d.dispute_id);
+    const expected = analyzeDispute(d);
+    assert.deepEqual(withoutProvenance(res.body), expected, d.dispute_id);
+    assert.equal(res.body.draft.text, expected.draft.text, `${d.dispute_id}: draft text`);
+    assert.deepEqual(readiness(res.body), readiness(expected), `${d.dispute_id}: readiness`);
+    assert.deepEqual(res.body.provenance, buildProvenance(d, expected), d.dispute_id);
+    const refIds = new Set(res.body.provenance.refs.map((r: { ref: string }) => r.ref));
+    for (const line of res.body.draft.lines) {
+      assert.deepEqual(line.refs, line.records.map((p: string) => `demo:${d.dispute_id}:${p}`), `${d.dispute_id}: ${line.text}`);
+      for (const r of line.refs) assert.ok(refIds.has(r), `${r} has no provenance entry`);
+    }
+  }
+});
+
+test("buyer, insights and list responses carry no provenance, refs or claims", async () => {
+  const app = makeApp(null);
+  const responses = [
+    await get(app, "/api/buyer/disputes", {}, "buyer-b"),
+    await get(app, "/api/buyer/explain", lookup("demo", "DEMO-1002"), "buyer-b"),
+    await get(app, "/api/intelligence", {}, "merchant-a"),
+    await get(app, "/api/disputes", {}, "merchant-a"),
+  ];
+  for (const res of responses) {
+    assert.equal(res.status, 200);
+    for (const key of PROVENANCE_KEYS) assert.ok(!keysOf(res.body).has(key), `"${key}" in ${res.text.slice(0, 60)}`);
+    assert.ok(!res.text.includes("demo:DEMO-"), "a provenance ref reached a response that should have none");
+  }
+});
+
+test("another account's dispute is still a plain 404 on the provenance-bearing routes", async () => {
+  const app = makeApp(null);
+  // merchant-a does not own DEMO-1003; DEMO-9999 does not exist.
+  for (const path of ["/api/analysis", "/api/analysis/ai/example", "/api/analysis/check"]) {
+    const extra = path.endsWith("check") ? { text: "We shipped the order." } : {};
+    const other = await get(app, path, lookup("demo", "DEMO-1003", extra));
+    const missing = await get(app, path, lookup("demo", "DEMO-9999", extra));
+    assert.equal(other.status, 404, path);
+    assert.equal(other.text, missing.text, path);
+  }
+});
+
+test("Gemini's request carries no provenance ref, dispute ID or order ID; the response maps its cites to refs", async () => {
+  const ai = mockAi();
+  const res = await get(makeApp(null, ai.client), "/api/analysis/ai", lookup("demo", "DEMO-1001"));
+  assert.equal(res.status, 200);
+  const sent = ai.calls[0].body;
+  for (const banned of ["demo:", "paypal_sandbox:", "DEMO-1001", "ORDER-1001", "provenance", '"ref', "refs"]) {
+    assert.ok(!sent.includes(banned), `Gemini was sent "${banned}"`);
+  }
+  for (const f of res.body.facts) assert.equal(f.ref, `demo:DEMO-1001:${f.path}`);
+  const refOf = new Map(res.body.facts.map((f: { id: string; ref: string }) => [f.id, f.ref]));
+  for (const e of res.body.explanations) assert.deepEqual(e.refs, e.cites.map((c: string) => refOf.get(c)));
+  for (const line of res.body.draft.lines) assert.deepEqual(line.refs, line.records.map((p: string) => `demo:DEMO-1001:${p}`));
+  // Refs only add keys: the draft text is what composeAiAssist wrote.
+  assert.equal(res.body.draft.text, res.body.draft.lines.map((l: { text: string }) => l.text).join("\n"));
+});
+
+test("the validation example gets refs too, and never calls Gemini", async () => {
+  const ai = mockAi();
+  const res = await get(makeApp(null, ai.client), "/api/analysis/ai/example", lookup("demo", "DEMO-1001"), "admin");
+  assert.equal(res.status, 200);
+  assert.equal(res.body.model, VALIDATION_EXAMPLE_MODEL);
+  assert.equal(ai.calls.length, 0);
+  assert.ok(res.body.facts.every((f: { ref?: string }) => f.ref?.startsWith("demo:DEMO-1001:")));
+  assert.ok(res.body.draft.lines.every((l: { refs?: string[] }) => Array.isArray(l.refs)));
+});
+
+test("admin reads analysis provenance but can't use the AI draft or the edit check", async () => {
+  const app = makeApp(null, mockAi().client);
+  const analysis = await get(app, "/api/analysis", lookup("demo", "DEMO-1001"), "admin");
+  assert.equal(analysis.status, 200);
+  assert.ok(analysis.body.provenance.refs.length > 0);
+  assert.equal((await get(app, "/api/analysis/ai", lookup("demo", "DEMO-1001"), "admin")).status, 403);
+  assert.equal((await get(app, "/api/analysis/check", lookup("demo", "DEMO-1001", { text: "We shipped the order." }), "admin")).status, 403);
+  // Buyers can't reach any of them.
+  for (const path of ["/api/analysis", "/api/analysis/ai/example", "/api/analysis/check"]) {
+    assert.equal((await get(app, path, lookup("demo", "DEMO-1002", { text: "x" }), "buyer-b")).status, 403, path);
+  }
+});
+
+test("the edit check returns paragraph claims, stays advisory and is not audited", async () => {
+  const db = openDatabase(":memory:");
+  const app = createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, db });
+  const text = "We shipped the order.\n\nWe refunded the payment.\n\nThank you.";
+  const res = await get(app, "/api/analysis/check", lookup("demo", "DEMO-1001", { text }));
+  assert.equal(res.status, 200);
+  assert.deepEqual(
+    res.body.claims.map((c: { paragraph: number; support: string }) => [c.paragraph, c.support]),
+    [
+      [1, "supported"],
+      [2, "unsupported"],
+      [3, "not_a_claim"],
+    ],
+  );
+  assert.equal(res.body.checked, 3);
+  assert.deepEqual(res.body.flagged, []);
+  const rows = db.prepare("SELECT event, detail FROM audit_log").all() as { event: string; detail: string | null }[];
+  assert.ok(!rows.some((r) => r.event.includes("check")), "the edit check is not audited");
+  assert.ok(!JSON.stringify(rows).includes("refunded"), "the checked text is never stored");
 });
