@@ -5,11 +5,11 @@ import type { AddressInfo } from "node:net";
 import type { Dispute } from "../../shared/types.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { DEMO_ACCOUNTS, DEMO_DISPUTES, createApp } from "./app.ts";
+import { AI_MAX_CALLS, DEMO_ACCOUNTS, DEMO_DISPUTES, createApp } from "./app.ts";
 import { countMarkers, readiness } from "../../shared/readiness.ts";
 import { MAX_CHECK_TEXT, VALIDATION_EXAMPLE_MODEL } from "./assist.ts";
-import { buyerGuidance, toBuyerRecord } from "./buyer.ts";
-import { LOGIN_MAX_FAILURES, hashPassword } from "./auth.ts";
+import { AI_WORDING_LIMIT, buyerGuidance, toBuyerRecord } from "./buyer.ts";
+import { LOGIN_MAX_FAILURES, LOGIN_MAX_FAILURES_PER_ADDRESS, LOGIN_WINDOW_MS, hashPassword } from "./auth.ts";
 import { AI_OFF_BAD_MODEL, AI_OFF_NO_KEY } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { analyzeDispute } from "./evidence.ts";
@@ -1441,4 +1441,74 @@ test("admin reads the audit log newest first and the server's limits, with no se
   for (const text of [audit.text, settings.text]) {
     assert.doesNotMatch(text, /scrypt\$|password|__Host-dd_session|access_token|client_secret|Bearer/i);
   }
+});
+
+// ---- Phase 6.4: sign-in cap behind a proxy, and the per-account AI limit ----
+
+test("behind a trusted proxy, one client's failed sign-ins don't lock out other clients", async () => {
+  const signInFrom = async (app: App, address: string, email: string, password: string) => {
+    const server = app.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const res = await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Forwarded-For": address },
+        body: JSON.stringify({ email, password }),
+      });
+      return res.status;
+    } finally {
+      server.close();
+    }
+  };
+  const fill = async (app: App, address: string) => {
+    for (let i = 0; i < LOGIN_MAX_FAILURES_PER_ADDRESS; i++) assert.equal(await signInFrom(app, address, `guess${i}@example.test`, "wrong"), 401);
+  };
+  const buyer = ["buyer-a@demo.disputedesk.test", TEST_PASSWORD("buyer-a")] as const;
+
+  const proxied = createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, trustProxy: 1 });
+  await fill(proxied, "203.0.113.1");
+  assert.equal(await signInFrom(proxied, "203.0.113.1", ...buyer), 429, "the guessing client is capped");
+  assert.equal(await signInFrom(proxied, "203.0.113.2", ...buyer), 200, "another client still signs in");
+
+  // Without a trusted proxy the header is ignored, so changing it can't escape the cap.
+  const direct = makeApp(null);
+  await fill(direct, "203.0.113.1");
+  assert.equal(await signInFrom(direct, "203.0.113.2", ...buyer), 429);
+});
+
+test("each account gets a limited number of Gemini calls per window, and other accounts are unaffected", async () => {
+  let t = Date.UTC(2026, 10, 7);
+  const ai = mockAi();
+  const app = makeApp(null, ai.client, undefined, () => t);
+  for (let i = 0; i < AI_MAX_CALLS; i++) assert.equal((await get(app, "/api/analysis/ai", lookup("demo", "DEMO-1001"))).status, 200);
+  const over = await get(app, "/api/analysis/ai", lookup("demo", "DEMO-1001"));
+  assert.equal(over.status, 429);
+  assert.equal(over.body.error.code, "ai_limit_reached");
+  assert.match(over.body.error.message, /Try again in 15 minutes\. The rule-based draft still works\./);
+  assert.equal(over.headers.get("retry-after"), "900");
+  assert.equal(ai.calls.length, AI_MAX_CALLS, "the refused request never reaches Gemini");
+  assert.equal((await get(app, "/api/analysis", lookup("demo", "DEMO-1001"))).status, 200, "rule-based analysis is not limited");
+  assert.equal((await get(app, "/api/analysis/ai", lookup("demo", "DEMO-1003"), "merchant-b")).status, 200, "another account has its own allowance");
+
+  t += LOGIN_WINDOW_MS + 1;
+  assert.equal((await get(app, "/api/analysis/ai", lookup("demo", "DEMO-1001"))).status, 200, "the allowance comes back after the window");
+});
+
+test("past the AI limit, buyer and insights explanations fall back to the standard wording", async () => {
+  const buyerAi = mockAi(() => buyerAnswer("The dispute is waiting for the seller to respond."));
+  const buyerApp = makeApp(null, buyerAi.client);
+  for (let i = 0; i < AI_MAX_CALLS; i++) await get(buyerApp, "/api/buyer/explain", lookup("demo", "DEMO-1001"), "buyer-a");
+  const limited = await get(buyerApp, "/api/buyer/explain", lookup("demo", "DEMO-1001"), "buyer-a");
+  assert.equal(limited.status, 200);
+  assert.equal(limited.body.origin, "rules");
+  assert.equal(limited.body.fallback_reason, AI_WORDING_LIMIT);
+  assert.equal(buyerAi.calls.length, AI_MAX_CALLS);
+
+  const insightsAi = mockAi();
+  const insightsApp = makeApp(null, insightsAi.client);
+  for (let i = 0; i < AI_MAX_CALLS; i++) await get(insightsApp, "/api/intelligence/explain", { method: "POST" }, "merchant-c");
+  const capped = await get(insightsApp, "/api/intelligence/explain", { method: "POST" }, "merchant-c");
+  assert.equal(capped.body.origin, "rules");
+  assert.equal(capped.body.fallback_reason, AI_WORDING_LIMIT);
+  assert.equal(insightsAi.calls.length, AI_MAX_CALLS);
 });

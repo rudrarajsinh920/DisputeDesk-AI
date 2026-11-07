@@ -22,6 +22,8 @@ export interface Config {
   ai: { apiKey: string; model: string } | null;
   // The reason when ai is null.
   aiOff: string | null;
+  // Reverse proxies in front of the server, so sign-in limits key on the real client address. 0 (default): none.
+  trustProxy: number;
 }
 
 // Reads .env without copying secrets into process.env. Shell variables win, as with dotenv.
@@ -39,6 +41,12 @@ export function loadConfig(envPath: string = ENV_PATH, env: NodeJS.ProcessEnv = 
     throw new Error("PORT must be a whole number between 1 and 65535.");
   }
 
+  // Set only when a proxy you control adds X-Forwarded-For. Otherwise anyone could pick their own address with it.
+  const trustProxy = Number(get("TRUST_PROXY") ?? 0);
+  if (!Number.isInteger(trustProxy) || trustProxy < 0 || trustProxy > 10) {
+    throw new Error("TRUST_PROXY must be a whole number of proxies between 0 and 10.");
+  }
+
   const clientId = get("PAYPAL_CLIENT_ID");
   const clientSecret = get("PAYPAL_CLIENT_SECRET");
   const apiKey = get("GEMINI_API_KEY");
@@ -52,5 +60,6 @@ export function loadConfig(envPath: string = ENV_PATH, env: NodeJS.ProcessEnv = 
     paypal: clientId && clientSecret ? { clientId, clientSecret } : null,
     ai: apiKey && !aiOff ? { apiKey, model } : null,
     aiOff,
+    trustProxy,
   };
 }

@@ -120,7 +120,11 @@ Sessions end after 30 minutes without activity, 8 hours after sign-in, or on sig
 so restarting the server keeps everyone signed in. After
 10 failed sign-ins for one email, that email is locked for 15 minutes; after 100 failed sign-ins from one address, all
 sign-in from it is locked for 15 minutes. Locally every request comes from 127.0.0.1, so the second limit is a cap on
-all guessing. The session cookie is `HttpOnly`, `Secure` and `SameSite=Strict`; this needs a browser that accepts
+all guessing. Behind a reverse proxy, set the `TRUST_PROXY` shell variable (or `.env` entry) to the number of proxies
+in front of the server, so that limit applies per client instead of to everyone. Leave it unset (0) unless a proxy you
+control adds `X-Forwarded-For`, or anyone could choose their own address with that header. Each account may also ask
+Gemini 20 times per 15 minutes, across AI drafts and buyer and Insights explanations; past that, drafts are refused
+for a while and explanations use the standard wording. The session cookie is `HttpOnly`, `Secure` and `SameSite=Strict`; this needs a browser that accepts
 `Secure` cookies on `http://localhost`, which Chrome, Edge and Firefox do.
 
 Write requests from any other site are refused (Origin and `Sec-Fetch-Site` checks). The API sends

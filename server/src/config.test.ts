@@ -20,7 +20,7 @@ test("reads credentials from the .env file without touching process.env", () => 
   const env = tempEnv("PAYPAL_CLIENT_ID=file-id\nPAYPAL_CLIENT_SECRET=file-secret\n");
   try {
     const config = loadConfig(env.file, {});
-    assert.deepEqual(config, { port: 3001, paypal: { clientId: "file-id", clientSecret: "file-secret" }, ai: null, aiOff: AI_OFF_NO_KEY });
+    assert.deepEqual(config, { port: 3001, paypal: { clientId: "file-id", clientSecret: "file-secret" }, ai: null, aiOff: AI_OFF_NO_KEY, trustProxy: 0 });
     // Compare only these keys so a failure never prints the whole environment.
     assert.notEqual(process.env.PAYPAL_CLIENT_ID, "file-id");
     assert.notEqual(process.env.PAYPAL_CLIENT_SECRET, "file-secret");
@@ -71,4 +71,11 @@ test("an invalid GEMINI_MODEL turns AI drafting off, never the server, and no ot
 
 test("invalid PORT is rejected", () => {
   assert.throws(() => loadConfig(path.join(tmpdir(), "no-such-dir", ".env"), { PORT: "abc" }), /PORT/);
+});
+
+test("TRUST_PROXY is a small whole number and defaults to 0", () => {
+  const noFile = path.join(tmpdir(), "no-such-dir", ".env");
+  assert.equal(loadConfig(noFile, {}).trustProxy, 0);
+  assert.equal(loadConfig(noFile, { TRUST_PROXY: "1" }).trustProxy, 1);
+  for (const bad of ["-1", "11", "1.5", "yes"]) assert.throws(() => loadConfig(noFile, { TRUST_PROXY: bad }), /TRUST_PROXY must be/);
 });

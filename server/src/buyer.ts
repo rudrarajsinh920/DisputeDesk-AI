@@ -214,6 +214,7 @@ export function rulesExplanation(r: BuyerRecord, g: BuyerGuidance, fallback_reas
 
 // Buyers are never told how the server is set up, only that AI wording is not in use.
 export const AI_WORDING_OFF = "AI wording is off on this server, so this is the standard explanation.";
+export const AI_WORDING_LIMIT = "Your account has reached its limit of AI wording for now, so this is the standard explanation. Try again in 15 minutes.";
 export const AI_WORDING_UNAVAILABLE = "AI wording is unavailable right now, so this is the standard explanation.";
 export const FAILED_CHECKS ="The AI wording did not pass DisputeDesk's checks, so this is the standard explanation.";
 const MAX_PARAGRAPH = 600;

@@ -19,7 +19,7 @@ const app = createApp(
   config.paypal ? createPayPalClient(config.paypal) : null,
   config.ai ? createGeminiClient(config.ai) : null,
   config.aiOff ?? undefined,
-  { db },
+  { db, trustProxy: config.trustProxy },
 );
 
 // Localhost only: this server holds PayPal credentials, and its accounts are synthetic demo accounts.

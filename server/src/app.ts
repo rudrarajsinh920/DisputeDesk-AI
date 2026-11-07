@@ -9,6 +9,7 @@ import { readiness } from "../../shared/readiness.ts";
 import type { Dispute, Role } from "../../shared/types.ts";
 import { MAX_CHECK_TEXT, VALIDATION_EXAMPLE_MODEL, buildAiRequest, checkMerchantDraft, composeAiAssist, validationExampleAnswer } from "./assist.ts";
 import {
+  AI_WORDING_LIMIT,
   AI_WORDING_OFF,
   AI_WORDING_UNAVAILABLE,
   buildBuyerAiRequest,
@@ -79,6 +80,10 @@ function notConfigured(res: Response) {
   });
 }
 
+// Gemini calls per account in each sign-in window (15 minutes), across drafts, buyer and insights explanations.
+// A cost guard: past it, drafts answer 429 and explanations fall back to the standard wording.
+export const AI_MAX_CALLS = 20;
+
 // AI errors become: 429 for rate limits (with Retry-After), 504 for timeouts, 502 for everything else.
 const AI_STATUS: Partial<Record<AiError["code"], number>> = { ai_rate_limited: 429, ai_timeout: 504 };
 
@@ -91,15 +96,30 @@ export function createApp(
   paypal: PayPalClient | null,
   ai: GeminiClient | null = null,
   aiOff: string = AI_OFF_NO_KEY,
-  { accounts = DEMO_ACCOUNTS, now = Date.now, db = openDatabase(":memory:") }: { accounts?: Account[]; now?: () => number; db?: DatabaseSync } = {},
+  {
+    accounts = DEMO_ACCOUNTS,
+    now = Date.now,
+    db = openDatabase(":memory:"),
+    trustProxy = 0,
+  }: { accounts?: Account[]; now?: () => number; db?: DatabaseSync; trustProxy?: number } = {},
 ) {
   const app = express();
   app.disable("x-powered-by");
+  // Behind trusted proxies req.ip is the client from X-Forwarded-For, so one client's failures can't lock out everyone.
+  if (trustProxy > 0) app.set("trust proxy", trustProxy);
   // shortcut: in-memory, one server process; one AI request per dispute at a time to avoid double cost.
   const aiInFlight = new Set<string>();
   seedDemo(db, accounts, DEMO_DISPUTES, now());
   const sessions = createSessions(db, now);
   const limiter = createLoginLimiter(now);
+  // The sign-in limiter's sliding window, reused: each Gemini call counts against the account that asked for it.
+  const aiLimiter = createLoginLimiter(now);
+  const aiAllowed = (account: Account) => {
+    const key = `ai:${account.id}`;
+    if (aiLimiter.blocked([key], AI_MAX_CALLS)) return false;
+    aiLimiter.fail([key]);
+    return true;
+  };
   // Checked against when the email is unknown, so a wrong email takes as long as a wrong password.
   const dummyHash = hashPassword(randomBytes(16).toString("hex"));
 
@@ -295,7 +315,9 @@ export function createApp(
       }
       aiInFlight.add(key);
       try {
-        result = composeBuyerExplanation(record, guidance, await ai.generateJson(buildBuyerAiRequest(record, guidance)), ai.model);
+        result = aiAllowed(signedIn(res))
+          ? composeBuyerExplanation(record, guidance, await ai.generateJson(buildBuyerAiRequest(record, guidance)), ai.model)
+          : rulesExplanation(record, guidance, AI_WORDING_LIMIT);
       } catch (error) {
         if (!(error instanceof AiError)) throw error;
         console.error(`Gemini request failed: ${error.code}${error.upstreamStatus ? ` (HTTP ${error.upstreamStatus})` : ""}`);
@@ -336,7 +358,9 @@ export function createApp(
       }
       aiInFlight.add(key);
       try {
-        result = composeIntelligenceExplanation(insights, await ai.generateJson(buildIntelligenceAiRequest(insights)), ai.model);
+        result = aiAllowed(account)
+          ? composeIntelligenceExplanation(insights, await ai.generateJson(buildIntelligenceAiRequest(insights)), ai.model)
+          : rulesIntelligenceExplanation(insights, AI_WORDING_LIMIT);
       } catch (error) {
         if (!(error instanceof AiError)) throw error;
         console.error(`Gemini request failed: ${error.code}${error.upstreamStatus ? ` (HTTP ${error.upstreamStatus})` : ""}`);
@@ -412,6 +436,11 @@ export function createApp(
       res.status(409).json({
         error: { code: "ai_in_progress", message: "An AI draft for this dispute is already being written.", upstream_status: null },
       });
+      return;
+    }
+    if (!aiAllowed(signedIn(res))) {
+      res.set("Retry-After", String(LOGIN_WINDOW_MS / 1000));
+      sendError(res, 429, "ai_limit_reached", `Your account has used its ${AI_MAX_CALLS} AI requests for now. Try again in 15 minutes. The rule-based draft still works.`);
       return;
     }
     aiInFlight.add(key);
