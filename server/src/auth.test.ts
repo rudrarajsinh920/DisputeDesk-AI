@@ -5,6 +5,7 @@ import {
   IDLE_MS,
   LOGIN_MAX_FAILURES,
   LOGIN_MAX_FAILURES_PER_ADDRESS,
+  LIMITER_MAX_KEYS,
   LOGIN_WINDOW_MS,
   SESSION_COOKIE,
   canAccess,
@@ -226,4 +227,44 @@ test("the account list is checked at startup", () => {
   for (const expected of [/duplicate id a/, /duplicate email/, /c: role/, /d: unknown dispute DEMO-9999/, /e: password_hash/, /f: email/, /g: only merchants/]) {
     assert.match(errors, expected);
   }
+});
+
+// ---- Phase 6.4.1: limiter memory ----
+
+test("the limiter keeps at most its key cap, forgetting the least recently failed key first", () => {
+  const c = clock();
+  const limiter = createLoginLimiter(c.now, 100);
+  for (let i = 0; i < LOGIN_MAX_FAILURES; i++) limiter.fail(["email:target@demo.test"]);
+  for (let i = 0; i < 5_000; i++) {
+    limiter.fail([`email:flood-${i}@demo.test`]);
+    if (i % 50 === 0) limiter.fail(["ip:203.0.113.1"]);
+    assert.ok(limiter.size() <= 100);
+  }
+  assert.equal(limiter.size(), 100);
+  assert.equal(limiter.blocked(["email:flood-4999@demo.test"], 1), true, "the newest keys are kept");
+  assert.equal(limiter.blocked(["ip:203.0.113.1"], 100), true, "a key that keeps failing stays counted");
+  assert.equal(limiter.blocked(["email:target@demo.test"]), false, "an idle key is forgotten once the cap is full");
+  assert.equal(LIMITER_MAX_KEYS, 10_000);
+});
+
+test("expired keys are dropped without touching live ones, and each key holds a bounded list", () => {
+  const c = clock();
+  const limiter = createLoginLimiter(c.now);
+  limiter.fail(["email:old@demo.test"]);
+  c.advance(LOGIN_WINDOW_MS / 2);
+  for (let i = 0; i < 300; i++) limiter.fail(["ip:127.0.0.1"]);
+  c.advance(LOGIN_WINDOW_MS / 2 + 1);
+  limiter.fail(["email:new@demo.test"]);
+  assert.equal(limiter.size(), 2, "only the expired key is gone");
+  assert.equal(limiter.blocked(["ip:127.0.0.1"], LOGIN_MAX_FAILURES_PER_ADDRESS), true);
+  for (let i = 0; i < LOGIN_MAX_FAILURES_PER_ADDRESS; i++) limiter.forgive(["ip:127.0.0.1"]);
+  assert.equal(limiter.size(), 1, `no more than ${LOGIN_MAX_FAILURES_PER_ADDRESS} timestamps were kept`);
+});
+
+test("forgive takes back one failure", () => {
+  const limiter = createLoginLimiter(clock().now);
+  for (let i = 0; i < LOGIN_MAX_FAILURES; i++) limiter.fail(["email:a@demo.test"]);
+  assert.equal(limiter.blocked(["email:a@demo.test"]), true);
+  limiter.forgive(["email:a@demo.test", "email:never@demo.test"]);
+  assert.equal(limiter.blocked(["email:a@demo.test"]), false);
 });

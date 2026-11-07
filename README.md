@@ -117,19 +117,21 @@ password here.
   nothing. Admin cannot generate AI drafts or AI summaries.
 
 Sessions end after 30 minutes without activity, 8 hours after sign-in, or on sign-out. They are kept in the database,
-so restarting the server keeps everyone signed in. After
-10 failed sign-ins for one email, that email is locked for 15 minutes; after 100 failed sign-ins from one address, all
-sign-in from it is locked for 15 minutes. Locally every request comes from 127.0.0.1, so the second limit is a cap on
+so restarting the server keeps everyone signed in; signed-out and expired sessions are cleared at start. After
+10 failed sign-ins for one email from one address, that address can't sign in to that email for 15 minutes; after 50
+for one email from all addresses together, the email is locked for 15 minutes; after 100 failed sign-ins from one
+address, all sign-in from it is locked for 15 minutes. Unknown emails are counted and answered the same way. Locally every request comes from 127.0.0.1, so the second limit is a cap on
 all guessing. Behind a reverse proxy, set the `TRUST_PROXY` shell variable (or `.env` entry) to the number of proxies
-in front of the server, so that limit applies per client instead of to everyone. Leave it unset (0) unless a proxy you
+in front of the server, so these limits apply per client instead of to everyone. Leave it unset (0) unless a proxy you
 control adds `X-Forwarded-For`, or anyone could choose their own address with that header. Each account may also ask
 Gemini 20 times per 15 minutes, across AI drafts and buyer and Insights explanations; past that, drafts are refused
 for a while and explanations use the standard wording. The session cookie is `HttpOnly`, `Secure` and `SameSite=Strict`; this needs a browser that accepts
 `Secure` cookies on `http://localhost`, which Chrome, Edge and Firefox do.
 
 Write requests from any other site are refused (Origin and `Sec-Fetch-Site` checks). The API sends
-`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy` and a CSP that allows
-nothing to run. The production build (`cd client && npm run build && npm run preview`, then http://localhost:4173) has
+`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Cross-Origin-Resource-Policy`, `Permissions-Policy` (no camera, microphone, location, payment or USB) and a CSP
+that allows nothing to run. Over HTTPS through a trusted proxy it also sends `Strict-Transport-Security`; on local
+HTTP it doesn't. The page sends the same `Permissions-Policy`; set HSTS for the page on the HTTPS server in front of it. The production build (`cd client && npm run build && npm run preview`, then http://localhost:4173) has
 a strict CSP: only the app's own scripts and styles. The dev server keeps a looser page CSP because Vite's live reload
 needs inline code. Both refuse to start on another port, so the address never changes.
 
@@ -151,7 +153,9 @@ gitignored: it holds password hashes and session hashes, never passwords or sess
   existing database is upgraded in place.
 - **Audit log.** Sign-in (succeeded, failed, locked out), sign-out, a refused request for another account's dispute,
   analysis, AI drafts, the validation example, buyer explanations, insights views and insights summaries. Entries name the account and dispute, never a password, token, hash or
-  an unknown email. The log cannot be changed or deleted from the app.
+  an unknown email. The log cannot be changed or deleted from the app, and it is
+  never trimmed: the server prints its entry count at start. To archive it, stop the server and copy the database
+  file; to start a fresh log, then delete `server/data`.
 - To start over, stop the server and delete the `server/data` folder.
 
 ## Test
@@ -224,8 +228,9 @@ Keep screenshots or a screen recording of a successful run as a backup.
   changes or answers a dispute, and never submits evidence. The list reads the first 50 disputes.
 - Drafts are not saved. Accounts are six synthetic demo accounts with no sign-up. The server answers only on this
   machine (127.0.0.1).
-- One server process per database. The sign-in limit is still kept in memory, so a restart lifts a lockout.
-- The audit log has no retention limit yet; it grows until the database is deleted.
+- One server process per database. The sign-in and AI limits are kept in memory (at most 10,000 keys), so a restart
+  lifts a lockout.
+- The audit log has no retention limit; it grows until it is archived and the database is deleted.
 - Insights rest on a handful of synthetic records and four evidence flags per dispute. No outcome or resolved date is on
   record, so there are no outcome rates or time-to-resolution figures. The AI number check confirms that each number
   appears in the findings, not that it is paired with the right finding.

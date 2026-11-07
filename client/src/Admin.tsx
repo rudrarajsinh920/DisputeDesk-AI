@@ -541,7 +541,7 @@ export function AdminAudit({ entries, accounts, onRetry }: { entries: AuditEntry
 
 export type Settings = {
   session: { idle_minutes: number; absolute_hours: number };
-  sign_in: { max_failures: number; max_failures_per_address: number; window_minutes: number };
+  sign_in: { max_failures: number; max_failures_per_email: number; max_failures_per_address: number; window_minutes: number };
   paypal: { environment: string; configured: boolean; access: string };
   ai: { configured: boolean; model: string | null; reason: string | null };
   audit: { append_only: boolean; shown: number };
@@ -596,7 +596,8 @@ export function AdminSettings({ settings }: { settings: Settings }) {
         title="Sign-in limit"
         note="Repeated failed sign-ins are refused for a while, by account and by address."
         rows={[
-          ["Failures per account", `${s.sign_in.max_failures} in ${s.sign_in.window_minutes} minutes`],
+          ["Failures per account from one address", `${s.sign_in.max_failures} in ${s.sign_in.window_minutes} minutes`],
+          ["Failures per account from all addresses", `${s.sign_in.max_failures_per_email} in ${s.sign_in.window_minutes} minutes`],
           ["Failures per address", `${s.sign_in.max_failures_per_address} in ${s.sign_in.window_minutes} minutes`],
           ["Passwords", "Stored as scrypt hashes only"],
         ]}

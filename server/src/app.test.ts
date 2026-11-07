@@ -5,11 +5,19 @@ import type { AddressInfo } from "node:net";
 import type { Dispute } from "../../shared/types.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { AI_MAX_CALLS, DEMO_ACCOUNTS, DEMO_DISPUTES, createApp } from "./app.ts";
+import { AI_MAX_CALLS, DEMO_ACCOUNTS, DEMO_DISPUTES, HSTS, PERMISSIONS_POLICY, createApp } from "./app.ts";
 import { countMarkers, readiness } from "../../shared/readiness.ts";
 import { MAX_CHECK_TEXT, VALIDATION_EXAMPLE_MODEL } from "./assist.ts";
 import { AI_WORDING_LIMIT, buyerGuidance, toBuyerRecord } from "./buyer.ts";
-import { LOGIN_MAX_FAILURES, LOGIN_MAX_FAILURES_PER_ADDRESS, LOGIN_WINDOW_MS, hashPassword } from "./auth.ts";
+import {
+  IDLE_MS,
+  LOGIN_MAX_FAILURES,
+  LOGIN_MAX_FAILURES_PER_ADDRESS,
+  LOGIN_MAX_FAILURES_PER_EMAIL,
+  LOGIN_WINDOW_MS,
+  createSessions,
+  hashPassword,
+} from "./auth.ts";
 import { AI_OFF_BAD_MODEL, AI_OFF_NO_KEY } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { analyzeDispute } from "./evidence.ts";
@@ -1511,4 +1519,105 @@ test("past the AI limit, buyer and insights explanations fall back to the standa
   assert.equal(capped.body.origin, "rules");
   assert.equal(capped.body.fallback_reason, AI_WORDING_LIMIT);
   assert.equal(insightsAi.calls.length, AI_MAX_CALLS);
+});
+
+// ---- Phase 6.4.1: targeted lockout, headers, session cleanup ----
+
+// Sends several sign-ins to one listening server at once; returns each status and body.
+async function signIns(app: App, attempts: { address?: string; email: string; password: string }[]) {
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/auth/login`;
+    return await Promise.all(
+      attempts.map(async ({ address, email, password }) => {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (address) headers["X-Forwarded-For"] = address;
+        const res = await fetch(url, { method: "POST", headers, body: JSON.stringify({ email, password }) });
+        return { status: res.status, body: await res.json() };
+      }),
+    );
+  } finally {
+    server.close();
+  }
+}
+
+test("one client's wrong passwords lock only that client out of the account; many clients together lock the account", async () => {
+  const app = createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, trustProxy: 1 });
+  const email = "buyer-a@demo.disputedesk.test";
+  const wrong = (address: string) => ({ address, email, password: "wrong" });
+  const right = (address: string) => ({ address, email, password: TEST_PASSWORD("buyer-a") });
+  const fail = async (address: string, times: number) => {
+    for (let i = 0; i < times; i++) assert.equal((await signIns(app, [wrong(address)]))[0].status, 401);
+  };
+
+  await fail("203.0.113.1", LOGIN_MAX_FAILURES);
+  assert.equal((await signIns(app, [right("203.0.113.1")]))[0].status, 429, "the guessing client is locked out of this account");
+  assert.equal((await signIns(app, [right("203.0.113.2")]))[0].status, 200, "the owner on another address still signs in");
+
+  // Spread over enough addresses, failures still lock the account everywhere: brute force stays capped.
+  const others = (LOGIN_MAX_FAILURES_PER_EMAIL - LOGIN_MAX_FAILURES) / LOGIN_MAX_FAILURES;
+  for (let i = 0; i < others; i++) await fail(`198.51.100.${i + 1}`, LOGIN_MAX_FAILURES);
+  assert.equal((await signIns(app, [right("203.0.113.2")]))[0].status, 429, "past the per-email cap the account is locked");
+});
+
+test("a locked unknown email answers exactly like a locked real account", async () => {
+  const app = makeApp(null);
+  const lock = async (email: string) => {
+    for (let i = 0; i < LOGIN_MAX_FAILURES; i++) await signIns(app, [{ email, password: "wrong" }]);
+    return (await signIns(app, [{ email, password: "wrong" }]))[0];
+  };
+  const real = await lock("buyer-a@demo.disputedesk.test");
+  const unknown = await lock("nobody@example.test");
+  assert.equal(real.status, 429);
+  assert.deepEqual(unknown, real);
+});
+
+test("sign-ins sent at the same moment can't get past the limit", async () => {
+  const app = makeApp(null);
+  const burst = Array.from({ length: LOGIN_MAX_FAILURES + 5 }, () => ({ email: "buyer-a@demo.disputedesk.test", password: "wrong" }));
+  const statuses = (await signIns(app, burst)).map((r) => r.status);
+  assert.equal(statuses.filter((s) => s === 401).length, LOGIN_MAX_FAILURES, "only the allowed number of passwords is checked");
+  assert.equal(statuses.filter((s) => s === 429).length, 5);
+  assert.equal((await signIns(app, [{ email: "buyer-a@demo.disputedesk.test", password: TEST_PASSWORD("buyer-a") }]))[0].status, 429);
+});
+
+test("a correct password takes back its own count, so the owner's sign-ins don't use up the limits", async () => {
+  const app = makeApp(null);
+  const creds = { email: "buyer-b@demo.disputedesk.test", password: TEST_PASSWORD("buyer-b") };
+  for (let i = 0; i < LOGIN_MAX_FAILURES_PER_EMAIL + 5; i++) assert.equal((await signIns(app, [creds]))[0].status, 200);
+});
+
+test("the API sends Permissions-Policy always and HSTS only over HTTPS through a trusted proxy", async () => {
+  const local = await get(makeApp(null), "/api/me");
+  assert.equal(local.headers.get("permissions-policy"), PERMISSIONS_POLICY);
+  assert.equal(local.headers.get("strict-transport-security"), null, "no HSTS on local HTTP");
+
+  const https = { headers: { "X-Forwarded-Proto": "https" } };
+  const proxied = createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, trustProxy: 1 });
+  assert.equal((await get(proxied, "/api/me", https)).headers.get("strict-transport-security"), HSTS);
+  assert.equal((await get(makeApp(null), "/api/me", https)).headers.get("strict-transport-security"), null, "the header alone can't turn it on");
+  assert.match(PERMISSIONS_POLICY, /camera=\(\).*microphone=\(\).*geolocation=\(\)/);
+  assert.doesNotMatch(PERMISSIONS_POLICY, /clipboard|autoplay/, "copy and the intro video keep working");
+});
+
+test("at start the server clears signed-out and expired sessions and keeps live ones", () => {
+  let t = Date.UTC(2026, 10, 7);
+  const now = () => t;
+  const db = openDatabase(":memory:");
+  createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, db, now });
+  const sessions = createSessions(db, now);
+  const live = sessions.create("merchant-a");
+  const signedOut = sessions.create("buyer-a");
+  sessions.create("merchant-b");
+  sessions.delete(signedOut);
+  t += IDLE_MS / 2;
+  assert.equal(sessions.get(live), "merchant-a");
+  t += IDLE_MS / 2 + 1;
+  const count = () => Number(db.prepare("SELECT COUNT(*) AS n FROM sessions").get()!.n);
+  assert.equal(count(), 3);
+
+  createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, db, now });
+  assert.equal(count(), 1, "the signed-out and the idle session are gone");
+  assert.equal(sessions.get(live), "merchant-a", "the live session still works after a restart");
 });

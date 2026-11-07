@@ -22,6 +22,8 @@ test("both the dev and production pages refuse framing and sniffing and send no 
     assert.equal(headers["X-Content-Type-Options"], "nosniff");
     assert.equal(headers["X-Frame-Options"], "DENY");
     assert.equal(headers["Referrer-Policy"], "no-referrer");
+    assert.equal(headers["Permissions-Policy"], "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+    assert.ok(!("Strict-Transport-Security" in headers), "no HSTS on the plain-HTTP dev and preview servers");
     assert.equal(directives(headers["Content-Security-Policy"])["frame-ancestors"], "'none'");
     assert.equal(directives(headers["Content-Security-Policy"])["object-src"], "'none'");
   }

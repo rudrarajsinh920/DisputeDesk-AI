@@ -52,10 +52,17 @@ export const SESSION_COOKIE = "__Host-dd_session";
 export function createSessions(db: DatabaseSync, now: () => number = Date.now) {
   const key = (token: string) => createHash("sha256").update(token).digest("base64url");
 
+  // Removes only signed-out and expired sessions; get() refuses all of these anyway.
+  const prune = () => {
+    const t = now();
+    db.prepare("DELETE FROM sessions WHERE revoked_at IS NOT NULL OR last_seen_at < ? OR created_at < ?").run(t - IDLE_MS, t - ABSOLUTE_MS);
+  };
+
   return {
+    prune,
     create(accountId: string): string {
+      prune();
       const t = now();
-      db.prepare("DELETE FROM sessions WHERE revoked_at IS NOT NULL OR last_seen_at < ? OR created_at < ?").run(t - IDLE_MS, t - ABSOLUTE_MS);
       const token = randomBytes(32).toString("base64url");
       db.prepare("INSERT INTO sessions (token_hash, account_id, created_at, last_seen_at) VALUES (?, ?, ?, ?)").run(key(token), accountId, t, t);
       return token;
@@ -95,14 +102,22 @@ export function readCookie(header: string | undefined, name: string): string | n
 
 // ---- Login attempt limit ----
 
+// Per email and address together: one client's wrong guesses lock only that client out of that account.
 export const LOGIN_MAX_FAILURES = 10;
+// Per email from every address together: higher, so locking an owner out from everywhere takes many addresses.
+export const LOGIN_MAX_FAILURES_PER_EMAIL = 50;
 // Per address. Locally every request arrives from 127.0.0.1 (the Vite proxy), so this is a cap on all guessing,
 // set high enough that one account's typos don't lock everyone else out.
 export const LOGIN_MAX_FAILURES_PER_ADDRESS = 100;
 export const LOGIN_WINDOW_MS = 15 * 60_000;
+// Memory bound: at most this many keys, each holding at most LOGIN_MAX_FAILURES_PER_ADDRESS timestamps
+// (no caller's limit is higher), so a few MB in the worst case.
+export const LIMITER_MAX_KEYS = 10_000;
 
-// shortcut: in-memory, one server process; keys are only added on failed logins. Use a shared store with more processes.
-export function createLoginLimiter(now: () => number = Date.now) {
+// shortcut: in-memory, one server process. Use a shared store with more processes.
+// Keys stay in order of their latest failure, oldest first: expired keys are dropped from the front without
+// scanning the rest, and at the cap the least recently failed key is forgotten first.
+export function createLoginLimiter(now: () => number = Date.now, maxKeys = LIMITER_MAX_KEYS) {
   const failures = new Map<string, number[]>();
   const recent = (key: string) => {
     const list = (failures.get(key) ?? []).filter((t) => now() - t <= LOGIN_WINDOW_MS);
@@ -113,9 +128,25 @@ export function createLoginLimiter(now: () => number = Date.now) {
   return {
     blocked: (keys: string[], max = LOGIN_MAX_FAILURES) => keys.some((k) => recent(k).length >= max),
     fail: (keys: string[]) => {
-      // Drop expired keys too, so one-off guessed emails don't pile up in memory.
-      for (const k of failures.keys()) recent(k);
-      for (const k of keys) failures.set(k, [...recent(k), now()]);
+      const t = now();
+      for (const [k, list] of failures) {
+        if (t - list[list.length - 1] <= LOGIN_WINDOW_MS) break;
+        failures.delete(k);
+      }
+      for (const k of keys) {
+        const list = [...recent(k), t].slice(-LOGIN_MAX_FAILURES_PER_ADDRESS);
+        failures.delete(k);
+        if (failures.size >= maxKeys) failures.delete(failures.keys().next().value!);
+        failures.set(k, list);
+      }
+    },
+    // Takes back the latest failure on each key, for an attempt counted in advance that turned out right.
+    forgive: (keys: string[]) => {
+      for (const k of keys) {
+        const list = failures.get(k);
+        list?.pop();
+        if (list?.length === 0) failures.delete(k);
+      }
     },
     reset: (key: string) => {
       failures.delete(key);

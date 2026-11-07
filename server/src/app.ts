@@ -23,6 +23,7 @@ import {
   IDLE_MS,
   LOGIN_MAX_FAILURES,
   LOGIN_MAX_FAILURES_PER_ADDRESS,
+  LOGIN_MAX_FAILURES_PER_EMAIL,
   LOGIN_WINDOW_MS,
   SESSION_COOKIE,
   canAccess,
@@ -49,6 +50,10 @@ import { audit, findAccountByEmail, getAccount, listAccounts, listAudit, loadDis
 import { validateDispute, validateLogin, validateLookup } from "./validate.ts";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+// The app uses none of these. The page's clipboard copy and intro video autoplay are left alone.
+export const PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), payment=(), usb=()";
+// One year. No includeSubDomains or preload: the domain owner decides those at deployment.
+export const HSTS = "max-age=31536000";
 
 // Synthetic demo records, owned by the server and always labeled "demo".
 // Built from the same file the client lists, so the two never drift; an invalid fixture stops the server at startup.
@@ -111,6 +116,8 @@ export function createApp(
   const aiInFlight = new Set<string>();
   seedDemo(db, accounts, DEMO_DISPUTES, now());
   const sessions = createSessions(db, now);
+  // Signed-out and expired sessions from earlier runs are cleared at start; live ones stay signed in.
+  sessions.prune();
   const limiter = createLoginLimiter(now);
   // The sign-in limiter's sliding window, reused: each Gemini call counts against the account that asked for it.
   const aiLimiter = createLoginLimiter(now);
@@ -186,14 +193,17 @@ export function createApp(
   }
 
   // The API only returns JSON: nothing in it may run, be framed or be read by another site.
-  app.use((_req, res, next) => {
+  app.use((req, res, next) => {
     res.set({
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
       "Referrer-Policy": "no-referrer",
       "Cross-Origin-Resource-Policy": "same-origin",
       "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+      "Permissions-Policy": PERMISSIONS_POLICY,
     });
+    // Only over HTTPS: req.secure is true behind a trusted proxy that reports https, never on local HTTP.
+    if (req.secure) res.set("Strict-Transport-Security", HSTS);
     next();
   });
 
@@ -237,23 +247,32 @@ export function createApp(
       });
       return;
     }
-    const keys = [`email:${result.email}`, `ip:${req.ip}`];
+    // Known and unknown emails are counted and answered the same way, so a lockout says nothing about whether an account exists.
+    const emailKey = `email:${result.email}`;
+    const addressKey = `ip:${req.ip}`;
+    const pairKey = `${emailKey}|${addressKey}`;
     const account = findAccountByEmail(db, result.email);
     // Unknown emails are never written to the audit log; only known account IDs are.
-    if (limiter.blocked([keys[0]]) || limiter.blocked([keys[1]], LOGIN_MAX_FAILURES_PER_ADDRESS)) {
+    if (
+      limiter.blocked([pairKey]) ||
+      limiter.blocked([emailKey], LOGIN_MAX_FAILURES_PER_EMAIL) ||
+      limiter.blocked([addressKey], LOGIN_MAX_FAILURES_PER_ADDRESS)
+    ) {
       audit(db, now(), "login_locked", { account_id: account?.id ?? null });
       res.set("Retry-After", String(LOGIN_WINDOW_MS / 1000));
       sendError(res, 429, "too_many_attempts", "Too many failed sign-in attempts. Try again in 15 minutes.");
       return;
     }
+    // Counted before the slow password check, so requests sent at the same moment can't all slip under the limit.
+    limiter.fail([pairKey, emailKey, addressKey]);
     const valid = await verifyPassword(result.password, account?.password_hash ?? (await dummyHash));
     if (!account || !valid) {
-      limiter.fail(keys);
       audit(db, now(), "login_failed", { account_id: account?.id ?? null });
       sendError(res, 401, "invalid_credentials", "Email or password is incorrect.");
       return;
     }
-    limiter.reset(keys[0]);
+    limiter.forgive([emailKey, addressKey]);
+    limiter.reset(pairKey);
     // A new token on every sign-in; any session the browser already had is ended.
     const previous = readCookie(req.headers.cookie, SESSION_COOKIE);
     const token = transaction(db, () => {
@@ -388,7 +407,12 @@ export function createApp(
   app.get("/api/admin/settings", requireRole("admin"), (_req, res) => {
     res.json({
       session: { idle_minutes: IDLE_MS / 60_000, absolute_hours: ABSOLUTE_MS / 3_600_000 },
-      sign_in: { max_failures: LOGIN_MAX_FAILURES, max_failures_per_address: LOGIN_MAX_FAILURES_PER_ADDRESS, window_minutes: LOGIN_WINDOW_MS / 60_000 },
+      sign_in: {
+        max_failures: LOGIN_MAX_FAILURES,
+        max_failures_per_email: LOGIN_MAX_FAILURES_PER_EMAIL,
+        max_failures_per_address: LOGIN_MAX_FAILURES_PER_ADDRESS,
+        window_minutes: LOGIN_WINDOW_MS / 60_000,
+      },
       paypal: { environment: "sandbox", configured: paypal !== null, access: "read-only" },
       ai: ai ? { configured: true, model: ai.model, reason: null } : { configured: false, model: null, reason: aiOff },
       audit: { append_only: true, shown: 200 },

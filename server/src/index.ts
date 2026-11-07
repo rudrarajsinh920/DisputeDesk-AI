@@ -32,4 +32,7 @@ app.listen(config.port, "127.0.0.1", (error?: Error) => {
   const paypal = config.paypal ? "configured" : `not configured (add credentials to ${ENV_PATH})`;
   const ai = config.ai ? `on (${config.ai.model})` : `off (${config.aiOff})`;
   console.log(`DisputeDesk server on http://127.0.0.1:${config.port}. PayPal sandbox: ${paypal}. AI drafting: ${ai}.`);
+  // The audit log is append-only and is never trimmed; this makes its growth visible (archive by copying the file).
+  const auditRows = Number(db.prepare("SELECT COUNT(*) AS n FROM audit_log").get()!.n);
+  console.log(`Audit log: ${auditRows} entries in ${databasePath}.`);
 });

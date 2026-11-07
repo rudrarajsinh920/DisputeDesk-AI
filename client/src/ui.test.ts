@@ -928,13 +928,14 @@ test("admin audit logs name accounts and flag refused access; admin settings are
   assert.doesNotMatch(audit, /merchant-b<\/td>/, "account IDs show as display names");
   const settings: Settings = {
     session: { idle_minutes: 30, absolute_hours: 8 },
-    sign_in: { max_failures: 10, max_failures_per_address: 100, window_minutes: 15 },
+    sign_in: { max_failures: 10, max_failures_per_email: 50, max_failures_per_address: 100, window_minutes: 15 },
     paypal: { environment: "sandbox", configured: true, access: "read-only" },
     ai: { configured: false, model: null, reason: "No key" },
     audit: { append_only: true, shown: 200 },
   };
   const page = html(createElement(AdminSettings, { settings }));
   assert.match(text(page), /30 minutes/);
+  assert.match(text(page), /from all addresses 50 in 15 minutes/);
   assert.match(text(page), /Refused by the database/);
   assert.doesNotMatch(page, /<(input|select|textarea|form)/, "nothing on the settings page can be edited");
   assert.ok([...page.matchAll(/<button[^>]*>/g)].length === 0);

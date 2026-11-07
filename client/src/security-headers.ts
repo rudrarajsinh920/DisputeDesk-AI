@@ -4,6 +4,9 @@ const COMMON = {
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "no-referrer",
   "Cross-Origin-Opener-Policy": "same-origin",
+  // Features the page never uses. Clipboard (Copy draft) and autoplay (intro video) are left allowed.
+  // HSTS is not set here: the dev and preview servers are plain HTTP; it belongs on the HTTPS terminator.
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
 };
 
 // Production build (`npm run preview`): only the app's own files run, nothing inline, nothing from other hosts.
