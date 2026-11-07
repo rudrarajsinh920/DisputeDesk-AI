@@ -68,7 +68,7 @@ export async function fetchDraftCheck(target: Pick<Dispute, "source" | "dispute_
   return check;
 }
 
-export { countMarkers, readiness } from "../../shared/readiness.ts";
+export { MAX_CHECK_TEXT, countMarkers, readiness } from "../../shared/readiness.ts";
 export type { Readiness } from "../../shared/readiness.ts";
 
 // Whether the server has AI drafting on, so the page can say so before anyone clicks. Never calls Gemini.

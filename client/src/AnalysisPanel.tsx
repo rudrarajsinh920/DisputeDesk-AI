@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis, fetchDraftCheck, readiness } from "./analysis.ts";
+import { MAX_CHECK_TEXT, countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis, fetchDraftCheck, readiness } from "./analysis.ts";
 import { humanize } from "../../shared/disputes.ts";
 import type { AiAssist, AiStatus, Analysis, Dispute, DraftCheck, EvidenceStatus, RecordRef } from "../../shared/types.ts";
 import { StatePanel } from "./ui.tsx";
@@ -551,8 +551,10 @@ export function DraftEditor({
     setCopyStatus("");
   }, [generated]);
 
+  // Checked here first, so a long draft gets a plain answer before anything is sent. Copy still works at any length.
+  const tooLong = draft.length > MAX_CHECK_TEXT;
   async function checkEdits() {
-    if (!checkFor || check.pending) return;
+    if (!checkFor || check.pending || tooLong) return;
     setCheck({ pending: true, result: null, error: null });
     try {
       setCheck({ pending: false, result: await fetchDraftCheck(checkFor, draft), error: null });
@@ -586,7 +588,14 @@ export function DraftEditor({
         </span>
       </div>
       <p className="muted">{note}</p>
-      <textarea id={id} className="draft" value={draft} onChange={(e) => edit(e.target.value)} rows={18} />
+      <textarea
+        id={id}
+        className="draft"
+        value={draft}
+        onChange={(e) => edit(e.target.value)}
+        rows={18}
+        aria-describedby={checkFor && tooLong ? `${id}-length` : undefined}
+      />
       <div className="draft-actions">
         <button type="button" className="button" onClick={copyDraft}>
           Copy draft
@@ -603,7 +612,7 @@ export function DraftEditor({
           Reset to generated draft
         </button>
         {checkFor ? (
-          <button type="button" className="button button-secondary" aria-disabled={check.pending} onClick={checkEdits}>
+          <button type="button" className="button button-secondary" aria-disabled={check.pending || tooLong} onClick={checkEdits}>
             {check.pending ? "Checking…" : "Check my edits"}
           </button>
         ) : null}
@@ -612,6 +621,11 @@ export function DraftEditor({
           {copyStatus}
         </span>
       </div>
+      {checkFor && tooLong ? (
+        <p className="error-text" id={`${id}-length`} role="status">
+          {`This draft has ${draft.length.toLocaleString("en-US")} characters. Check my edits works on drafts up to ${MAX_CHECK_TEXT.toLocaleString("en-US")}, so shorten it to check it. Copy still works.`}
+        </p>
+      ) : null}
       {check.error ? (
         <p className="error-text" role="alert">
           {check.error}

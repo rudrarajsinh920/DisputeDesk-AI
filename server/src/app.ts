@@ -440,10 +440,15 @@ export function createApp(
 
   // The merchant's own edits, run through the same checks as AI text. Advisory: nothing is removed, stored or audited,
   // and Gemini is never called. Merchants only, like the drafts themselves.
-  app.post("/api/analysis/check", requireRole("merchant"), express.json({ limit: "16kb" }), async (req, res) => {
+  // 64kb: room for MAX_CHECK_TEXT characters in any script once JSON-escaped, so the length check below answers, not a 413.
+  app.post("/api/analysis/check", requireRole("merchant"), express.json({ limit: "64kb" }), async (req, res) => {
     const text = (req.body as { text?: unknown } | undefined)?.text;
-    if (typeof text !== "string" || text.length > MAX_CHECK_TEXT) {
-      sendError(res, 400, "invalid_request", `text must be a string of at most ${MAX_CHECK_TEXT} characters.`);
+    if (typeof text !== "string") {
+      sendError(res, 400, "invalid_request", "text must be a string.");
+      return;
+    }
+    if (text.length > MAX_CHECK_TEXT) {
+      sendError(res, 400, "text_too_long", `This draft is too long to check. Shorten it to ${MAX_CHECK_TEXT.toLocaleString("en-US")} characters or fewer.`);
       return;
     }
     const dispute = await findDispute(req, res);

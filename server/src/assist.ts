@@ -1,5 +1,6 @@
 import { REASON_LABELS, labelFor } from "../../shared/disputes.ts";
 import { countMarkers } from "../../shared/readiness.ts";
+export { MAX_CHECK_TEXT } from "../../shared/readiness.ts";
 import type { AiAssist, AiExplanation, AiFact, AiFlag, Analysis, Dispute, DraftCheck, DraftLine, EvidenceKey } from "../../shared/types.ts";
 import { DEMO_LABEL, DRAFT_FOOTER, DRAFT_HEADER } from "./evidence.ts";
 import { AiError } from "./gemini.ts";
@@ -273,7 +274,6 @@ function checkContext(dispute: Dispute, analysis: Analysis, facts: AiFact[]): Ch
   };
 }
 
-export const MAX_CHECK_TEXT = 8000;
 const AI_NOTICE = "AI-ASSISTED — CHECK EVERY STATEMENT AGAINST YOUR RECORDS.";
 const AI_GAPS = "Gaps found by the evidence rules (resolve before responding):";
 const MARKER_LINE = /\[(MISSING|UNVERIFIED|UNSUPPORTED|NEEDS MERCHANT INPUT|CONFLICT):/;

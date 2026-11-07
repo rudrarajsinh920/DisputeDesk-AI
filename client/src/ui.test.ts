@@ -632,6 +632,17 @@ test("the merchant-review warning sits outside the editable text, so edits can't
   assert.match(text(markup), /No markers left/);
 });
 
+test("a draft too long to check says so in the editor, and Check my edits is held back", () => {
+  const checkFor = { source: "demo" as const, dispute_id: "DEMO-1001" };
+  const long = html(createElement(DraftEditor, { id: "d", title: "Response draft", note: "n", generated: "x".repeat(8001), checkFor }));
+  assert.match(text(long), /This draft has 8,001 characters\. Check my edits works on drafts up to 8,000/);
+  assert.match(long, /aria-describedby="d-length"/);
+  assert.match(long, /aria-disabled="true"[^>]*>Check my edits</);
+  const ok = html(createElement(DraftEditor, { id: "d", title: "Response draft", note: "n", generated: "x".repeat(8000), checkFor }));
+  assert.doesNotMatch(ok, /characters\. Check my edits/);
+  assert.match(ok, /aria-disabled="false"[^>]*>Check my edits</);
+});
+
 // ---- No PayPal submission ----
 
 test("no control in the workspace can submit, send or publish to PayPal", () => {

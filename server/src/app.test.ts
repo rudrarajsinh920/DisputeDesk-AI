@@ -682,7 +682,11 @@ test("the edit check flags invented facts in the merchant's own text and leaves 
     assert.doesNotMatch(r, /supplied/, "worded for the merchant, not for the model");
   }
 
-  assert.equal((await check("x".repeat(MAX_CHECK_TEXT + 1))).status, 400, "oversized text is refused");
+  const tooLong = await check("x".repeat(MAX_CHECK_TEXT + 1));
+  assert.equal(tooLong.status, 400, "oversized text is refused");
+  assert.equal(tooLong.body.error.code, "text_too_long");
+  assert.match(tooLong.body.error.message, /too long to check\. Shorten it to 8,000 characters/);
+  assert.equal((await check("é".repeat(MAX_CHECK_TEXT))).status, 200, "a full-length draft in any script fits the body limit");
   assert.equal((await check(42)).status, 400, "text must be a string");
   assert.equal((await get(app, "/api/analysis/check", lookup("demo", "DEMO-9999", { text: "Our reply." }))).status, 404);
   assert.equal(ai.calls.length, 0, "the check never calls Gemini");

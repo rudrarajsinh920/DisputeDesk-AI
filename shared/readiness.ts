@@ -2,6 +2,9 @@ import type { Analysis } from "./types.ts";
 
 const MARKER = /\[(MISSING|UNVERIFIED|UNSUPPORTED|NEEDS MERCHANT INPUT|CONFLICT):/g;
 
+// Longest draft "Check my edits" accepts. The editor warns before sending; the server refuses anything longer.
+export const MAX_CHECK_TEXT = 8000;
+
 // Gaps the merchant still has to fill or remove before the draft can be used.
 // Lines starting with ">" are quoted buyer text, so brackets typed by the buyer are not counted.
 export const countMarkers = (text: string) =>

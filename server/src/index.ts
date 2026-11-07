@@ -6,7 +6,15 @@ import { createPayPalClient } from "./paypal.ts";
 
 const config = loadConfig();
 // A failed migration or a database from a newer server stops startup here, before anything is served.
-const db = openDatabase(process.env.DATABASE_PATH || DEFAULT_DATABASE_PATH);
+const databasePath = process.env.DATABASE_PATH || DEFAULT_DATABASE_PATH;
+let db: ReturnType<typeof openDatabase>;
+try {
+  db = openDatabase(databasePath);
+} catch (error) {
+  // One plain line instead of a stack trace. The path is not a secret; no .env value is printed.
+  console.error(`Could not open the database at ${databasePath}: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+}
 const app = createApp(
   config.paypal ? createPayPalClient(config.paypal) : null,
   config.ai ? createGeminiClient(config.ai) : null,
