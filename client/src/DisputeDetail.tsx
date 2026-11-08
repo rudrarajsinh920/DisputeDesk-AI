@@ -8,6 +8,7 @@ const CASE_PARTS = [
   ["#case-facts", "Facts"],
   ["#case-readiness", "Readiness"],
   ["#case-sides", "Claim and records"],
+  ["#case-checklist", "Checklist"],
   ["#case-evidence", "Evidence"],
   ["#case-contradictions", "Contradictions"],
   ["#case-steps", "Next steps"],

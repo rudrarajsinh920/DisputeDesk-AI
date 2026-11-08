@@ -40,6 +40,7 @@ import {
 import type { Account } from "./auth.ts";
 import { AI_OFF_NO_KEY } from "./config.ts";
 import { openDatabase, transaction } from "./db.ts";
+import { buildChecklist } from "./checklist.ts";
 import { analyzeDispute } from "./evidence.ts";
 import { AiError } from "./gemini.ts";
 import { buildIntelligence, buildIntelligenceAiRequest, composeIntelligenceExplanation, rulesIntelligenceExplanation } from "./intelligence.ts";
@@ -442,6 +443,13 @@ export function createApp(
     audit(db, now(), "analysis_viewed", { account_id: signedIn(res).id, dispute_id: dispute.dispute_id, detail: dispute.source });
     // Provenance is derived from the same analysis and only adds keys; statuses, counts and draft text are untouched.
     res.json(withProvenance(dispute, analyzeDispute(dispute)));
+  });
+
+  // Evidence checklist for the dispute's reason, derived from the same analysis. Read-only: nothing is stored or audited.
+  app.post("/api/analysis/checklist", requireRole("merchant", "admin"), express.json({ limit: "4kb" }), async (req, res) => {
+    const dispute = await findDispute(req, res);
+    if (!dispute) return;
+    res.json(buildChecklist(dispute, analyzeDispute(dispute)));
   });
 
   // On demand only. The rules run first; Gemini words their findings; assist.ts checks every line it returns.

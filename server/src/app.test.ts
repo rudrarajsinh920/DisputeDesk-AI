@@ -24,6 +24,7 @@ import { analyzeDispute } from "./evidence.ts";
 import { createGeminiClient } from "./gemini.ts";
 import { createPayPalClient, normalizeDetails } from "./paypal.ts";
 import { buildProvenance } from "./provenance.ts";
+import { buildChecklist } from "./checklist.ts";
 
 // Placeholder values only; nothing here talks to PayPal.
 const CREDENTIALS = { clientId: "test-client-id", clientSecret: "test-client-secret" };
@@ -833,6 +834,7 @@ const PROTECTED: [string, string][] = [
   ["POST", "/api/analysis/ai"],
   ["POST", "/api/analysis/ai/example"],
   ["POST", "/api/analysis/check"],
+  ["POST", "/api/analysis/checklist"],
   ["GET", "/api/health"],
   ["GET", "/api/intelligence"],
   ["POST", "/api/intelligence/explain"],
@@ -840,7 +842,7 @@ const PROTECTED: [string, string][] = [
 // Sign-in and sign-out are the only routes without a session check.
 const PUBLIC_ROUTES = ["POST /api/auth/login", "POST /api/auth/logout"];
 // Admin is read-only: the only write-method routes admin may call compute an answer and change nothing.
-const ADMIN_READ_ONLY_POSTS = ["/api/analysis", "/api/analysis/ai/example"];
+const ADMIN_READ_ONLY_POSTS = ["/api/analysis", "/api/analysis/ai/example", "/api/analysis/checklist"];
 
 test("every protected route refuses missing, forged and expired sessions, and calls nothing", async () => {
   let t = 1_000_000;
@@ -893,6 +895,8 @@ test("each route allows exactly the intended roles", async () => {
     ["validation example of DEMO-1003", "/api/analysis/ai/example", body("DEMO-1003"), [200, 404, 200, 403, 403]],
     ["edit check of DEMO-1001 (admin is read-only)", "/api/analysis/check", lookup("demo", "DEMO-1001", { text: "Our reply." }), [403, 200, 404, 403, 403]],
     ["sandbox analysis", "/api/analysis", lookup("paypal_sandbox", "PP-D-1"), [200, 200, 403, 403, 403]],
+    ["evidence checklist of DEMO-1001", "/api/analysis/checklist", body("DEMO-1001"), [200, 200, 404, 403, 403]],
+    ["sandbox evidence checklist", "/api/analysis/checklist", lookup("paypal_sandbox", "PP-D-1"), [200, 200, 403, 403, 403]],
     ["health", "/api/health", undefined, [200, 200, 200, 403, 403]],
     ["insights", "/api/intelligence", undefined, [200, 200, 200, 403, 403]],
     ["insights explanation (admin is read-only)", "/api/intelligence/explain", { method: "POST" }, [403, 200, 200, 403, 403]],
@@ -1742,4 +1746,47 @@ test("the edit check returns paragraph claims, stays advisory and is not audited
   const rows = db.prepare("SELECT event, detail FROM audit_log").all() as { event: string; detail: string | null }[];
   assert.ok(!rows.some((r) => r.event.includes("check")), "the edit check is not audited");
   assert.ok(!JSON.stringify(rows).includes("refunded"), "the checked text is never stored");
+});
+
+// ---- Stage 2.1a: evidence checklist route. ----
+
+const CHECKLIST_KEYS = ["check_before_adding", "reason_known", "tier"];
+
+test("the checklist route returns the checklist built from the rules for every demo record, and audits nothing", async () => {
+  const db = openDatabase(":memory:");
+  const app = appOn(db);
+  for (const d of DEMO_DISPUTES) {
+    const res = await get(app, "/api/analysis/checklist", lookup("demo", d.dispute_id), "admin");
+    assert.equal(res.status, 200, d.dispute_id);
+    assert.deepEqual(res.body, buildChecklist(d, analyzeDispute(d)), d.dispute_id);
+  }
+  const rows = db.prepare("SELECT event FROM audit_log").all() as { event: string }[];
+  assert.ok(!rows.some((r) => r.event.includes("checklist")), "the checklist is not audited");
+});
+
+test("another account's dispute is a plain 404 on the checklist route, like a missing one", async () => {
+  const app = makeApp(null);
+  const other = await get(app, "/api/analysis/checklist", lookup("demo", "DEMO-1003"));
+  const missing = await get(app, "/api/analysis/checklist", lookup("demo", "DEMO-9999"));
+  assert.equal(other.status, 404);
+  assert.equal(other.text, missing.text);
+});
+
+test("checklist data reaches no other response and is never sent to Gemini", async () => {
+  const ai = mockAi();
+  const app = makeApp(null, ai.client);
+  const responses = [
+    await get(app, "/api/analysis", lookup("demo", "DEMO-1001")),
+    await get(app, "/api/analysis/ai", lookup("demo", "DEMO-1001")),
+    await get(app, "/api/buyer/disputes", {}, "buyer-b"),
+    await get(app, "/api/buyer/explain", lookup("demo", "DEMO-1002"), "buyer-b"),
+    await get(app, "/api/intelligence", {}, "merchant-a"),
+    await get(app, "/api/disputes", {}, "merchant-a"),
+  ];
+  for (const res of responses) {
+    assert.equal(res.status, 200);
+    for (const key of CHECKLIST_KEYS) assert.ok(!keysOf(res.body).has(key), `"${key}" in ${res.text.slice(0, 60)}`);
+  }
+  assert.ok(ai.calls.length > 0);
+  for (const call of ai.calls) for (const key of CHECKLIST_KEYS) assert.ok(!call.body.includes(key), `Gemini was sent "${key}"`);
 });

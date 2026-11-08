@@ -672,6 +672,7 @@ code,
 .badge-info { background: var(--info-bg); color: var(--info-text); }
 .badge-ok { background: var(--ok-bg); color: var(--ok-text); }
 .badge-neutral { background: var(--neutral-bg); color: var(--neutral-text); }
+.badge-conflict { background: var(--gap-bg); color: var(--gap-text); }
 
 .empty-inline {
   padding: 24px 8px;
@@ -1148,6 +1149,29 @@ details summary {
 .draft-sources summary {
   cursor: pointer;
   font-weight: 600;
+}
+
+/* Evidence checklist (Stage 2.1): gap guidance stays folded until asked for. */
+.checklist-guide summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.checklist-guide h4 {
+  margin: 10px 0 2px;
+  font-size: 0.8125rem;
+}
+
+.checklist-guide ul,
+.checklist-notes {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.checklist > .checklist-guide,
+.checklist-notes {
+  margin-top: 12px;
 }
 
 .draft-sources ul {
@@ -2857,7 +2881,8 @@ blockquote {
   .login-form input {
     min-height: 44px;
   }
-  .draft-sources summary {
+  .draft-sources summary,
+  .checklist-guide summary {
     display: flex;
     align-items: center;
     min-height: 44px;

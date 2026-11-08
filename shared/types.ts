@@ -138,6 +138,43 @@ export interface Analysis {
   provenance?: Provenance;
 }
 
+// ---- Evidence checklist per dispute reason (server/src/checklist.ts). Derived from the Analysis; never stored. ----
+
+// "official" needs a verified PayPal source; "general" is common practice; "disputedesk" is DisputeDesk's own guidance.
+export type RequirementTier = "official" | "general" | "disputedesk";
+// "needs_confirmation": no record field shows it, so the merchant confirms it from their own records.
+// "not_applicable": does not bear on this reason and is never counted as a gap.
+export type ChecklistStatus = "available" | "missing" | "conflicting" | "needs_confirmation" | "not_applicable";
+
+export interface ChecklistItem {
+  id: string;
+  label: string;
+  tier: RequirementTier;
+  // Required when tier is "official"; null otherwise.
+  citation: { url: string; checked_on: string } | null;
+  status: ChecklistStatus;
+  // The engine's priority for items it assesses; "supporting" for checklist-only items.
+  priority: "key" | "supporting";
+  // The evidence finding this item mirrors; null for items no record field can show.
+  evidence_key: EvidenceKey | null;
+  // Provenance refs behind the status.
+  refs: string[];
+  why: string;
+  where: string[];
+  check_before_adding: string[];
+  limits: string;
+}
+
+export interface EvidenceChecklist {
+  source: Source;
+  dispute_id: string;
+  reason: string;
+  // false: no reason-specific list, so the generic list is shown.
+  reason_known: boolean;
+  items: ChecklistItem[];
+  notes: string[];
+}
+
 // AI-assisted explanations and draft (server/src/assist.ts). The rule-based Analysis stays authoritative.
 // A supplied record value the model may cite by id (R1, R2…).
 export interface AiFact {

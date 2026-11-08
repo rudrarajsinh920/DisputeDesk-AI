@@ -49,7 +49,7 @@ const REFUND_REASONS: Record<string, string> = {
 const REFUND_STEP =
   "PayPal's dispute reasons reference lists proof of refund (the refund ID) for this reason. DisputeDesk's records have no refund field, so find it in PayPal or your payment records.";
 
-const NOT_PROOF ="Missing from the supplied records does not show that it did not happen.";
+export const NOT_PROOF = "Missing from the supplied records does not show that it did not happen.";
 
 // Written only by the server, in every draft (rule-based and AI-assisted).
 export const DRAFT_HEADER = "DRAFT — REQUIRES MERCHANT REVIEW. NOT SUBMITTED TO PAYPAL.";

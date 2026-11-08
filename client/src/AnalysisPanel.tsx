@@ -1,19 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { MAX_CHECK_TEXT, countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis, fetchDraftCheck, readiness } from "./analysis.ts";
+import { MAX_CHECK_TEXT, countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis, fetchChecklist, fetchDraftCheck, readiness } from "./analysis.ts";
 import { humanize } from "../../shared/disputes.ts";
 import type {
   AiAssist,
   AiStatus,
   Analysis,
+  ChecklistStatus,
   ClaimSupport,
   Dispute,
   DraftCheck,
   DraftLine,
+  EvidenceChecklist,
   EvidenceRef,
   EvidenceStatus,
   ParagraphClaim,
   RecordRef,
+  RequirementTier,
   SourceType,
   VerificationState,
 } from "../../shared/types.ts";
@@ -255,6 +258,136 @@ export function ClaimAndRecords({ dispute, analysis }: { dispute: Dispute; analy
   );
 }
 
+// ---- Evidence checklist for the dispute's reason (Stage 2.1). Read-only guidance; no AI, nothing saved. ----
+
+const CHECKLIST_STATUS: Record<ChecklistStatus, { label: string; className: string }> = {
+  available: { label: "Available in records", className: "badge badge-ok" },
+  missing: { label: "Missing from records", className: "badge badge-warn" },
+  conflicting: { label: "Conflicting records", className: "badge badge-conflict" },
+  needs_confirmation: { label: "Confirm from your records", className: "badge badge-info" },
+  not_applicable: { label: "Not applicable", className: "badge badge-neutral" },
+};
+// "PayPal-documented" only ever appears with a verified source; the server sends none today.
+const TIERS: Record<RequirementTier, { label: string; className: string }> = {
+  official: { label: "PayPal-documented", className: "tag tag-record" },
+  general: { label: "General guidance", className: "tag tag-guidance" },
+  disputedesk: { label: "DisputeDesk guidance", className: "tag tag-standard" },
+};
+
+export type ChecklistLoad = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; checklist: EvidenceChecklist };
+
+function ChecklistSection({ dispute, refsById }: { dispute: Dispute; refsById: Map<string, EvidenceRef> }) {
+  const [load, setLoad] = useState<ChecklistLoad>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoad({ status: "loading" });
+    fetchChecklist(dispute, controller.signal)
+      .then((checklist) => setLoad({ status: "ready", checklist }))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
+      });
+    return () => controller.abort();
+  }, [dispute, attempt]);
+  return <ChecklistView load={load} refsById={refsById} onRetry={() => setAttempt((n) => n + 1)} />;
+}
+
+export function ChecklistView({ load, refsById, onRetry }: { load: ChecklistLoad; refsById: Map<string, EvidenceRef>; onRetry: () => void }) {
+  return (
+    <section className="detail-section checklist" id="case-checklist" aria-labelledby="checklist-title" aria-busy={load.status === "loading"}>
+      <h3 id="checklist-title">Evidence checklist for this reason</h3>
+      {load.status === "loading" && <p className="muted">Loading the checklist…</p>}
+      {load.status === "error" && (
+        <>
+          <p>Couldn't load the checklist. {load.message}</p>
+          <button type="button" className="button" onClick={onRetry}>
+            Try again
+          </button>
+        </>
+      )}
+      {load.status === "ready" && <ChecklistItems checklist={load.checklist} refsById={refsById} />}
+    </section>
+  );
+}
+
+function ChecklistItems({ checklist, refsById }: { checklist: EvidenceChecklist; refsById: Map<string, EvidenceRef> }) {
+  const applicable = checklist.items.filter((i) => i.status !== "not_applicable");
+  const notApplicable = checklist.items.filter((i) => i.status === "not_applicable");
+  const count = (s: ChecklistStatus) => applicable.filter((i) => i.status === s).length;
+  const counts = (["available", "missing", "conflicting", "needs_confirmation"] as const)
+    .filter((s) => count(s) > 0)
+    .map((s) => `${CHECKLIST_STATUS[s].label}: ${count(s)}`);
+  return (
+    <>
+      {!checklist.reason_known && (
+        <p className="notice" role="note">
+          No reason-specific checklist for this reason; showing general evidence.
+        </p>
+      )}
+      <p className="muted">{counts.join(" · ")}</p>
+      <ul className="findings ledger">
+        {applicable.map((item) => {
+          const refs = item.refs.flatMap((id) => refsById.get(id) ?? []);
+          return (
+            <li key={item.id} className="finding">
+              <div className="finding-head">
+                <span className="check-item">{item.label}</span>
+                {item.priority === "key" && <span className="key-tag">Key for this reason</span>}
+                <span className={TIERS[item.tier].className}>{TIERS[item.tier].label}</span>
+                <span className={CHECKLIST_STATUS[item.status].className}>{CHECKLIST_STATUS[item.status].label}</span>
+              </div>
+              <p className="muted">Why it may matter: {item.why}</p>
+              {item.status !== "available" && (
+                <details className="checklist-guide">
+                  <summary>How to fill this gap</summary>
+                  <h4>Where you might find it</h4>
+                  <ul>
+                    {item.where.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                  <h4>Check before adding</h4>
+                  <ul>
+                    {item.check_before_adding.map((c) => (
+                      <li key={c}>{c}</li>
+                    ))}
+                  </ul>
+                  <h4>What DisputeDesk can't see</h4>
+                  <p>{item.limits}</p>
+                </details>
+              )}
+              {refs.length > 0 && (
+                <details className="checklist-guide">
+                  <summary>Based on</summary>
+                  <RefList refs={refs} />
+                </details>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {notApplicable.length > 0 && (
+        <details className="checklist-guide">
+          <summary>Not applicable to this reason ({notApplicable.length})</summary>
+          <ul>
+            {notApplicable.map((item) => (
+              <li key={item.id}>
+                <span className="check-item">{item.label}</span>: {item.why}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <ul className="checklist-notes muted">
+        {checklist.notes.map((n) => (
+          <li key={n}>{n}</li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: Dispute; analysis: Analysis; canDraft?: boolean }) {
   const provenance = analysis.provenance;
   const refsById = new Map(provenance?.refs.map((r) => [r.ref, r]));
@@ -262,6 +395,7 @@ export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: 
     <>
       <ReadinessSummary analysis={analysis} />
       <ClaimAndRecords dispute={dispute} analysis={analysis} />
+      <ChecklistSection dispute={dispute} refsById={refsById} />
 
       <section className="detail-section" id="case-evidence">
         <h3>Evidence analysis</h3>

@@ -8,10 +8,11 @@ import type { ReactElement, ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { buildAiRequest, checkMerchantDraft, composeAiAssist } from "../../server/src/assist.ts";
 import { assistWithRefs, withProvenance } from "../../server/src/provenance.ts";
+import { buildChecklist } from "../../server/src/checklist.ts";
 import { analyzeDispute } from "../../server/src/evidence.ts";
 import { VALIDATION_EXAMPLE_MODEL, validationExampleAnswer } from "../../server/src/assist.ts";
 import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
-import { AiResult, AiSectionView, AnalysisView, CheckResult, ClaimAndRecords, DISCARD_EDITS, DraftEditor, ReadinessSummary, ValidationExampleView } from "./AnalysisPanel.tsx";
+import { AiResult, AiSectionView, AnalysisView, CheckResult, ChecklistView, ClaimAndRecords, DISCARD_EDITS, DraftEditor, ReadinessSummary, ValidationExampleView } from "./AnalysisPanel.tsx";
 import { readiness } from "./analysis.ts";
 import type { AiState, ExampleState } from "./AnalysisPanel.tsx";
 import { AccountView } from "./Account.tsx";
@@ -509,7 +510,7 @@ test("claim and records puts the buyer's words beside the records, never cites c
 test("the open dispute links to readiness and claim and records, and quotes the buyer once", () => {
   const withMessage = demoDisputes.find((d) => d.customer_message)!;
   const out = text(html(createElement(DisputeDetail, { dispute: withMessage })));
-  assert.match(out, /Facts Readiness Claim and records Evidence Contradictions Next steps Draft AI draft/);
+  assert.match(out, /Facts Readiness Claim and records Checklist Evidence Contradictions Next steps Draft AI draft/);
   assert.doesNotMatch(out, /Customer message/);
 });
 
@@ -724,8 +725,8 @@ test("the client calls only DisputeDesk's own read and analysis endpoints", () =
     .map((f) => readFileSync(new URL(f, dir), "utf8"))
     .join("\n");
   const urls = [...new Set([...sources.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(urls, ["/api/admin/accounts", "/api/admin/audit", "/api/admin/settings", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/analysis/check", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
-  assert.equal((sources.match(/fetch\(/g) ?? []).length, 15, "each fetch call uses one of the endpoints above");
+  assert.deepEqual(urls, ["/api/admin/accounts", "/api/admin/audit", "/api/admin/settings", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/analysis/check", "/api/analysis/checklist", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
+  assert.equal((sources.match(/fetch\(/g) ?? []).length, 16, "each fetch call uses one of the endpoints above");
   assert.doesNotMatch(sources, /paypal\.com|generativelanguage|method:\s*"(PUT|PATCH|DELETE)"/i);
 });
 
@@ -1004,4 +1005,58 @@ test("AI cites name the record field they point to, and the AI draft lists its s
   assert.match(out, /Cites: R5 Order confirmation = marked available \(evidence\.order_confirmation\)/);
   assert.match(out, /Sources for the generated draft/);
   assert.doesNotMatch(out, /demo:DEMO-1001:/, "raw ref IDs are shown as field names");
+});
+
+// ---- Stage 2.1b: evidence checklist section. ----
+
+const checklistOf = (d: Dispute) => {
+  const analysis = withProvenance(d, analyzeDispute(d));
+  const refsById = new Map(analysis.provenance!.refs.map((r) => [r.ref, r]));
+  return { checklist: buildChecklist(d, analyzeDispute(d)), refsById };
+};
+const checklistHtml = (d: Dispute) => {
+  const { checklist, refsById } = checklistOf(d);
+  return html(createElement(ChecklistView, { load: { status: "ready", checklist }, refsById, onRetry: noop }));
+};
+
+test("the checklist shows every status and tier as text, across the demo records", () => {
+  const all = text(demoDisputes.map(checklistHtml).join(" "));
+  for (const label of ["Available in records", "Missing from records", "Conflicting records", "Confirm from your records", "Not applicable to this reason"]) {
+    assert.ok(all.includes(label), label);
+  }
+  assert.match(all, /General guidance/);
+  assert.match(all, /DisputeDesk guidance/);
+  assert.doesNotMatch(all, /PayPal-documented/, "no item is labelled official");
+  assert.match(all, /Missing from the records does not show that it did not happen/);
+});
+
+test("gap guidance and not-applicable items stay folded, and the section has no AI or write buttons", () => {
+  const duplicate = demoDisputes.find((d) => d.reason === "DUPLICATE_TRANSACTION")!;
+  const out = checklistHtml(duplicate);
+  assert.doesNotMatch(out, /<details[^>]*\sopen/, "nothing opens by itself");
+  assert.match(text(out), /Not applicable to this reason \(2\)/);
+  assert.match(text(out), /How to fill this gap/);
+  assert.match(text(out), /Where you might find it .* Check before adding .* What DisputeDesk can't see/);
+  assert.doesNotMatch(out, /<button|<form|<input|<textarea/);
+});
+
+test("an unmapped reason says the checklist is generic", () => {
+  const out = text(checklistHtml({ ...demo, reason: "INCORRECT_AMOUNT" }));
+  assert.match(out, /No reason-specific checklist for this reason; showing general evidence/);
+  assert.doesNotMatch(text(checklistHtml(demo)), /No reason-specific checklist/);
+});
+
+test("the checklist shows loading and error states with a retry", () => {
+  const refsById = new Map();
+  const loading = html(createElement(ChecklistView, { load: { status: "loading" }, refsById, onRetry: noop }));
+  assert.match(loading, /aria-busy="true"/);
+  assert.match(text(loading), /Loading the checklist/);
+  const error = text(html(createElement(ChecklistView, { load: { status: "error", message: "Server unavailable." }, refsById, onRetry: noop })));
+  assert.match(error, /Couldn't load the checklist\. Server unavailable\. Try again/);
+});
+
+test("the analysis view places the checklist between claim and records and the evidence analysis", () => {
+  const out = html(createElement(AnalysisView, { dispute: demo, analysis: withProvenance(demo, analyzeDispute(demo)) }));
+  const at = (id: string) => out.indexOf(`id="${id}"`);
+  assert.ok(at("case-sides") < at("case-checklist") && at("case-checklist") < at("case-evidence"));
 });
