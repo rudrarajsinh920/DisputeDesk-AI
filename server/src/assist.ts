@@ -148,8 +148,12 @@ function readShape(raw: unknown): { explanations: RawExplanation[]; sections: Ra
 // Written dates. "May" is left out because it is usually the verb; "May 3" is still caught by the digit check.
 export const DATE_WORDS =
   /\b(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|june?|july?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?|monday|tuesday|wednesday|thursday|friday|saturday|sunday|yesterday|today|tomorrow|last (week|month)|\w+ ago)\b/i;
-const BUYER_MESSAGE = /\b(buyer|customer)\s+(said|says|wrote|writes|told|stated|states|emailed|messaged|contacted|admitted|confirmed|claimed|complained)\b/i;
-export const DELIVERY_CLAIM = /\b(was|were|is|has been|have been|got)\s+(successfully\s+)?(delivered|received)\b|\b(arrived|delivered to|delivered on)\b/i;
+// Agreements and requests are buyer messages too (Phase 8.2). "Agreed to pay" is what an order confirmation shows.
+const BUYER_MESSAGE =
+  /\b(buyer|customer)\s+(said|says|wrote|writes|told|stated|states|emailed|messaged|contacted|admitted|confirmed|claimed|complained|agreed(?!\s+to\s+pay)|promised|asked|requested|refused|declined)\b/i;
+// "Reached the buyer", "made it to the customer", "in the buyer's hands" are delivery claims too (Phase 8.2).
+export const DELIVERY_CLAIM =
+  /\b(was|were|is|has been|have been|got)\s+(successfully\s+)?(delivered|received)\b|\b(arrived|delivered to|delivered on)\b|\b(reached|got\s+to|made\s+it\s+to|landed\s+(with|at))\s+(the\s+)?(buyer|customer|recipient|destination|them|him|her)\b|\bin\s+(the\s+(buyer|customer|recipient)['’]?s?|their|his|her)\s+hands\b/i;
 export const SHIPPING_CLAIM = /\b(was|were|is|has been|have been)\s+(shipped|dispatched|posted|mailed)\b/i;
 // A negation up to three words before the verb, in any wording: "hasn't been delivered", "did not arrive", "never shipped".
 export const NOT_DELIVERED = /(\bnot\b|\bnever\b|n't\b)(\W+\w+){0,3}?\W+(deliver(ed)?|receive(d)?|arrive(d)?)\b/i;
@@ -165,7 +169,7 @@ export const META = /\bsubmit(ted|ting)?\b|\bsent to paypal\b|\bfiled with paypa
 // The buyer had the item, or a record proves delivery: both need proof of delivery.
 export const RECEIPT_CLAIM = /\b(buyer|customer|recipient|they|he|she)\s+(has\s+|have\s+|had\s+|did\s+|successfully\s+)?(received|got|collected|accepted|took\s+delivery\s+of)\b/i;
 export const IMPLIED_PROOF =
-  /\b(proof\s+of\s+delivery|delivery\s+(record|confirmation|photo)|carrier\s+(record|scan)s?|tracking\s+(record|history))\s+(shows?|showed|confirms?|confirmed|proves?|proved|indicates?|indicated)\b|\bdelivery\s+(was|is|has\s+been)\s+(confirmed|completed|successful|verified)\b|\bconfirmed\s+(the\s+)?delivery\b|\bwe\s+have\s+proof\b/i;
+  /\b(proof\s+of\s+delivery|delivery\s+(record|confirmation|photo)|carrier\s+(record|scan)s?|tracking\s+(record|history))\s+(shows?|showed|confirms?|confirmed|proves?|proved|indicates?|indicated)\b|\bdelivery\s+(was|is|has\s+been)\s+(confirmed|completed|successful|verified)\b|\bconfirmed\s+(the\s+)?delivery\b|\bwe\s+have\s+proof\b|\btracking\s+(shows?|showed|confirms?|confirmed|indicates?|indicated|proves?|proved)\b[^.!?]{0,60}?\b(deliver\w*|arriv\w*|receipt|received|reached)\b/i;
 // The records hold only yes/no evidence flags, so a signature, pickup or handoff story is never on record.
 export const HANDOFF_STORY =
   /\b(signed|signature|picked\s+up|pick-?up|collected|handed\s+(it\s+|them\s+)?(to|over)|left\s+(it\s+|the\s+\w+\s+)?(at|on|with|outside|by)|porch|doorstep|front\s+door|mailbox|mail\s?room|reception|front\s+desk|neighbou?r|locker|out\s+for\s+delivery|in\s+transit|scanned|driver|courier|delivery\s+photo)\b/i;
@@ -190,7 +194,13 @@ export const REFUND_CLAIM =
 export const CONTACT_CLAIM =
   /\b(we|i)\s+(have\s+|had\s+|already\s+)?(told|informed|notified|emailed|messaged|contacted|called|updated|warned|let|replied\s+to|wrote\s+to|spoke\s+(to|with)|explained\s+to)\s+(the\s+)?(buyer|customer|them|him|her)\b/i;
 export const TRACKING_STATEMENT =
-  /\btracking\s+(number|info(rmation)?|details?)\s+(is|was|are|were)\b|\b(we|i)\s+(have\s+|had\s+)?(provided|shared|sent|uploaded|added|gave)\s+(the\s+buyer\s+)?(the\s+|a\s+)?tracking\b|\b(was|is|were)\s+tracked\b/i;
+  /\btracking\s+(number|info(rmation)?|details?)\s+(is|was|are|were)\b|\b(we|i)\s+(have\s+|had\s+|already\s+)?(provided|shared|sent|uploaded|added|gave|emailed|messaged|texted|forwarded|told)\s+((the\s+)?(buyer|customer|them|him|her)\s+)?(with\s+|about\s+)?(the\s+|a\s+|their\s+)?tracking\b|\b(was|is|were)\s+tracked\b/i;
+// What a message said. A communication record shows that messages exist, never what they said (Phase 8.2).
+export const MESSAGE_CONTENT =
+  /\b(about|that|regarding|with|know|to\s+(say|explain|confirm|ask|offer)|tracking|refund\w*|replacement|return\w*|reimburs\w*|discount|credit|label|invoice|receipt|link|details?|info(rmation)?|update|status|delay|number|code|photos?|instructions?|offer\w*)\b/i;
+export const OFFER_CLAIM = /\b(we|i)\s+(have\s+|had\s+|already\s+)?(offered|promised|proposed)\b/i;
+// DisputeDesk holds record flags, never documents, so it can't back an attachment.
+export const ATTACHMENT = /\b(attached|enclosed|attachments?|see\s+the\s+(invoice|receipt|photos?|screenshots?|documents?|files?|label))\b/i;
 export const ORDER_CLAIM =
   /\b(buyer|customer|they|he|she)\s+(placed|made)\s+(an?|the|this)\s+order\b|\b(buyer|customer)\s+(ordered|purchased|bought|paid)\b|\border\s+(was|is|has\s+been)\s+(confirmed|placed|paid)\b|\b(we|i)\s+confirmed\s+(the|their|this)\s+order\b/i;
 
@@ -356,15 +366,19 @@ function mapClaims(dispute: Dispute, analysis: Analysis, provenance: Provenance,
   if (claimsShipping(claims, ctx)) parts.push({ refs: verifiedRefs([byField.get("order.shipping_status")?.ref ?? ""]) });
   if (TRACKING_CLAIM.test(claims) || TRACKING_STATEMENT.test(claims)) parts.push(fromFinding("shipping_tracking"));
   if (ORDER_CLAIM.test(claims)) parts.push(fromFinding("order_confirmation"));
-  if (CONTACT_CLAIM.test(claims)) {
+  const contact = claims.match(CONTACT_CLAIM);
+  if (contact) {
+    const part = fromFinding("customer_communication");
     // PayPal's flag is set by a message from either party, so it can't show that the merchant contacted the buyer.
-    parts.push(
-      dispute.source === "paypal_sandbox"
-        ? { unsupported: `${NO_RECORD}: the PayPal record has messages, but DisputeDesk can't tell who wrote them.` }
-        : fromFinding("customer_communication"),
-    );
+    if (dispute.source === "paypal_sandbox") parts.push({ unsupported: `${NO_RECORD}: the PayPal record has messages, but DisputeDesk can't tell who wrote them.` });
+    // The record backs the fact of contact only; what the message said needs its own record.
+    else if ("refs" in part && MESSAGE_CONTENT.test(claims.slice(contact.index! + contact[0].length)))
+      parts.push({ unsupported: `${NO_RECORD}: the communication record shows that messages exist, not what they said.` });
+    else parts.push(part);
   }
   if (REFUND_CLAIM.test(claims)) parts.push({ unsupported: `${NO_RECORD}: DisputeDesk holds no refund records.` });
+  if (OFFER_CLAIM.test(claims)) parts.push({ unsupported: `${NO_RECORD}: DisputeDesk holds no record of what was offered or promised.` });
+  if (ATTACHMENT.test(claims)) parts.push({ unsupported: `${NO_RECORD}: DisputeDesk holds no documents, so it can't back an attachment.` });
 
   // Identifiers repeated as written: a contested one is always flagged; an uncontested one backs the paragraph only
   // when it makes no other claim (it then just names the dispute, order or amount).

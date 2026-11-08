@@ -748,6 +748,8 @@
 
 /* The closing card: lime, with ink type in both modes. */
 .close {
+  /* Holds its own ::before border; without it the border wraps the full-width section and spills 1px sideways. */
+  position: relative;
   --foreground: var(--ink);
   --muted-foreground: #3a4a1a;
   --ring: var(--ink);

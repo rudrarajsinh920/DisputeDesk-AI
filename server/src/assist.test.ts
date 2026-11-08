@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import sample from "../../sample-dispute.json" with { type: "json" };
 import type { AiAssist, Dispute } from "../../shared/types.ts";
+import { DEMO_DISPUTES } from "./app.ts";
 import { WITHHELD, buildAiRequest, composeAiAssist } from "./assist.ts";
 import { DEMO_LABEL, DRAFT_HEADER, analyzeDispute } from "./evidence.ts";
 import { AiError } from "./gemini.ts";
@@ -365,4 +366,15 @@ test("an unknown reason code is record text: repeating it doesn't excuse a deliv
   const result = assist(sneaky, answer([section("This dispute is about: The item was delivered to the buyer.", ["R1"])], []));
   assert.equal(result.status, "flagged");
   assert.ok(result.flags.some((f) => /claims delivery, but proof of delivery is not available/.test(f.reason)));
+});
+
+test("an AI paragraph that treats tracking as delivery is removed (Phase 8.2)", () => {
+  for (const id of ["DEMO-1002", "DEMO-2013"]) {
+    const d = DEMO_DISPUTES.find((x) => x.dispute_id === id)!;
+    const { facts } = buildAiRequest(d, analyzeDispute(d));
+    const cite = facts.filter((f) => f.path === "evidence.shipping_tracking").map((f) => f.id);
+    const result = assist(d, answer([section("Tracking confirms the parcel reached the buyer.", cite)], []));
+    assert.ok(!result.draft.lines.some((l) => l.kind === "ai"), id);
+    assert.ok(result.flags.some((f) => /claims delivery, but proof of delivery is not available/.test(f.reason)), id);
+  }
 });

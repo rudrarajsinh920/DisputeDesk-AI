@@ -18,6 +18,16 @@ real PayPal sandbox disputes), **Buyer Dispute Clarity** (a plain-language view 
   (carriers, tracking numbers, dates, people, delivery claims) or changes a status, and shows what it dropped.
 - **The merchant reviews.** Every draft starts with "DRAFT — REQUIRES MERCHANT REVIEW. NOT SUBMITTED TO PAYPAL." and
   marks every gap to fill.
+- **Every finding shows where it comes from.** Each evidence status lists the record fields behind it ("Based on"),
+  who supplied them (merchant, PayPal or the buyer) and whether the records back it: "Verified against record",
+  Unverified, Missing or Conflicting. "Verified against record" means the supplied record backs it and nothing in the
+  records contradicts it; DisputeDesk does not inspect the documents themselves. The generated draft lists the records
+  each line rests on ("Sources for the generated draft").
+- **Check my edits.** The merchant's own wording is checked paragraph by paragraph against the same records, without
+  calling Gemini. Each paragraph is marked "Backed by DisputeDesk's records", "Not in DisputeDesk's records", "Check
+  against your records" or "No factual claim found". Each kind of claim needs its own record: tracking never backs a
+  delivery claim, and a communication record shows that messages exist, not what they said. The check is advisory; it
+  never edits or blocks the text.
 
 ## Data sources
 
@@ -189,6 +199,9 @@ Before you start: both terminals running, and the server log says `AI drafting: 
    it reaches a draft.
 6. **DEMO-1002 (contradiction).** The order says "Delivered" but proof of delivery is marked not available. The
    contradiction is listed with both records, and the draft carries a `[CONFLICT: …]` marker instead of choosing a side.
+   Open "Based on" under shipping status: it is tagged Conflicting. In the draft, add the paragraph "Tracking confirms
+   the parcel reached the buyer." and press **Check my edits**: it is marked "Check against your records" because
+   tracking is not proof of delivery. "We shipped it via UPS." is flagged too: no carrier is on record.
 7. **PayPal sandbox.** Switch sources: blue banner, test environment only. Open a sandbox dispute: the buyer's message,
    the transaction and item, and PayPal's "Respond by" date come from PayPal's own record. Tracking and proof of delivery
    show as Unverified when the record has none, never as Missing. With no sandbox disputes, it says so; demo records
@@ -223,7 +236,7 @@ Keep screenshots or a screen recording of a successful run as a backup.
 
 - Evidence statuses come from flags in the records. DisputeDesk does not open or inspect the documents themselves.
 - The AI checks are rules and patterns. They catch the listed kinds of invented detail, not every possible one, which is
-  why merchant review stays mandatory.
+  why merchant review stays mandatory. The same holds for Check my edits: its claim matching is advisory.
 - The PayPal integration only reads (an access token, the dispute list and each dispute's record). It never creates,
   changes or answers a dispute, and never submits evidence. The list reads the first 50 disputes.
 - Drafts are not saved. Accounts are six synthetic demo accounts with no sign-up. The server answers only on this

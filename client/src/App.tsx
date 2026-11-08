@@ -120,6 +120,7 @@ const accountBanner = (
 export default function App() {
   const [account, setAccount] = useState<AccountInfo | null | undefined>(undefined);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeIsError, setNoticeIsError] = useState(false);
   const [signInOpen, setSignInOpen] = useState(false);
 
   useEffect(() => {
@@ -129,10 +130,12 @@ export default function App() {
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         setNotice(error instanceof Error ? error.message : String(error));
+        setNoticeIsError(true);
         setAccount(null);
       });
     const onSignedOut = () => {
       setNotice("Your session has ended. Sign in again to continue.");
+      setNoticeIsError(false);
       setAccount(null);
     };
     window.addEventListener(SIGNED_OUT_EVENT, onSignedOut);
@@ -145,6 +148,7 @@ export default function App() {
   async function handleSignOut() {
     await signOut().catch(() => {});
     setNotice("You are signed out.");
+    setNoticeIsError(false);
     setAccount(null);
   }
 
@@ -175,6 +179,7 @@ export default function App() {
       >
         <Login
           notice={notice}
+          noticeIsError={noticeIsError}
           onSignedIn={(signedIn) => {
             setNotice(null);
             setAccount(signedIn);

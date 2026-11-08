@@ -44,8 +44,52 @@ test("the known examples on the sample record (shipped, no tracking, no proof of
     refs: [],
     reasons: ["No supporting record in DisputeDesk: DisputeDesk holds no refund records."],
   });
-  assert.deepEqual(claim(demo, "We told the buyer about the delay.").refs, ["demo:DEMO-1001:evidence.customer_communication"]);
-  assert.equal(support(demo, "We told the buyer about the delay."), "supported");
+  // The communication record backs the fact of contact, never what the message said (Phase 8.2).
+  assert.deepEqual(claim(demo, "We contacted the buyer.").refs, ["demo:DEMO-1001:evidence.customer_communication"]);
+  assert.equal(support(demo, "We contacted the buyer."), "supported");
+  assert.deepEqual(claim(demo, "We told the buyer about the delay.").reasons, [
+    "No supporting record in DisputeDesk: the communication record shows that messages exist, not what they said.",
+  ]);
+});
+
+test("tracking wording never backs delivery, and message content needs its own record (Phase 8.2)", () => {
+  // DEMO-1002 (delivery contradicted) and DEMO-2013: tracking on record, proof of delivery not available.
+  for (const id of ["DEMO-1002", "DEMO-2013"]) {
+    for (const text of [
+      "Tracking confirms the parcel reached the buyer.",
+      "The tracking shows the package was delivered.",
+      "Tracking confirms delivery.",
+      "The parcel made it to the customer.",
+      "It is in the buyer's hands.",
+    ]) {
+      const c = claim(byId(id), text);
+      assert.equal(c.support, "flagged", `${id} ${text}`);
+      assert.ok(c.reasons.includes("Claims delivery, but proof of delivery is not available."), `${id} ${text}`);
+    }
+  }
+  // With proof of delivery on record the same sentence is backed by it.
+  assert.ok(claim(byId("DEMO-1003"), "Tracking confirms the parcel reached the buyer.").refs.includes("demo:DEMO-1003:evidence.proof_of_delivery"));
+
+  // DEMO-1001: tracking marked not available. Neither the message flag nor anything else backs the tracking content.
+  const emailed = claim(demo, "We emailed the buyer the tracking number.");
+  assert.equal(emailed.support, "unsupported");
+  assert.deepEqual(emailed.refs, []);
+  assert.ok(emailed.reasons.includes("No supporting record in DisputeDesk: shipping tracking is marked not available."));
+  // Even with tracking on record, the message flag doesn't show what the email said.
+  assert.equal(support(byId("DEMO-1003"), "We emailed the buyer the tracking number."), "unsupported");
+  assert.equal(support(byId("DEMO-1003"), "We wrote to the buyer."), "supported");
+  // "Reached out" is contact, not delivery.
+  assert.equal(support(demo, "We reached out to the buyer."), "not_a_claim");
+});
+
+test("agreements, offers and attachments are claims, not ordinary sentences (Phase 8.2)", () => {
+  assert.deepEqual(claim(demo, "The buyer agreed to keep the item.").reasons, ["Describes buyer messages, which are not in DisputeDesk's records."]);
+  assert.deepEqual(claim(demo, "We offered the buyer a refund.").reasons, ["No supporting record in DisputeDesk: DisputeDesk holds no record of what was offered or promised."]);
+  assert.deepEqual(claim(demo, "Please review the attached invoice.").reasons, [
+    "No supporting record in DisputeDesk: DisputeDesk holds no documents, so it can't back an attachment.",
+  ]);
+  // The order confirmation's own wording is not a buyer message.
+  assert.equal(support(demo, "The order confirmation shows what the buyer agreed to pay for."), "not_a_claim");
 });
 
 test("active-voice and possession claims are caught when the records don't back them", () => {

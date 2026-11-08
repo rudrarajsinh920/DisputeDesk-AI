@@ -149,6 +149,8 @@ test("sign-in field checks give a message per field, and none for a valid entry"
   assert.equal(passwordError(""), "Enter your password.");
   assert.equal(passwordError("x"), undefined);
   assert.match(html(createElement(Login, { notice: null, onSignedIn: noop })), /<form class="login-form" noValidate="">/i);
+  // A server that can't be reached is announced as an alert (Phase 8.2).
+  assert.match(html(createElement(Login, { notice: "Could not reach the server.", noticeIsError: true, onSignedIn: noop })), /role="alert">Could not reach the server/);
 });
 
 // ---- Landing page (signed out) ----

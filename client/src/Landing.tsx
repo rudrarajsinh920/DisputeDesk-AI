@@ -220,12 +220,13 @@ function Header({ onSignIn, active }: { onSignIn: () => void; active: string }) 
   }, [open]);
   return (
     <div className="l-header" data-open={open || undefined}>
-    <header className="mx-auto flex w-full max-w-[90rem] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3 md:px-8 lg:px-12">
+    <header className="mx-auto flex w-full max-w-[90rem] flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3 sm:gap-x-6 md:px-8 lg:px-12">
       <a href="#top" className="flex min-h-11 items-center gap-2.5 text-base font-semibold tracking-tight" translate="no">
         <span aria-hidden="true" className="logo-mark">
           DD
         </span>
-        DisputeDesk
+        {/* Below 360px the wordmark is read out but not shown, so the header stays on one row. */}
+        <span className="max-[359px]:sr-only">DisputeDesk</span>
       </a>
       <div className="flex items-center gap-2 md:order-last">
         <SignIn onSignIn={onSignIn} variant="outline" className="h-11 md:h-10" />

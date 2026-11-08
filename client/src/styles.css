@@ -2853,7 +2853,8 @@ blockquote {
   .search,
   .select,
   .link-button,
-  .case-nav a {
+  .case-nav a,
+  .login-form input {
     min-height: 44px;
   }
   .draft-sources summary {

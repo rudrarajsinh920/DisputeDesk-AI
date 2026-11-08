@@ -37,6 +37,16 @@ record values, and every line must cite them. The server checks every line and d
 record (carriers, tracking numbers, dates, names, delivery claims) or changes a status, and shows the merchant what it
 dropped. A built-in validation example runs a planted bad answer through the same checks so anyone can see them work.
 
+**Evidence provenance and claim checking.** Every evidence status shows the record fields it is based on, who supplied
+them, and whether the records back it ("Verified against record"), leave it unverified or missing, or contradict it
+("Conflicting"). "Verified against record" means the supplied record backs it and nothing in the records contradicts
+it; DisputeDesk checks records, it does not inspect the documents themselves. The draft lists the records each line
+rests on. "Check my edits" then checks the merchant's own wording paragraph by paragraph, with no AI call: each
+paragraph is backed by DisputeDesk's records, not in them, or needs checking against the merchant's own records. Each
+kind of claim needs its own record, so tracking never counts as proof of delivery, a message record never proves what
+a message said, and refunds, offers and attachments are never backed because DisputeDesk holds no records of them.
+The check is advisory and never edits or blocks the merchant's text.
+
 **Real PayPal sandbox disputes.** DisputeDesk reads disputes live from the PayPal sandbox and analyses each one from
 its own PayPal record: the buyer's messages, the disputed transaction and item, any submitted tracking or delivery
 evidence, and PayPal's respond-by date. When the record has no tracking, it shows as Unverified, never Missing, and
@@ -66,7 +76,7 @@ DisputeDesk never submits anything to PayPal. Every draft needs a human.
 - **Security:** role-based access (merchant, buyer, read-only admin), server-side sessions, sign-in limits,
   same-site write checks, a strict Content Security Policy, and a rule that another account's dispute answers 404,
   exactly like a missing one.
-- **Tests:** 259 automated tests with synthetic data and mocked PayPal and Gemini, so they make no network calls.
+- **Tests:** 316 automated tests with synthetic data and mocked PayPal and Gemini, so they make no network calls.
 
 ## Challenges we ran into
 
@@ -83,6 +93,7 @@ DisputeDesk never submits anything to PayPal. Every draft needs a human.
 ## Accomplishments that we're proud of
 
 - An AI feature you can audit: every AI line shows what it is based on, and every dropped line shows why.
+- Provenance for every finding, and a claim check that holds the merchant's own wording to the same records.
 - Real PayPal sandbox disputes analysed end to end, read-only.
 - Separate merchant, buyer and admin views with strict access control, covered by tests.
 

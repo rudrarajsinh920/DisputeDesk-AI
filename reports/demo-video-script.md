@@ -1,4 +1,4 @@
-# DisputeDesk AI: demo video script (about 2:50)
+# DisputeDesk AI: demo video script (about 2:55)
 
 Rules for the recording: under 3 minutes, no music, no third-party logos or trademarks on screen besides the app
 itself. Record the browser window only (no bookmarks bar, no other tabs). Never show `.env` or a terminal with keys.
@@ -9,7 +9,7 @@ Before you record:
 - Sign out first, so the video starts on the landing page.
 - Browser zoom 110–125% so text is readable on a phone.
 
-Spoken words are about 390, which is about 2:50 at a calm pace.
+Spoken words are about 395, which is about 2:52 at a calm pace.
 
 ---
 
@@ -25,10 +25,9 @@ do that."
 
 **Screen:** sign in as Demo Merchant A. Point at the yellow demo banner. Open DEMO-1001.
 
-**Say:** "This is a merchant's workspace. These are labelled demo records. DisputeDesk is the evidence intelligence
-layer for the dispute. Evidence readiness at the top: zero of two key items on record. Counts only, never a score.
-Claim and records puts the buyer's words beside what the records show and what they leave out, and it doesn't decide
-who is right. For an item-not-received dispute, rules check four kinds of evidence. Tracking and proof of delivery are missing, and marked key for this reason. Note the
+**Say:** "These are labelled demo records. Evidence readiness at the top: zero of two key items on record. Counts only,
+never a score. Claim and records puts the buyer's words beside what the records show and what they leave out, and it
+doesn't decide who is right. Tracking and proof of delivery are missing, and marked key for this reason. Note the
 line: missing from the records does not show it didn't happen. Every status shows the record field it's based on."
 
 **Screen:** scroll to the draft. Show the review header and a gap marker.
@@ -47,31 +46,38 @@ line: missing from the records does not show it didn't happen. Every status show
 date, a signature story, proof of delivery claimed as available. The server flags every one, keeps the rules'
 statuses, and none of it reaches the draft."
 
-## 1:25–1:55 Real PayPal sandbox dispute
+## 1:25–1:42 Conflict and Check my edits (DEMO-1002)
+
+**Screen:** open DEMO-1002. Point at the Conflicting tag under "Based on". In the draft, add the paragraph "Tracking
+confirms the parcel reached the buyer." and press Check my edits.
+
+**Say:** "Every finding shows the record it rests on. Here the records disagree, so it says conflicting. And the
+merchant's own words are checked too: tracking is not proof of delivery, so this sentence is flagged."
+
+## 1:42–2:05 Real PayPal sandbox dispute
 
 **Screen:** switch the source to PayPal sandbox (blue banner). Open PP-R-JFO-10196577.
 
 **Say:** "This one is a real dispute from PayPal's sandbox, read live through PayPal's dispute APIs. The buyer's
-message, the transaction, the item and PayPal's respond-by date all come from PayPal's own record. There is no tracking
-on record, so tracking shows as unverified, not missing, and nothing is made up. The integration is read-only: it never
-changes a dispute or submits evidence."
+message, the transaction, the item and PayPal's respond-by date come from PayPal's own record. No tracking is on
+record, so it shows as unverified, not missing. Read-only: it never changes a dispute."
 
-## 1:55–2:15 Buyer view (Demo Buyer B)
+## 2:05–2:20 Buyer view (Demo Buyer B)
 
 **Screen:** sign out, sign in as Demo Buyer B, open DEMO-1002.
 
 **Say:** "Buyers get their own view: what the status means, the usual stages, next steps, and what isn't on record. No
 merchant evidence or drafts. 'Explain in plain language' is checked too: no promises, predictions or blame."
 
-## 2:15–2:40 Insights (Demo Merchant C)
+## 2:20–2:42 Insights (Demo Merchant C)
 
 **Screen:** sign out, sign in as Demo Merchant C, open Insights. Point at one suggestion and its dispute IDs.
 
 **Say:** "Insights turns a merchant's disputes into counts and patterns. For example, proof of delivery is missing or
-unverified in six of seven item-not-received disputes. Each suggestion lists the disputes behind it and its limits.
-With small data it says six of seven, never a percentage, and it never predicts outcomes."
+unverified in six of seven item-not-received disputes. Each suggestion lists the disputes behind it. With small data
+it says six of seven, never a percentage, and it never predicts outcomes."
 
-## 2:40–2:50 Close
+## 2:42–2:55 Close
 
 **Screen:** back to the landing page, or the footnote "DisputeDesk never submits responses to PayPal automatically."
 
@@ -82,4 +88,4 @@ GitHub."
 
 ## If you run long
 
-Cut in this order: the buyer view (saves about 20 seconds), then the draft marker part of 0:15–0:50.
+Cut in this order: the buyer view (saves about 15 seconds), then the draft marker part of 0:15–0:50.

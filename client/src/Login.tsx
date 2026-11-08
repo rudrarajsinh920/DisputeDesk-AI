@@ -8,7 +8,16 @@ export const emailError = (value: string) =>
   !value.trim() ? "Enter your email address." : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()) ? undefined : "Enter an email address like name@example.com.";
 export const passwordError = (value: string) => (value ? undefined : "Enter your password.");
 
-export function Login({ notice, onSignedIn }: { notice: string | null; onSignedIn: (account: AccountInfo) => void }) {
+export function Login({
+  notice,
+  noticeIsError = false,
+  onSignedIn,
+}: {
+  notice: string | null;
+  // A problem (the server can't be reached) is announced at once; a status is already on screen at load and isn't.
+  noticeIsError?: boolean;
+  onSignedIn: (account: AccountInfo) => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
@@ -46,7 +55,7 @@ export function Login({ notice, onSignedIn }: { notice: string | null; onSignedI
           <span>Sign in with a demo account listed in README.md. Never enter a real password here.</span>
         </div>
         {notice && (
-          <p className="notice" role="status">
+          <p className={noticeIsError ? "error-text" : "notice"} role={noticeIsError ? "alert" : "status"}>
             {notice}
           </p>
         )}
