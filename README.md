@@ -199,7 +199,7 @@ Before you start: both terminals running, and the server log says `AI drafting: 
    it reaches a draft.
 6. **DEMO-1002 (contradiction).** The order says "Delivered" but proof of delivery is marked not available. The
    contradiction is listed with both records, and the draft carries a `[CONFLICT: …]` marker instead of choosing a side.
-   Open "Based on" under shipping status: it is tagged Conflicting. In the draft, add the paragraph "Tracking confirms
+   Open "Based on" under Proof of delivery: it is tagged Conflicting. In the draft, add the paragraph "Tracking confirms
    the parcel reached the buyer." and press **Check my edits**: it is marked "Check against your records" because
    tracking is not proof of delivery. "We shipped it via UPS." is flagged too: no carrier is on record.
 7. **PayPal sandbox.** Switch sources: blue banner, test environment only. Open a sandbox dispute: the buyer's message,

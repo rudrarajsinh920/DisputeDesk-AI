@@ -6,7 +6,7 @@ Paste each section into the matching Devpost field. Replace the two links at the
 
 ## Tagline (short description)
 
-The evidence intelligence layer for payment disputes: AI that helps answer PayPal disputes and is not allowed to invent evidence.
+The evidence intelligence layer for payment disputes: AI that helps answer PayPal disputes, with every line checked against the records.
 
 ---
 
@@ -84,7 +84,9 @@ DisputeDesk never submits anything to PayPal. Every draft needs a human.
   We kept three states (Available, Missing, Unverified) all the way from the PayPal record to the screen, so the app
   never turns silence into a claim.
 - **Checking AI output, not just prompting it.** Telling a model "don't invent facts" is not enough. We built checks
-  that compare each line with the record values and drop what doesn't match, then made those checks visible.
+  that compare each line with the record values and drop what doesn't match, then made those checks visible. The
+  checks are rules and patterns, so they catch the kinds of invented detail we listed, not every possible wording.
+  That is why a person reviews every draft.
 - **Mapping PayPal's dispute record.** Messages, transactions and evidence live in different parts of the record. We
   map only fields that are present and leave the rest unset.
 - **Keeping demo and real data apart.** Synthetic demo disputes and PayPal sandbox disputes are always labelled, never
