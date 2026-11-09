@@ -302,7 +302,9 @@ export interface ConfirmState {
 }
 const READ_ONLY: ConfirmState = { canConfirm: false, pending: null, announce: "", error: null, onConfirm: () => {} };
 
-export const CONFIRM_LIMIT = "Your confirmation is recorded as yours. It does not change the evidence status, and DisputeDesk has not seen the record.";
+// Shown in the row itself, under the tag, so the merchant reads it without opening the guidance.
+export const CONFIRMED_NOTE = "DisputeDesk has not seen the record. Your confirmation does not change its evidence status.";
+export const CONFIRM_LIMIT ="Your confirmation is recorded as yours. It does not change the evidence status, and DisputeDesk has not seen the record.";
 
 function ChecklistSection({ dispute, refsById, canConfirm }: { dispute: Dispute; refsById: Map<string, EvidenceRef>; canConfirm: boolean }) {
   const [load, setLoad] = useState<ChecklistLoad>({ status: "loading" });
@@ -378,10 +380,10 @@ function ChecklistItems({ checklist, refsById, confirm }: { checklist: EvidenceC
   const isConfirmed = (i: ChecklistItem) => CONFIRMABLE.includes(i.status) && byItem.has(i.id);
   const gaps = applicable.filter((i) => CONFIRMABLE.includes(i.status));
   const count = (...s: ChecklistStatus[]) => applicable.filter((i) => s.includes(i.status)).length;
-  // Counts only: never a score, a share or a word like "complete". A confirmed gap is counted on its own, never as a record.
+  // Counts only: never a score, a share or a word like "complete". A confirmed gap still needs attention (DisputeDesk
+  // has not seen the record), so confirming never lowers that count; the confirmed ones are shown inside it, never as a record.
   const counts = [
-    `Needs attention: ${gaps.filter((i) => !isConfirmed(i)).length}`,
-    `Merchant-confirmed: ${gaps.filter(isConfirmed).length}`,
+    `Needs attention: ${gaps.length} (${gaps.filter(isConfirmed).length} merchant-confirmed)`,
     `Record available: ${count("available")}`,
     `Conflicting: ${count("conflicting")}`,
   ];
@@ -411,6 +413,7 @@ function ChecklistItems({ checklist, refsById, confirm }: { checklist: EvidenceC
                 <span className={CHECKLIST_STATUS[item.status].className}>{CHECKLIST_STATUS[item.status].label}</span>
                 {confirmations.length > 0 && <span className="tag tag-confirmed">Merchant-confirmed</span>}
               </div>
+              {confirm.canConfirm && confirmations.length > 0 && <p className="confirm-note">{CONFIRMED_NOTE}</p>}
               <p className="muted">Why it may matter: {item.why}</p>
               {!confirm.canConfirm &&
                 confirmations.map((c) => (

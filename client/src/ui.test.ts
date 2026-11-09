@@ -12,7 +12,7 @@ import { buildChecklist } from "../../server/src/checklist.ts";
 import { analyzeDispute } from "../../server/src/evidence.ts";
 import { VALIDATION_EXAMPLE_MODEL, validationExampleAnswer } from "../../server/src/assist.ts";
 import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
-import { AiResult, AiSectionView, AnalysisView, CONFIRM_LIMIT, CheckResult, ChecklistView, ClaimAndRecords, DISCARD_EDITS, DraftEditor, ReadinessSummary, ValidationExampleView } from "./AnalysisPanel.tsx";
+import { AiResult, AiSectionView, AnalysisView, CONFIRMED_NOTE, CONFIRM_LIMIT, CheckResult, ChecklistView, ClaimAndRecords, DISCARD_EDITS, DraftEditor, ReadinessSummary, ValidationExampleView } from "./AnalysisPanel.tsx";
 import { readiness } from "./analysis.ts";
 import type { AiState, ConfirmState, ExampleState } from "./AnalysisPanel.tsx";
 import { AccountView } from "./Account.tsx";
@@ -1048,7 +1048,7 @@ test("the overview line counts gaps, records and conflicts, with no score or com
   const n = (...s: string[]) => applicable.filter((i) => s.includes(i.status)).length;
   const out = text(checklistHtml(conflict));
   assert.ok(
-    out.includes(`Needs attention: ${n("missing", "needs_confirmation")} · Merchant-confirmed: 0 · Record available: ${n("available")} · Conflicting: ${n("conflicting")}`),
+    out.includes(`Needs attention: ${n("missing", "needs_confirmation")} (0 merchant-confirmed) · Record available: ${n("available")} · Conflicting: ${n("conflicting")}`),
     out,
   );
   assert.ok(n("conflicting") > 0);
@@ -1115,7 +1115,7 @@ test("a merchant can confirm only gaps; the status badge stays and the limit sen
   assert.equal(text(out).split(CONFIRM_LIMIT).length - 1, gaps.length, "the limit sentence sits next to every button");
   const row = text(out).slice(text(out).indexOf(gaps[0].label));
   assert.match(row, /^[^·]*?(Missing from records|Not shown by records) Merchant-confirmed/, "the system status is still shown, then the confirmation");
-  assert.match(text(out), new RegExp(`Needs attention: ${gaps.length - 1} · Merchant-confirmed: 1 ·`));
+  assert.match(text(out), new RegExp(`Needs attention: ${gaps.length} \\(1 merchant-confirmed\\) ·`), "confirming never lowers Needs attention");
   assert.match(out, /role="status" aria-live="polite"/);
 });
 
@@ -1132,10 +1132,44 @@ test("conflicting records can't be confirmed; admin reads who confirmed and when
 test("a confirmation on an item that is no longer a gap shows nothing; busy and error states are plain", () => {
   const complete = demoDisputes.find((d) => d.dispute_id === "DEMO-1003")!;
   const stale = text(confirmView(complete, ["order_confirmation"], {}));
-  assert.doesNotMatch(stale, /Merchant-confirmed by|Merchant-confirmed: [1-9]/);
+  assert.doesNotMatch(stale, /Merchant-confirmed by|[1-9] merchant-confirmed/);
+  assert.ok(!stale.includes(CONFIRMED_NOTE), "no caveat for a confirmation that is not shown");
   const busy = confirmView(gapDispute, [], { pending: "shipping_tracking" });
   assert.match(busy, /aria-disabled="true"/, "the busy button stays focusable");
   const failed = text(confirmView(gapDispute, [], { error: "Couldn't save that. Server unavailable." }));
   assert.match(failed, /Couldn't save that\. Server unavailable\./);
   for (const d of demoDisputes) assert.doesNotMatch(text(confirmView(d, [], {})), /verified by you|proves|resolved|\bcomplete\b/i, d.dispute_id);
+});
+
+test("confirming every gap on every demo record never lowers Needs attention or adds to Record available", () => {
+  for (const d of demoDisputes) {
+    const { checklist } = checklistOf(d);
+    const applicable = checklist.items.filter((i) => i.status !== "not_applicable");
+    const n = (...st: string[]) => applicable.filter((i) => st.includes(i.status)).length;
+    const gapIds = applicable.filter((i) => i.status === "missing" || i.status === "needs_confirmation").map((i) => i.id);
+    const before = text(confirmView(d, [], {}));
+    const after = text(confirmView(d, gapIds, {}));
+    const line = (c: number) => `Needs attention: ${gapIds.length} (${c} merchant-confirmed) · Record available: ${n("available")} · Conflicting: ${n("conflicting")}.`;
+    assert.ok(before.includes(line(0)), `${d.dispute_id}: ${before.slice(0, 300)}`);
+    assert.ok(after.includes(line(gapIds.length)), `${d.dispute_id}: ${after.slice(0, 300)}`);
+    // Each confirmed gap keeps its system status badge and gets the inline caveat once.
+    assert.equal(after.split(CONFIRMED_NOTE).length - 1, gapIds.length, d.dispute_id);
+    assert.equal(after.split("Available in records").length, before.split("Available in records").length, `${d.dispute_id}: no gap turns into a record`);
+  }
+});
+
+test("the merchant's caveat sits in the row under the tag, outside the folded guidance; admin keeps its own line", () => {
+  const { checklist } = checklistOf(gapDispute);
+  const gap = checklist.items.find((i) => i.status === "missing" || i.status === "needs_confirmation")!;
+  const out = confirmView(gapDispute, [gap.id], {});
+  const row = out.slice(out.indexOf(gap.label));
+  const at = (s: string) => row.indexOf(s);
+  assert.ok(at("Merchant-confirmed</span>") > 0 && at("Merchant-confirmed</span>") < at(CONFIRMED_NOTE), "the caveat follows the tag");
+  assert.ok(at(CONFIRMED_NOTE) < at("<details"), "the caveat is visible without opening the guidance");
+  assert.match(row, /^[^]*?(Missing from records|Not shown by records)[^]*?Merchant-confirmed/, "the status badge stays");
+
+  const { checklist: withConf, refsById } = confirmedOn(gapDispute, [gap.id]);
+  const admin = text(html(createElement(ChecklistView, { load: { status: "ready", checklist: withConf }, refsById, onRetry: noop })));
+  assert.ok(!admin.includes(CONFIRMED_NOTE), "admin reads who confirmed, not the merchant's own wording");
+  assert.match(admin, /Merchant-confirmed by Demo Merchant A, Nov 9, 2026. DisputeDesk has not seen the record./);
 });

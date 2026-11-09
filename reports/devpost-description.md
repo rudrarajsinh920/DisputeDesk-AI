@@ -53,6 +53,13 @@ available, missing, conflicting, or not shown by the records. Each gap says why 
 look (labelled by kind, such as carrier or order system), what to check before adding it, and what DisputeDesk can't
 see. Every item is labelled general or DisputeDesk guidance; none is presented as an official PayPal requirement.
 
+**Merchant confirmation, kept separate from evidence.** On a gap, the merchant can mark "I have this in my records".
+This is the merchant's statement, not a verification: DisputeDesk has not inspected the record. The item keeps its
+status, gains a separate "Merchant-confirmed" tag with the note "DisputeDesk has not seen the record. Your confirmation
+does not change its evidence status.", and still counts under "Needs attention". Evidence statuses, readiness, the draft
+and anything sent to Gemini stay the same. Confirmations are supported on synthetic demo disputes only; PayPal sandbox
+disputes are never stored or changed.
+
 **Real PayPal sandbox disputes.** DisputeDesk reads disputes live from the PayPal sandbox and analyses each one from
 its own PayPal record: the buyer's messages, the disputed transaction and item, any submitted tracking or delivery
 evidence, and PayPal's respond-by date. When the record has no tracking, it shows as Unverified, never Missing, and

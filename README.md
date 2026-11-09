@@ -28,6 +28,11 @@ real PayPal sandbox disputes), **Buyer Dispute Clarity** (a plain-language view 
   against your records" or "No factual claim found". Each kind of claim needs its own record: tracking never backs a
   delivery claim, and a communication record shows that messages exist, not what they said. The check is advisory; it
   never edits or blocks the text.
+- **Merchant confirmation is a statement, not verification.** On a checklist gap, a merchant can press "I have this in
+  my records". DisputeDesk has not inspected that record: the item keeps its status (for example "Missing from
+  records"), gains a separate "Merchant-confirmed" tag, and still counts under "Needs attention". Evidence statuses,
+  readiness, the draft and AI input do not change. Confirmations work on demo disputes only; PayPal sandbox disputes
+  are never stored or changed.
 
 ## Data sources
 
@@ -192,7 +197,11 @@ Before you start: both terminals running, and the server log says `AI drafting: 
    A sees two disputes (DEMO-1001 and DEMO-1002), only the ones on this account.
 2. **DEMO-1001 (item not received, gaps).** Evidence analysis: tracking and proof of delivery are Missing and marked
    "Key for this reason". Read the line "Missing from the supplied records does not show that it did not happen."
-   Show "Based on" under each finding: every status traces to a record field.
+   Show "Based on" under each finding: every status traces to a record field. In the evidence checklist, open "How to
+   fill this gap" under Shipping tracking and press **I have this in my records**. The row keeps "Missing from records",
+   adds a "Merchant-confirmed" tag and the line "DisputeDesk has not seen the record. Your confirmation does not change
+   its evidence status." The overview still counts it under "Needs attention" ("1 merchant-confirmed"). Press the
+   button again to withdraw it.
 3. **Response draft.** The rule draft starts with the review header and has 5 markers to resolve. Type in it: the marker
    count updates. Reset restores it.
 4. **Generate AI draft.** The section names the model before you click. Result: "Checked, no issues found", the AI wording
@@ -222,7 +231,8 @@ Before you start: both terminals running, and the server log says `AI drafting: 
 11. **Sign in as Demo Admin.** Every dispute and Insights for all demo merchants, read-only: no AI draft or summary button.
 12. Close on the footnote: DisputeDesk never submits responses to PayPal.
 
-The demo can be repeated as often as needed: nothing is saved, and reloading the page resets every draft.
+The demo can be repeated as often as needed: drafts are not saved, and reloading the page resets every draft. Gap
+confirmations are saved until withdrawn, so withdraw the one from step 2 before the next run.
 
 ## If something goes wrong during the demo
 
@@ -243,7 +253,9 @@ Keep screenshots or a screen recording of a successful run as a backup.
   why merchant review stays mandatory. The same holds for Check my edits: its claim matching is advisory.
 - The PayPal integration only reads (an access token, the dispute list and each dispute's record). It never creates,
   changes or answers a dispute, and never submits evidence. The list reads the first 50 disputes.
-- Drafts are not saved. Accounts are six synthetic demo accounts with no sign-up. The server answers only on this
+- A gap confirmation is the merchant's own statement. DisputeDesk never sees the record behind it, and it is kept for
+  demo disputes only.
+- Drafts are not saved. Accounts are seven synthetic demo accounts with no sign-up. The server answers only on this
   machine (127.0.0.1).
 - One server process per database. The sign-in and AI limits are kept in memory (at most 10,000 keys), so a restart
   lifts a lockout.

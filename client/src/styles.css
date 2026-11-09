@@ -1190,6 +1190,13 @@ details summary {
   margin: 6px 0 0;
 }
 
+/* The merchant's own caveat, in the row under the tag: full ink so it is read, wraps on narrow screens. */
+.confirm-note {
+  margin: 6px 0 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
 /* Pressed shows a check mark as well as a colour change. The busy spinner keeps its own ::before. */
 .confirm-gap .button[aria-pressed="true"]:not([aria-disabled="true"])::before {
   content: "\2713";
