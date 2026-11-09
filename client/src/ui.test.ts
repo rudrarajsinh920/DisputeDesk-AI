@@ -241,9 +241,9 @@ test("the admin dashboard opens on an overview, and merchants keep only Disputes
 test("the admin overview counts the real demo records, with no percentages and nothing that changes data", () => {
   const markup = html(createElement(AdminOverview, { accounts: demoAccounts, disputes: demoDisputes, health: healthOn, onOpen: noop, onStatus: noop, onSystem: noop }));
   const out = text(markup);
-  assert.match(out, /Merchant accounts 3 Buyer accounts 2 Demo disputes 17 Unresolved 13/);
-  assert.match(out, /Open 3 : show in Disputes Awaiting seller 4 : show in Disputes Awaiting buyer 2 : show in Disputes Under review 4 : show in Disputes Resolved 4/);
-  assert.match(out, /Waiting for a response 6 demo disputes/);
+  assert.match(out, /Merchant accounts 4 Buyer accounts 2 Demo disputes 21 Unresolved 17/);
+  assert.match(out, /Open 5 : show in Disputes Awaiting seller 5 : show in Disputes Awaiting buyer 2 : show in Disputes Under review 5 : show in Disputes Resolved 4/);
+  assert.match(out, /Waiting for a response 7 demo disputes/);
   assert.match(out, /Credentials configured/);
   assert.doesNotMatch(out, /%|uptime|Healthy|incident/i);
   assert.doesNotMatch(out, CHANGING);
@@ -254,8 +254,8 @@ test("the admin overview counts the real demo records, with no percentages and n
 
 test("admin account views list one role, show each account's disputes, and offer no account actions", () => {
   const merchants = text(html(createElement(AdminAccounts, { role: "merchant", accounts: demoAccounts, disputes: demoDisputes, onOpen: noop })));
-  assert.match(merchants, /Merchant accounts 3 shown/);
-  assert.match(merchants, /Demo Merchant A .*Demo Merchant B .*Demo Merchant C/);
+  assert.match(merchants, /Merchant accounts 4 shown/);
+  assert.match(merchants, /Demo Merchant A .*Demo Merchant B .*Demo Merchant C .*Demo Merchant D/);
   assert.doesNotMatch(merchants, /Demo Buyer|Demo Admin/);
   assert.match(merchants, /PayPal sandbox access Yes/);
   assert.match(merchants, /Read-only\. Accounts come from demo-accounts\.json/);
@@ -1021,9 +1021,10 @@ const checklistHtml = (d: Dispute) => {
 
 test("the checklist shows every status and tier as text, across the demo records", () => {
   const all = text(demoDisputes.map(checklistHtml).join(" "));
-  for (const label of ["Available in records", "Missing from records", "Conflicting records", "Confirm from your records", "Not applicable to this reason"]) {
+  for (const label of ["Available in records", "Missing from records", "Conflicting records", "Not shown by records", "Not applicable to this reason"]) {
     assert.ok(all.includes(label), label);
   }
+  assert.doesNotMatch(all, /Confirm from your records/, "the old label is gone, so it can't be read as a confirmation");
   assert.match(all, /General guidance/);
   assert.match(all, /DisputeDesk guidance/);
   assert.doesNotMatch(all, /PayPal-documented/, "no item is labelled official");
@@ -1038,6 +1039,32 @@ test("gap guidance and not-applicable items stay folded, and the section has no 
   assert.match(text(out), /How to fill this gap/);
   assert.match(text(out), /Where you might find it .* Check before adding .* What DisputeDesk can't see/);
   assert.doesNotMatch(out, /<button|<form|<input|<textarea/);
+});
+
+test("the overview line counts gaps, records and conflicts, with no score or completion word", () => {
+  const conflict = demoDisputes.find((d) => d.dispute_id === "DEMO-1002")!;
+  const { checklist } = checklistOf(conflict);
+  const applicable = checklist.items.filter((i) => i.status !== "not_applicable");
+  const n = (...s: string[]) => applicable.filter((i) => s.includes(i.status)).length;
+  const out = text(checklistHtml(conflict));
+  assert.ok(
+    out.includes(`Needs attention: ${n("missing", "needs_confirmation")} · Record available: ${n("available")} · Conflicting: ${n("conflicting")}`),
+    out,
+  );
+  assert.ok(n("conflicting") > 0);
+  for (const d of demoDisputes) assert.doesNotMatch(text(checklistHtml(d)), /score|percent|%|\bcomplete\b|ready to submit/i, d.dispute_id);
+});
+
+test("every place to look carries a source label, and conflicting items say to check each record", () => {
+  const conflict = demoDisputes.find((d) => d.dispute_id === "DEMO-1002")!;
+  const { checklist } = checklistOf(conflict);
+  const out = text(checklistHtml(conflict));
+  for (const item of checklist.items.filter((i) => i.status !== "available" && i.status !== "not_applicable")) {
+    for (const w of item.where) assert.match(out, new RegExp(`[A-Za-z ]+: ${w.text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), w.text);
+  }
+  assert.match(out, /Carrier or shipping: Your shipping software/);
+  assert.match(out, /This PayPal dispute: Delivery confirmation you already submitted in PayPal/);
+  assert.match(out, /The records disagree on this item\. Check each record at its source before adding either one\./);
 });
 
 test("an unmapped reason says the checklist is generic", () => {

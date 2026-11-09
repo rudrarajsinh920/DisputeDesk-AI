@@ -102,12 +102,16 @@ password here.
 | Demo Merchant A | merchant | `merchant-a@demo.disputedesk.test` | `demo-merchant-a-C9Y-jSMY` | DEMO-1001, DEMO-1002, PayPal sandbox |
 | Demo Merchant B | merchant | `merchant-b@demo.disputedesk.test` | `demo-merchant-b-rHa959Nf` | DEMO-1003 |
 | Demo Merchant C | merchant | `merchant-c@demo.disputedesk.test` | `demo-merchant-c-ot4_dVoM` | DEMO-2001 to DEMO-2014 (insights demo) |
+| Demo Merchant D | merchant | `merchant-d@demo.disputedesk.test` | `demo-merchant-d-TQxRYYHE` | DEMO-3001 to DEMO-3004 (reasons without their own checklist) |
 | Demo Buyer A | buyer | `buyer-a@demo.disputedesk.test` | `demo-buyer-a-wF8iuKjc` | DEMO-1001 |
 | Demo Buyer B | buyer | `buyer-b@demo.disputedesk.test` | `demo-buyer-b-rrkFQMjo` | DEMO-1002, DEMO-1003 |
 
 - **Merchants** see and analyse only the demo disputes on their own account. Merchant A also has the PayPal sandbox.
   Merchant C holds a larger synthetic set (DEMO-2001 to DEMO-2014) so the Insights view has enough records to show
   patterns; Merchants A and B show what Insights says when there is too little data.
+  Merchant D holds DEMO-3001 to DEMO-3004, one for each labelled reason without a reason-specific evidence checklist
+  (incorrect amount, paid by other means, canceled recurring billing, problem with remittance), so the general
+  checklist can be seen on a real demo record.
 - **Insights** (merchants and admin) turns the account's demo disputes into counts: status, reason, evidence
   completeness, missing and unverified evidence, conflicting records, disputes waiting for the seller or open more than
   30 days, and disputes by month opened. Fixed rules in `server/src/intelligence.ts` decide everything, on top of the

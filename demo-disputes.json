@@ -351,5 +351,84 @@
       "order_confirmation": true,
       "customer_communication": true
     }
+  },
+  {
+    "dispute_id": "DEMO-3001",
+    "reason": "INCORRECT_AMOUNT",
+    "status": "OPEN",
+    "amount": {
+      "currency_code": "USD",
+      "value": "42.00"
+    },
+    "create_time": "2026-10-28T09:20:00Z",
+    "customer_message": "I was charged more than the price shown at checkout.",
+    "order": {
+      "order_id": "ORDER-3001",
+      "item": "Desk lamp",
+      "shipping_status": "DELIVERED",
+      "tracking_number": "DEMO-TRK-3001"
+    },
+    "evidence": {
+      "order_confirmation": true,
+      "shipping_tracking": true,
+      "proof_of_delivery": true,
+      "customer_communication": false
+    }
+  },
+  {
+    "dispute_id": "DEMO-3002",
+    "reason": "PAYMENT_BY_OTHER_MEANS",
+    "status": "WAITING_FOR_SELLER_RESPONSE",
+    "amount": {
+      "currency_code": "USD",
+      "value": "30.00"
+    },
+    "create_time": "2026-10-30T15:45:00Z",
+    "customer_message": "I already paid for this order another way.",
+    "order": {
+      "order_id": "ORDER-3002",
+      "item": "Yoga mat"
+    },
+    "evidence": {
+      "order_confirmation": true,
+      "customer_communication": true
+    }
+  },
+  {
+    "dispute_id": "DEMO-3003",
+    "reason": "CANCELED_RECURRING_BILLING",
+    "status": "OPEN",
+    "amount": {
+      "currency_code": "USD",
+      "value": "12.99"
+    },
+    "create_time": "2026-11-02T08:05:00Z",
+    "customer_message": "I canceled this subscription and was charged again.",
+    "order": {
+      "order_id": "ORDER-3003",
+      "item": "Monthly coffee subscription"
+    },
+    "evidence": {
+      "order_confirmation": true
+    }
+  },
+  {
+    "dispute_id": "DEMO-3004",
+    "reason": "PROBLEM_WITH_REMITTANCE",
+    "status": "UNDER_REVIEW",
+    "amount": {
+      "currency_code": "USD",
+      "value": "250.00"
+    },
+    "create_time": "2026-10-25T11:30:00Z",
+    "customer_message": "I sent the payment, but the invoice still shows as unpaid.",
+    "order": {
+      "order_id": "ORDER-3004",
+      "item": "Design invoice"
+    },
+    "evidence": {
+      "order_confirmation": false,
+      "customer_communication": true
+    }
   }
 ]

@@ -11,7 +11,7 @@ interface Guide {
   label: string;
   tier: RequirementTier;
   why: string;
-  where: string[];
+  where: ChecklistItem["where"];
   check_before_adding: string[];
   limits: string;
 }
@@ -24,7 +24,11 @@ const ENGINE_GUIDES: Record<EvidenceKey, Guide> = {
     label: "Order confirmation",
     tier: "general",
     why: "Shows what the buyer ordered and agreed to pay for.",
-    where: ["Your store admin or order system, for this order", "The order confirmation email sent to the buyer", "The transaction details for this payment in your PayPal account"],
+    where: [
+      { kind: "order_system", text: "Your store admin or order system, for this order" },
+      { kind: "merchant_documents", text: "The order confirmation email sent to the buyer" },
+      { kind: "payment_records", text: "The transaction details for this payment in your PayPal account" },
+    ],
     check_before_adding: [
       "The order ID and amount match this dispute.",
       "The item and quantity match what the buyer bought.",
@@ -36,7 +40,11 @@ const ENGINE_GUIDES: Record<EvidenceKey, Guide> = {
     label: "Shipping tracking",
     tier: "general",
     why: "A carrier tracking record can show that the order was sent and how it moved.",
-    where: ["Your shipping software or carrier account", "The carrier's tracking page for this order's tracking number", "Tracking you already added to this transaction in PayPal"],
+    where: [
+      { kind: "shipping_provider", text: "Your shipping software or carrier account" },
+      { kind: "shipping_provider", text: "The carrier's tracking page for this order's tracking number" },
+      { kind: "payment_records", text: "Tracking you already added to this transaction in PayPal" },
+    ],
     check_before_adding: [
       "The tracking number belongs to this order.",
       "The carrier shows the parcel was accepted, not only that a label was created.",
@@ -49,9 +57,9 @@ const ENGINE_GUIDES: Record<EvidenceKey, Guide> = {
     tier: "general",
     why: "A carrier delivery confirmation can show where and when the order arrived.",
     where: [
-      "Your carrier account, or the carrier's tracking page for this tracking number",
-      "Your shipping software",
-      "Delivery confirmation you already submitted in PayPal",
+      { kind: "shipping_provider", text: "Your carrier account, or the carrier's tracking page for this tracking number" },
+      { kind: "shipping_provider", text: "Your shipping software" },
+      { kind: "paypal_dispute", text: "Delivery confirmation you already submitted in PayPal" },
     ],
     check_before_adding: [
       "The tracking number matches this order.",
@@ -65,7 +73,10 @@ const ENGINE_GUIDES: Record<EvidenceKey, Guide> = {
     label: "Customer communication",
     tier: "general",
     why: "Messages with the buyer can show what was promised, reported or agreed.",
-    where: ["Your email, help desk or chat history with this buyer", "The messages in this PayPal dispute"],
+    where: [
+      { kind: "customer_support", text: "Your email, help desk or chat history with this buyer" },
+      { kind: "paypal_dispute", text: "The messages in this PayPal dispute" },
+    ],
     check_before_adding: [
       "The messages are with this buyer and about this order.",
       "Dates and wording are exactly as sent, not retyped.",
@@ -81,7 +92,10 @@ const RECORD_GUIDES: Record<string, Guide> = {
     label: "Refund ID, if a refund was issued",
     tier: "general",
     why: "PayPal's dispute reasons reference lists proof of refund (the refund ID) for this reason.",
-    where: ["The activity for this transaction in your PayPal account", "Refund records in your store admin or payment processor"],
+    where: [
+      { kind: "payment_records", text: "The activity for this transaction in your PayPal account" },
+      { kind: "refund_records", text: "Refund records in your store admin or payment processor" },
+    ],
     check_before_adding: [
       "The refund is for this transaction, not another order.",
       "The refund amount and currency match what the buyer is asking about.",
@@ -93,7 +107,10 @@ const RECORD_GUIDES: Record<string, Guide> = {
     label: "The other payment's transaction ID",
     tier: "disputedesk",
     why: "If this charge repeats another payment, the other transaction's ID lets a reviewer compare the two.",
-    where: ["The activity around the payment date in your PayPal account", "This buyer's orders in your store admin"],
+    where: [
+      { kind: "payment_records", text: "The activity around the payment date in your PayPal account" },
+      { kind: "order_system", text: "This buyer's orders in your store admin" },
+    ],
     check_before_adding: [
       "Both payments are from the same buyer.",
       "The amounts and dates of both payments are noted.",
@@ -105,7 +122,11 @@ const RECORD_GUIDES: Record<string, Guide> = {
     label: "Listing or item description at the time of sale",
     tier: "disputedesk",
     why: "The buyer says the item differs from its description. The description shown when they ordered records what was offered.",
-    where: ["A saved copy or archive of the listing page", "Past versions of the product in your store admin", "The item description in the order confirmation"],
+    where: [
+      { kind: "listing_history", text: "A saved copy or archive of the listing page" },
+      { kind: "listing_history", text: "Past versions of the product in your store admin" },
+      { kind: "merchant_documents", text: "The item description in the order confirmation" },
+    ],
     check_before_adding: [
       "The copy is from on or before the order date, not the current page.",
       "It is the same item and variant the buyer ordered.",
@@ -117,7 +138,10 @@ const RECORD_GUIDES: Record<string, Guide> = {
     label: "Return tracking, if the item was sent back",
     tier: "general",
     why: "If the buyer sent the item back, return tracking can show whether and when it reached you.",
-    where: ["The return label or return request you issued", "Your carrier account, or the carrier's tracking page for the return"],
+    where: [
+      { kind: "order_system", text: "The return label or return request you issued" },
+      { kind: "shipping_provider", text: "Your carrier account, or the carrier's tracking page for the return" },
+    ],
     check_before_adding: [
       "The tracking number belongs to this order's return.",
       "The delivery address is yours.",
@@ -129,7 +153,10 @@ const RECORD_GUIDES: Record<string, Guide> = {
     label: "Shipping address the order went to",
     tier: "disputedesk",
     why: "The buyer says they did not authorize this payment. The order's shipping address can be compared with the address on the PayPal transaction.",
-    where: ["The shipping address in your order system", "The shipping address on the transaction in your PayPal account"],
+    where: [
+      { kind: "order_system", text: "The shipping address in your order system" },
+      { kind: "payment_records", text: "The shipping address on the transaction in your PayPal account" },
+    ],
     check_before_adding: [
       "The two addresses are compared as recorded, not from memory.",
       "Any change made to the address after the order is noted.",
@@ -141,7 +168,7 @@ const RECORD_GUIDES: Record<string, Guide> = {
     label: "Your position and the records behind it",
     tier: "disputedesk",
     why: "DisputeDesk has no reason-specific list for this reason, so start from what happened and which of your records show it.",
-    where: ["Your order, payment and message records for this transaction"],
+    where: [{ kind: "merchant_documents", text: "Your order, payment and message records for this transaction" }],
     check_before_adding: ["Every fact you state comes from a record you can show.", "Dates and amounts match the PayPal transaction."],
     limits: "DisputeDesk has no reason-specific guidance for this reason.",
   },
@@ -188,6 +215,9 @@ const REASONS: Record<string, ReasonEntry> = {
 
 const DEFAULT: ReasonEntry = { items: [...ENGINE_KEYS, "your_position"] };
 
+// Added to a conflicting item's limits. The records disagree, so neither is used until the merchant checks both.
+export const CONFLICT_NOTE = "The records disagree on this item. Check each record at its source before adding either one.";
+
 export const CHECKLIST_NOTES = [
   "Missing from the records does not show that it did not happen.",
   "DisputeDesk does not open your documents or other systems. It shows what the supplied records mark.",
@@ -215,7 +245,7 @@ export function buildChecklist(dispute: Dispute, analysis: Analysis): EvidenceCh
     why: guide.why,
     where: guide.where,
     check_before_adding: guide.check_before_adding,
-    limits: status === "missing" ? `${guide.limits} ${NOT_PROOF}` : guide.limits,
+    limits: status === "missing" ? `${guide.limits} ${NOT_PROOF}` : status === "conflicting" ? `${guide.limits} ${CONFLICT_NOTE}` : guide.limits,
     ...extra,
   });
 

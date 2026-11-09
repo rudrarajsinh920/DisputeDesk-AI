@@ -58,6 +58,20 @@
       "password_hash": "scrypt$16384$8$1$7T/lQAE7KpH1lkTgCCakmA==$p+eCtNVRgjaXhqsrUEPlbqFqFBF5XvnqmKBmj20yDrw="
     },
     {
+      "id": "merchant-d",
+      "email": "merchant-d@demo.disputedesk.test",
+      "role": "merchant",
+      "display_name": "Demo Merchant D",
+      "paypal_sandbox": false,
+      "dispute_ids": [
+        "DEMO-3001",
+        "DEMO-3002",
+        "DEMO-3003",
+        "DEMO-3004"
+      ],
+      "password_hash": "scrypt$16384$8$1$mfcl8cq0X/nAGKx/VAUuvQ==$G7n6rGXh0yGAof+uiyxybJhORWF2heVJc/dPGzT4X1M="
+    },
+    {
       "id": "buyer-a",
       "email": "buyer-a@demo.disputedesk.test",
       "role": "buyer",

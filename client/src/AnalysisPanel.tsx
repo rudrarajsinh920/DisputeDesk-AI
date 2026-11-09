@@ -17,6 +17,7 @@ import type {
   ParagraphClaim,
   RecordRef,
   RequirementTier,
+  SourceKind,
   SourceType,
   VerificationState,
 } from "../../shared/types.ts";
@@ -264,8 +265,19 @@ const CHECKLIST_STATUS: Record<ChecklistStatus, { label: string; className: stri
   available: { label: "Available in records", className: "badge badge-ok" },
   missing: { label: "Missing from records", className: "badge badge-warn" },
   conflicting: { label: "Conflicting records", className: "badge badge-conflict" },
-  needs_confirmation: { label: "Confirm from your records", className: "badge badge-info" },
+  needs_confirmation: { label: "Not shown by records", className: "badge badge-info" },
   not_applicable: { label: "Not applicable", className: "badge badge-neutral" },
+};
+// Where the merchant may look. Each is the merchant's own system or account, never one DisputeDesk opens.
+const SOURCE_LABELS: Record<SourceKind, string> = {
+  shipping_provider: "Carrier or shipping",
+  payment_records: "PayPal or payment account",
+  order_system: "Order system",
+  customer_support: "Customer messages",
+  refund_records: "Refund records",
+  listing_history: "Listing history",
+  merchant_documents: "Your documents",
+  paypal_dispute: "This PayPal dispute",
 };
 // "PayPal-documented" only ever appears with a verified source; the server sends none today.
 const TIERS: Record<RequirementTier, { label: string; className: string }> = {
@@ -314,10 +326,13 @@ export function ChecklistView({ load, refsById, onRetry }: { load: ChecklistLoad
 function ChecklistItems({ checklist, refsById }: { checklist: EvidenceChecklist; refsById: Map<string, EvidenceRef> }) {
   const applicable = checklist.items.filter((i) => i.status !== "not_applicable");
   const notApplicable = checklist.items.filter((i) => i.status === "not_applicable");
-  const count = (s: ChecklistStatus) => applicable.filter((i) => i.status === s).length;
-  const counts = (["available", "missing", "conflicting", "needs_confirmation"] as const)
-    .filter((s) => count(s) > 0)
-    .map((s) => `${CHECKLIST_STATUS[s].label}: ${count(s)}`);
+  const count = (...s: ChecklistStatus[]) => applicable.filter((i) => s.includes(i.status)).length;
+  // Counts only: never a score, a share or a word like "complete".
+  const counts = [
+    `Needs attention: ${count("missing", "needs_confirmation")}`,
+    `Record available: ${count("available")}`,
+    `Conflicting: ${count("conflicting")}`,
+  ];
   return (
     <>
       {!checklist.reason_known && (
@@ -344,7 +359,9 @@ function ChecklistItems({ checklist, refsById }: { checklist: EvidenceChecklist;
                   <h4>Where you might find it</h4>
                   <ul>
                     {item.where.map((w) => (
-                      <li key={w}>{w}</li>
+                      <li key={w.text}>
+                        <span className="key-tag">{SOURCE_LABELS[w.kind]}:</span> {w.text}
+                      </li>
                     ))}
                   </ul>
                   <h4>Check before adding</h4>

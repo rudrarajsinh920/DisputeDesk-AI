@@ -160,10 +160,22 @@ export interface ChecklistItem {
   // Provenance refs behind the status.
   refs: string[];
   why: string;
-  where: string[];
+  where: { kind: SourceKind; text: string }[];
   check_before_adding: string[];
   limits: string;
 }
+
+// The kind of place a merchant may look for evidence. Every kind is the merchant's own system or account;
+// none means DisputeDesk can open it.
+export type SourceKind =
+  | "shipping_provider"
+  | "payment_records"
+  | "order_system"
+  | "customer_support"
+  | "refund_records"
+  | "listing_history"
+  | "merchant_documents"
+  | "paypal_dispute";
 
 export interface EvidenceChecklist {
   source: Source;

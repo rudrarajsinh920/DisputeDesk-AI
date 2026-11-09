@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Dispute, EvidenceChecklist } from "../../shared/types.ts";
 import { DEMO_DISPUTES } from "./app.ts";
-import { CHECKLIST_NOTES, buildChecklist } from "./checklist.ts";
+import { CHECKLIST_NOTES, CONFLICT_NOTE, buildChecklist } from "./checklist.ts";
 import { NOT_PROOF, analyzeDispute } from "./evidence.ts";
 import { buildProvenance } from "./provenance.ts";
 
@@ -63,6 +63,17 @@ test("each mapped reason has its own item list; other reasons get the generic li
   }
 });
 
+test("the demo set has a record for every labelled reason without its own list, each showing the generic list", () => {
+  const generic = ["INCORRECT_AMOUNT", "PAYMENT_BY_OTHER_MEANS", "CANCELED_RECURRING_BILLING", "PROBLEM_WITH_REMITTANCE"];
+  for (const reason of generic) {
+    const d = DEMO_DISPUTES.find((x) => x.reason === reason);
+    assert.ok(d, `no demo record for ${reason}`);
+    const c = checklist(d);
+    assert.equal(c.reason_known, false, reason);
+    assert.deepEqual(ids(c, true).sort(), [...ENGINE, "your_position"].sort(), reason);
+  }
+});
+
 test("key items come first and not-applicable items last", () => {
   const notReceived = checklist(record("MERCHANDISE_OR_SERVICE_NOT_RECEIVED"));
   assert.deepEqual(notReceived.items.slice(0, 2).map((i) => [i.id, i.priority]), [["shipping_tracking", "key"], ["proof_of_delivery", "key"]]);
@@ -84,7 +95,10 @@ test("each status comes from the record the way the engine reads it", () => {
   assert.equal(byId(c, "customer_communication").status, "needs_confirmation", "a flag that is not supplied");
 
   const conflicting = DEMO_DISPUTES.find((d) => d.dispute_id === "DEMO-1002")!;
-  assert.equal(byId(checklist(conflicting), "proof_of_delivery").status, "conflicting");
+  const conflict = byId(checklist(conflicting), "proof_of_delivery");
+  assert.equal(conflict.status, "conflicting");
+  assert.ok(conflict.limits.endsWith(CONFLICT_NOTE), "a conflicting item says to check each record at its source");
+  assert.ok(!conflict.limits.includes(NOT_PROOF));
 
   const duplicate = checklist(record("DUPLICATE_TRANSACTION", { proof_of_delivery: true, shipping_tracking: true }, shipped));
   assert.equal(byId(duplicate, "refund_id").status, "needs_confirmation", "no record field holds a refund ID");
@@ -141,10 +155,21 @@ test("no item is official, and an official item would need a citation", () => {
   }
 });
 
+// Places the merchant looks. None of them is a system DisputeDesk opens.
+const SOURCE_KINDS = ["shipping_provider", "payment_records", "order_system", "customer_support", "refund_records", "listing_history", "merchant_documents", "paypal_dispute"];
+
+test("the conflict sentence appears only on conflicting items, and the not-proof sentence only on missing ones", () => {
+  for (const item of ALL_ITEMS) {
+    assert.equal(item.limits.endsWith(CONFLICT_NOTE), item.status === "conflicting", `${item.id} ${item.status}`);
+    assert.equal(item.limits.endsWith(NOT_PROOF), item.status === "missing", `${item.id} ${item.status}`);
+  }
+});
+
 test("every item says why, where to look, what to check and what DisputeDesk can't see", () => {
   for (const item of ALL_ITEMS) {
     assert.ok(item.why.trim() && item.limits.trim(), item.id);
-    assert.ok(item.where.length > 0 && item.where.every((w) => w.trim()), item.id);
+    assert.ok(item.where.length > 0 && item.where.every((w) => w.text.trim()), item.id);
+    for (const w of item.where) assert.ok(SOURCE_KINDS.includes(w.kind), `${item.id}: ${w.kind}`);
     assert.ok(item.check_before_adding.length > 0 && item.check_before_adding.every((w) => w.trim()), item.id);
   }
 });
@@ -161,7 +186,8 @@ const BANNED = [
 
 test("item and note text follows the wording rules", () => {
   const texts = [
-    ...ALL_ITEMS.flatMap((i) => [i.label, i.why, i.limits.replace(NOT_PROOF, ""), ...i.where, ...i.check_before_adding]),
+    ...ALL_ITEMS.flatMap((i) => [i.label, i.why, i.limits.replace(NOT_PROOF, ""), ...i.where.map((w) => w.text), ...i.check_before_adding]),
+    CONFLICT_NOTE,
     ...CHECKLIST_NOTES.filter((n) => !n.includes("does not show that it did not happen")),
   ];
   for (const text of new Set(texts)) for (const pattern of BANNED) assert.doesNotMatch(text, pattern, text);

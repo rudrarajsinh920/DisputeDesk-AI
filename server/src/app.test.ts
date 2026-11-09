@@ -395,7 +395,7 @@ test("analysis endpoint rejects bad lookups, bad JSON and oversized bodies", asy
 
 test("the server's demo set is the validated demo fixture", () => {
   const insights = Array.from({ length: 14 }, (_, i) => `DEMO-${2001 + i}`);
-  assert.deepEqual(DEMO_DISPUTES.map((d) => d.dispute_id), ["DEMO-1001", "DEMO-1002", "DEMO-1003", ...insights]);
+  assert.deepEqual(DEMO_DISPUTES.map((d) => d.dispute_id), ["DEMO-1001", "DEMO-1002", "DEMO-1003", ...insights, ...OTHER_REASONS_IDS]);
   assert.ok(DEMO_DISPUTES.every((d) => d.source === "demo"));
   // Demo IDs and tracking numbers are marked synthetic so they can't pass for real PayPal or carrier data.
   assert.ok(DEMO_DISPUTES.every((d) => /^DEMO-/.test(d.dispute_id) && (!d.order?.tracking_number || /^DEMO-TRK-/.test(d.order.tracking_number))));
@@ -715,7 +715,9 @@ test("the validation example rejects bad lookups like the other analysis routes"
 const ROLES_OF: Record<string, string> = { admin: "admin", "merchant-a": "merchant", "merchant-b": "merchant", "buyer-a": "buyer", "buyer-b": "buyer" };
 const ALL = Object.keys(ROLES_OF);
 // Every demo account, in file order. Merchant C holds the larger insights demo set and is left out of the role matrix.
-const ACCOUNT_IDS = ["admin", "merchant-a", "merchant-b", "merchant-c", "buyer-a", "buyer-b"];
+const ACCOUNT_IDS = ["admin", "merchant-a", "merchant-b", "merchant-c", "merchant-d", "buyer-a", "buyer-b"];
+// Merchant D's four disputes cover the reasons with no reason-specific checklist.
+const OTHER_REASONS_IDS = ["DEMO-3001", "DEMO-3002", "DEMO-3003", "DEMO-3004"];
 
 async function withServer<T>(app: App, run: (base: string) => Promise<T>): Promise<T> {
   const server = app.listen(0, "127.0.0.1");
@@ -917,7 +919,7 @@ test("each route allows exactly the intended roles", async () => {
 
 test("the merchant list carries the rules' readiness counts for exactly the disputes it lists", async () => {
   const app = makeApp(null);
-  for (const as of ["admin", "merchant-a", "merchant-b", "merchant-c"]) {
+  for (const as of ["admin", "merchant-a", "merchant-b", "merchant-c", "merchant-d"]) {
     const res = await get(app, "/api/disputes", {}, as);
     assert.equal(res.status, 200);
     const listed: Dispute[] = res.body.disputes;
@@ -934,8 +936,9 @@ test("each account sees only its own disputes, and buyers see no merchant record
   const app = makeApp(null);
   const ids = async (path: string, as: string) => (await get(app, path, {}, as)).body.disputes.map((d: { dispute_id: string }) => d.dispute_id);
   const insights = Array.from({ length: 14 }, (_, i) => `DEMO-${2001 + i}`);
-  assert.deepEqual(await ids("/api/disputes", "admin"), ["DEMO-1001", "DEMO-1002", "DEMO-1003", ...insights]);
+  assert.deepEqual(await ids("/api/disputes", "admin"), ["DEMO-1001", "DEMO-1002", "DEMO-1003", ...insights, ...OTHER_REASONS_IDS]);
   assert.deepEqual(await ids("/api/disputes", "merchant-c"), insights);
+  assert.deepEqual(await ids("/api/disputes", "merchant-d"), OTHER_REASONS_IDS);
   assert.deepEqual(await ids("/api/disputes", "merchant-a"), ["DEMO-1001", "DEMO-1002"]);
   assert.deepEqual(await ids("/api/disputes", "merchant-b"), ["DEMO-1003"]);
   assert.deepEqual(await ids("/api/buyer/disputes", "buyer-a"), ["DEMO-1001"]);
@@ -1329,6 +1332,7 @@ test("each merchant's insights come only from that merchant's own disputes", asy
     "merchant-a": ["DEMO-1001", "DEMO-1002"],
     "merchant-b": ["DEMO-1003"],
     "merchant-c": INSIGHTS_IDS,
+    "merchant-d": OTHER_REASONS_IDS,
   };
   for (const [id, ids] of Object.entries(owned)) {
     const res = await get(app, "/api/intelligence", {}, id);
