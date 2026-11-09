@@ -199,7 +199,7 @@ export const TRACKING_STATEMENT =
 export const MESSAGE_CONTENT =
   /\b(about|that|regarding|with|know|to\s+(say|explain|confirm|ask|offer)|tracking|refund\w*|replacement|return\w*|reimburs\w*|discount|credit|label|invoice|receipt|link|details?|info(rmation)?|update|status|delay|number|code|photos?|instructions?|offer\w*)\b/i;
 export const OFFER_CLAIM = /\b(we|i)\s+(have\s+|had\s+|already\s+)?(offered|promised|proposed)\b/i;
-// DisputeDesk holds record flags, never documents, so it can't back an attachment.
+// Evidence comes from record flags. A merchant may store files, but DisputeDesk has not checked any, so it can't back an attachment.
 export const ATTACHMENT = /\b(attached|enclosed|attachments?|see\s+the\s+(invoice|receipt|photos?|screenshots?|documents?|files?|label))\b/i;
 export const ORDER_CLAIM =
   /\b(buyer|customer|they|he|she)\s+(placed|made)\s+(an?|the|this)\s+order\b|\b(buyer|customer)\s+(ordered|purchased|bought|paid)\b|\border\s+(was|is|has\s+been)\s+(confirmed|placed|paid)\b|\b(we|i)\s+confirmed\s+(the|their|this)\s+order\b/i;
@@ -378,7 +378,7 @@ function mapClaims(dispute: Dispute, analysis: Analysis, provenance: Provenance,
   }
   if (REFUND_CLAIM.test(claims)) parts.push({ unsupported: `${NO_RECORD}: DisputeDesk holds no refund records.` });
   if (OFFER_CLAIM.test(claims)) parts.push({ unsupported: `${NO_RECORD}: DisputeDesk holds no record of what was offered or promised.` });
-  if (ATTACHMENT.test(claims)) parts.push({ unsupported: `${NO_RECORD}: DisputeDesk holds no documents, so it can't back an attachment.` });
+  if (ATTACHMENT.test(claims)) parts.push({ unsupported: `${NO_RECORD}: DisputeDesk hasn't checked any file, so it can't back an attachment.` });
 
   // Identifiers repeated as written: a contested one is always flagged; an uncontested one backs the paragraph only
   // when it makes no other claim (it then just names the dispute, order or amount).

@@ -86,7 +86,7 @@ test("agreements, offers and attachments are claims, not ordinary sentences (Pha
   assert.deepEqual(claim(demo, "The buyer agreed to keep the item.").reasons, ["Describes buyer messages, which are not in DisputeDesk's records."]);
   assert.deepEqual(claim(demo, "We offered the buyer a refund.").reasons, ["No supporting record in DisputeDesk: DisputeDesk holds no record of what was offered or promised."]);
   assert.deepEqual(claim(demo, "Please review the attached invoice.").reasons, [
-    "No supporting record in DisputeDesk: DisputeDesk holds no documents, so it can't back an attachment.",
+    "No supporting record in DisputeDesk: DisputeDesk hasn't checked any file, so it can't back an attachment.",
   ]);
   // The order confirmation's own wording is not a buyer message.
   assert.equal(support(demo, "The order confirmation shows what the buyer agreed to pay for."), "not_a_claim");

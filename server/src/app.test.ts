@@ -2144,15 +2144,34 @@ test("deleting a document removes its file with it; the audit keeps the ID only"
   }
 });
 
-test("documents change no evidence status, readiness, checklist or draft", async () => {
-  const { app } = documentsApp();
+test("documents change no evidence status, readiness, checklist, draft, Insights, buyer view or Gemini request", async () => {
+  const db = openDatabase(":memory:");
+  const ai = mockAi();
+  const app = createApp(null, ai.client, undefined, { accounts: TEST_ACCOUNTS, db, now: NOV_4 });
+  // A merchant confirmation is part of what the merchant sees; files must not change it either.
+  assert.equal((await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1001", "shipping_tracking"))).status, 200);
+  // Each Gemini-backed route is called once; what it answered and the exact request Gemini received are both compared.
+  const viaGemini = async (path: string, init: RequestInit, as: string) => {
+    const from = ai.calls.length;
+    const res = await get(app, path, init, as);
+    return { status: res.status, body: res.body, sent: ai.calls.slice(from).map((c) => c.body) };
+  };
   const snapshot = async (id: string) => ({
     analysis: (await get(app, "/api/analysis", lookup("demo", id))).body,
     checklist: (await get(app, "/api/analysis/checklist", lookup("demo", id))).body,
     list: (await get(app, "/api/disputes", {})).body,
+    draft: await viaGemini("/api/analysis/ai", lookup("demo", id), "merchant-a"),
+    insights: (await get(app, "/api/intelligence", {})).body,
+    insightsExplained: await viaGemini("/api/intelligence/explain", postJson("{}"), "merchant-a"),
+    adminAnalysis: (await get(app, "/api/analysis", lookup("demo", id), "admin")).body,
+    adminInsights: (await get(app, "/api/intelligence", {}, "admin")).body,
+    buyerList: (await get(app, "/api/buyer/disputes", {}, "buyer-a")).body,
+    buyerExplained: await viaGemini("/api/buyer/explain", lookup("demo", "DEMO-1001"), "buyer-a"),
   });
   for (const id of ["DEMO-1001", "DEMO-1002"]) {
     const before = await snapshot(id);
+    assert.equal(before.draft.status, 200);
+    assert.ok(before.draft.sent.length === 1 && before.buyerExplained.sent.length === 1, "Gemini was asked, so its request is compared");
     const files: [Buffer, string][] = [[PDF, "application/pdf"], [PNG, "image/png"], [JPEG, "image/jpeg"]];
     for (const [bytes, type] of files) assert.equal((await get(app, "/api/documents/upload", upload(id, bytes, type, "proof of delivery.pdf"))).status, 201);
     assert.deepEqual(await snapshot(id), before, id);
