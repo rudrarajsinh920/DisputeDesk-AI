@@ -32,7 +32,7 @@ import accountsFile from "../../demo-accounts.json" with { type: "json" };
 import extraDemos from "../../demo-disputes.json" with { type: "json" };
 import sample from "../../sample-dispute.json" with { type: "json" };
 import type { AccountInfo, AiAssist, BuyerDispute, Dispute, DisputeDocument } from "../../shared/types.ts";
-import { DOCUMENT_ADMIN_NOTICE, DOCUMENT_NOTICE, DocumentsView, fileProblem, formatSize } from "./Documents.tsx";
+import { DOCUMENT_ADMIN_NOTICE, DOCUMENT_NOTICE, DOCUMENT_TEXT_NOTICE, DocumentsView, documentStatusLine, fileProblem, formatSize } from "./Documents.tsx";
 import type { DocumentActions } from "./Documents.tsx";
 
 // Test fixture: the synthetic records the server serves. The page itself no longer bundles them.
@@ -727,8 +727,8 @@ test("the client calls only DisputeDesk's own read and analysis endpoints", () =
     .map((f) => readFileSync(new URL(f, dir), "utf8"))
     .join("\n");
   const urls = [...new Set([...sources.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(urls, ["/api/admin/accounts", "/api/admin/audit", "/api/admin/settings", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/analysis/check", "/api/analysis/checklist", "/api/analysis/checklist/confirm", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/documents", "/api/documents/delete", "/api/documents/upload", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
-  assert.equal((sources.match(/fetch\(/g) ?? []).length, 20, "each fetch call uses one of the endpoints above");
+  assert.deepEqual(urls, ["/api/admin/accounts", "/api/admin/audit", "/api/admin/settings", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/analysis/check", "/api/analysis/checklist", "/api/analysis/checklist/confirm", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/documents", "/api/documents/delete", "/api/documents/pages", "/api/documents/upload", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
+  assert.equal((sources.match(/fetch\(/g) ?? []).length, 21, "each fetch call uses one of the endpoints above");
   assert.doesNotMatch(sources, /paypal\.com|generativelanguage|method:\s*"(PUT|PATCH|DELETE)"/i);
 });
 
@@ -1196,6 +1196,8 @@ const docActions = (extra: Partial<DocumentActions> = {}): DocumentActions => ({
   error: null,
   onUpload: noop,
   onDelete: noop,
+  texts: {},
+  onToggleText: noop,
   ...extra,
 });
 
@@ -1208,7 +1210,7 @@ test("the documents list shows each file as not verified, with a delete button a
   assert.equal(out.match(/Not verified/g)?.length, 2);
   assert.match(out, /PDF · 2 KB · added Nov 9, 2026/);
   assert.match(out, /PNG image · 3\.0 MB/);
-  assert.equal(out.match(/Stored\. Text not read yet\./g)?.length, 2);
+  assert.equal(out.match(/Reading the text…/g)?.length, 2);
   assert.doesNotMatch(out.replace(/Not verified/g, ""), /verified/i, "nothing calls a document verified");
   assert.match(markup, /aria-label="Delete label\.png"/);
   assert.match(markup, /<label for="document-file">Add a file \(PDF, PNG or JPEG, up to 5 MB\)<\/label><input id="document-file" type="file" accept="application\/pdf,image\/png,image\/jpeg"/);
@@ -1236,6 +1238,41 @@ test("admin reads the documents list without upload or delete; a full dispute di
   assert.match(failed, /aria-describedby="document-error"/);
   assert.match(failed, /<p class="document-error" id="document-error" role="alert">Choose a PDF, PNG or JPEG file\.<\/p>/);
   assert.match(text(failed), /No documents attached\./);
+});
+
+test("each document says plainly whether its text was read, and a scan or image is never called readable", () => {
+  assert.equal(documentStatusLine({ status: "pending", page_count: null, media_type: "application/pdf" }), "Reading the text…");
+  assert.equal(documentStatusLine({ status: "extracted", page_count: 1, media_type: "application/pdf" }), "Text read from 1 page.");
+  assert.equal(documentStatusLine({ status: "extracted", page_count: 3, media_type: "application/pdf" }), "Text read from 3 pages.");
+  assert.match(documentStatusLine({ status: "no_text", page_count: 2, media_type: "application/pdf" }), /^No text found\. It may be a scanned image/);
+  assert.match(documentStatusLine({ status: "no_text", page_count: null, media_type: "image/png" }), /does not read text in pictures/);
+  assert.equal(documentStatusLine({ status: "failed", page_count: null, media_type: "application/pdf" }), "DisputeDesk couldn't read text from this file.");
+});
+
+test("only a document with text offers Show text; open text is plain, page by page, and labelled unchecked", () => {
+  const read = docFixture(1, { status: "extracted", page_count: 2 });
+  const scan = docFixture(2, { status: "no_text", page_count: 1, display_name: "scan.pdf" });
+  const closed = html(createElement(DocumentsView, { load: { status: "ready", documents: [read, scan] }, onRetry: noop, actions: docActions() }));
+  assert.equal(closed.match(/>Show text</g)?.length, 1);
+  assert.match(closed, /aria-expanded="false"/);
+  const pages = [
+    { page: 1, text: "Synthetic invoice INV-1\n<img src=x onerror=alert(1)>", text_sha256: "a".repeat(64) },
+    { page: 2, text: "", text_sha256: "b".repeat(64) },
+  ];
+  const open = html(
+    createElement(DocumentsView, { load: { status: "ready", documents: [read] }, onRetry: noop, actions: docActions({ texts: { [read.id]: { status: "ready", pages } } }) }),
+  );
+  assert.match(open, /aria-expanded="true" aria-controls="document-text-[^"]+"/);
+  assert.ok(text(open).includes(DOCUMENT_TEXT_NOTICE));
+  assert.match(text(open), /Page 1/);
+  assert.ok(!open.includes("<img"), "text from a file is never markup");
+  assert.ok(open.includes("&lt;img src=x onerror=alert(1)&gt;"));
+  assert.match(text(open), /Page 2 No text on this page\./);
+  assert.doesNotMatch(open, /style=/);
+  // Admin can read the text too, still without upload or delete.
+  const admin = html(createElement(DocumentsView, { load: { status: "ready", documents: [read] }, onRetry: noop, actions: docActions({ canEdit: false }) }));
+  assert.match(admin, />Show text</);
+  assert.doesNotMatch(admin, /Delete|type="file"/);
 });
 
 test("the browser refuses wrong file types and sizes before uploading; the server checks again", () => {

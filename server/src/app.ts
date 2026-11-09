@@ -50,6 +50,7 @@ import { PayPalError } from "./paypal.ts";
 import type { PayPalClient } from "./paypal.ts";
 import { assistWithRefs, withProvenance } from "./provenance.ts";
 import { cleanDocumentName, sniffMediaType } from "./documents.ts";
+import { createExtractor, type Extractor } from "./extract.ts";
 import {
   addDocument,
   audit,
@@ -57,6 +58,7 @@ import {
   deleteDocument,
   findAccountByEmail,
   getAccount,
+  getDocumentPages,
   listAccounts,
   listAudit,
   listConfirmations,
@@ -116,6 +118,7 @@ const AI_STATUS: Partial<Record<AiError["code"], number>> = { ai_rate_limited: 4
 // aiOff is the safe reason shown when ai is null.
 // db is the server's database (index.ts opens the file); tests get a fresh in-memory one.
 // accounts and now are for tests; the server uses the demo accounts and the real clock.
+// extractor reads uploaded PDFs (extract.ts); tests pass their own to wait for it or fake the worker.
 // The demo accounts and disputes are copied into db on every start (seedDemo).
 export function createApp(
   paypal: PayPalClient | null,
@@ -126,7 +129,8 @@ export function createApp(
     now = Date.now,
     db = openDatabase(":memory:"),
     trustProxy = 0,
-  }: { accounts?: Account[]; now?: () => number; db?: DatabaseSync; trustProxy?: number } = {},
+    extractor,
+  }: { accounts?: Account[]; now?: () => number; db?: DatabaseSync; trustProxy?: number; extractor?: Extractor } = {},
 ) {
   const app = express();
   app.disable("x-powered-by");
@@ -138,6 +142,8 @@ export function createApp(
   const sessions = createSessions(db, now);
   // Signed-out and expired sessions from earlier runs are cleared at start; live ones stay signed in.
   sessions.prune();
+  // Created after seeding; it queues any PDF an earlier run left unread.
+  const extraction = extractor ?? createExtractor(db, { now });
   const limiter = createLoginLimiter(now);
   // The sign-in limiter's sliding window, reused: each Gemini call counts against the account that asked for it.
   const aiLimiter = createLoginLimiter(now);
@@ -518,6 +524,7 @@ export function createApp(
   // ---- Merchant documents (Stage 3). Demo disputes only. DisputeDesk stores the file and has not checked it:
   // no route here changes an evidence status, the readiness counts, the draft or anything sent to Gemini. ----
 
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   const documentsFor = (disputeId: string, account: Account) => listDocuments(db, disputeId, account.role === "admin" ? null : account.id);
   const notForSandbox = (res: Response) =>
     sendError(res, 409, "documents_demo_only", "Documents are kept for demo disputes only. PayPal sandbox disputes are never stored.");
@@ -598,14 +605,37 @@ export function createApp(
         sendError(res, 409, refusal[0], refusal[1]);
         return;
       }
+      // Read after the answer is sent, in its own worker; the merchant sees "pending" until it is done.
+      if (result.document.status === "pending") extraction.enqueue(result.document.id);
       res.status(201).json({ document: result.document, documents: documentsFor(dispute.dispute_id, account) });
     },
   );
 
+  // The text read from one document, page by page: the owner's own, or any (read-only) for admin. Buyers: 403.
+  // Another account's document answers 404 exactly like a missing one. The text is untrusted and unverified: it is
+  // returned as plain strings for display, and nothing here changes an evidence status or reaches Gemini.
+  app.post("/api/documents/pages", requireRole("merchant", "admin"), express.json({ limit: "1kb" }), async (req, res) => {
+    const body = req.body as { source?: unknown; document_id?: unknown } | undefined;
+    if (typeof body?.document_id !== "string" || !UUID.test(body.document_id)) {
+      sendError(res, 400, "invalid_request", "document_id must be a document ID.");
+      return;
+    }
+    if (body.source === "paypal_sandbox") return notForSandbox(res);
+    const dispute = await findDispute(req, res);
+    if (!dispute) return;
+    const account = signedIn(res);
+    const found = getDocumentPages(db, dispute.dispute_id, body.document_id, account.role === "admin" ? null : account.id);
+    if (!found) {
+      sendError(res, 404, "document_not_found", "No document with this ID is attached to this dispute.");
+      return;
+    }
+    res.json(found);
+  });
+
   // Deletes the merchant's own document: the file goes with it. Admin is read-only.
   app.post("/api/documents/delete", requireRole("merchant"), express.json({ limit: "1kb" }), async (req, res) => {
     const body = req.body as { source?: unknown; document_id?: unknown } | undefined;
-    if (typeof body?.document_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(body.document_id)) {
+    if (typeof body?.document_id !== "string" || !UUID.test(body.document_id)) {
       sendError(res, 400, "invalid_request", "document_id must be a document ID.");
       return;
     }

@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { DisputeDocument, Dispute, DocumentMediaType, DocumentStatus, GapConfirmation } from "../../shared/types.ts";
+import type { DisputeDocument, Dispute, DocumentMediaType, DocumentPage, DocumentStatus, GapConfirmation } from "../../shared/types.ts";
 import { DOCUMENT_LIMITS } from "../../shared/types.ts";
 import type { Account } from "./auth.ts";
 import { transaction } from "./db.ts";
 import type { AUDIT_EVENTS } from "./db.ts";
+import type { WorkerResult } from "./extract.ts";
 import { validateDispute } from "./validate.ts";
 
 // Reads and writes accounts, demo disputes and the audit log. Parameterized statements only.
@@ -223,7 +225,8 @@ export function listDocuments(db: DatabaseSync, disputeId: string, onlyAccount: 
 export type AddDocumentResult = { ok: true; document: DisputeDocument } | { ok: false; reason: "too_many" | "account_full" | "duplicate" };
 
 // Stores a file and audits it in one transaction. The limits are checked inside it, so two uploads at once can't
-// both slip under them. Status starts "pending": nothing reads the file yet.
+// both slip under them. A PDF starts "pending" until its text is read (extract.ts); an image has no text layer and
+// DisputeDesk does no OCR, so it starts as "no_text".
 export function addDocument(
   db: DatabaseSync,
   at: number,
@@ -238,8 +241,8 @@ export function addDocument(
     const same = db.prepare("SELECT 1 FROM documents WHERE account_id = ? AND dispute_id = ? AND sha256 = ?").get(doc.account_id, doc.dispute_id, doc.sha256);
     if (same) return { ok: false, reason: "duplicate" };
     db.prepare(
-      "INSERT INTO documents (id, account_id, dispute_id, display_name, media_type, byte_size, sha256, page_count, status, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'pending', ?)",
-    ).run(doc.id, doc.account_id, doc.dispute_id, doc.display_name, doc.media_type, bytes.length, doc.sha256, at);
+      "INSERT INTO documents (id, account_id, dispute_id, display_name, media_type, byte_size, sha256, page_count, status, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+    ).run(doc.id, doc.account_id, doc.dispute_id, doc.display_name, doc.media_type, bytes.length, doc.sha256, doc.media_type === "application/pdf" ? "pending" : "no_text", at);
     db.prepare("INSERT INTO document_blobs (document_id, bytes) VALUES (?, ?)").run(doc.id, bytes);
     // IDs only: never the filename, the text or a hash.
     audit(db, at, "document_uploaded", { account_id: doc.account_id, dispute_id: doc.dispute_id, detail: doc.id });
@@ -256,6 +259,67 @@ export function deleteDocument(db: DatabaseSync, at: number, accountId: string, 
     if (changes > 0) audit(db, at, "document_deleted", { account_id: accountId, dispute_id: disputeId, detail: documentId });
     return changes > 0;
   });
+}
+
+// ---- Extracted text (Stage 3.3). Untrusted, merchant-private, never sent to Gemini, never an evidence status. ----
+
+// PDFs still waiting to be read, oldest first: queued again when the server starts.
+export function pendingPdfIds(db: DatabaseSync): string[] {
+  const rows = db.prepare("SELECT id FROM documents WHERE status = 'pending' AND media_type = 'application/pdf' ORDER BY uploaded_at, id").all() as Row[];
+  return rows.map((r) => r.id as string);
+}
+
+// The bytes of a PDF that is still waiting to be read, or null.
+export function pendingPdf(db: DatabaseSync, documentId: string): Uint8Array | null {
+  const row = db
+    .prepare("SELECT b.bytes FROM documents d JOIN document_blobs b ON b.document_id = d.id WHERE d.id = ? AND d.status = 'pending' AND d.media_type = 'application/pdf'")
+    .get(documentId) as { bytes: Uint8Array } | undefined;
+  return row?.bytes ?? null;
+}
+
+// Saves what the extractor found, with its audit entry, in one transaction. Only a document that still exists and
+// is still "pending" changes, so a file deleted while it was read stays deleted. Every page gets a row (an empty
+// page keeps its number), with a hash of its text. No page with text means "no_text": a scan or an empty file.
+// Returns the new status, or null when nothing changed.
+export function saveExtraction(db: DatabaseSync, at: number, documentId: string, result: WorkerResult): DocumentStatus | null {
+  return transaction(db, (): DocumentStatus | null => {
+    const doc = db.prepare("SELECT account_id, dispute_id FROM documents WHERE id = ? AND status = 'pending'").get(documentId) as Row | undefined;
+    if (!doc) return null;
+    const who = { account_id: doc.account_id as string, dispute_id: doc.dispute_id as string, detail: documentId };
+    if (!result.ok) {
+      db.prepare("UPDATE documents SET status = 'failed', page_count = NULL WHERE id = ?").run(documentId);
+      // The ID and a fixed failure code: never text from the file.
+      audit(db, at, "document_extraction_failed", { ...who, detail: `${documentId} ${result.code}` });
+      return "failed";
+    }
+    const insert = db.prepare("INSERT INTO document_pages (document_id, page, text, text_sha256, method) VALUES (?, ?, ?, ?, 'pdf_text')");
+    for (const { page, text } of result.pages) insert.run(documentId, page, text, createHash("sha256").update(text).digest("hex"));
+    const status: DocumentStatus = result.pages.some((p) => p.text.trim() !== "") ? "extracted" : "no_text";
+    db.prepare("UPDATE documents SET status = ?, page_count = ? WHERE id = ?").run(status, result.pages.length, documentId);
+    audit(db, at, "document_extracted", who);
+    return status;
+  });
+}
+
+// One document's pages, for its owner (onlyAccount) or for admin (null), only while that account still has access
+// to the dispute. Null for another account's document, exactly like a missing one.
+export function getDocumentPages(
+  db: DatabaseSync,
+  disputeId: string,
+  documentId: string,
+  onlyAccount: string | null,
+): { document: DisputeDocument; pages: DocumentPage[] } | null {
+  const row = db
+    .prepare(
+      `SELECT d.* FROM documents d JOIN dispute_access x ON x.account_id = d.account_id AND x.dispute_id = d.dispute_id
+       WHERE d.id = ? AND d.dispute_id = ? AND (? IS NULL OR d.account_id = ?)`,
+    )
+    .get(documentId, disputeId, onlyAccount, onlyAccount) as Row | undefined;
+  if (!row) return null;
+  const pages = (db.prepare("SELECT page, text, text_sha256 FROM document_pages WHERE document_id = ? ORDER BY page").all(documentId) as Row[]).map(
+    (p): DocumentPage => ({ page: p.page as number, text: p.text as string, text_sha256: p.text_sha256 as string }),
+  );
+  return { document: toDocument(row), pages };
 }
 
 export type AuditEntry ={ id: number; at: number; event: AuditEvent; account_id: string | null; dispute_id: string | null; detail: string | null };

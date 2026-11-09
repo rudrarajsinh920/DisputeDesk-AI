@@ -1,5 +1,5 @@
 import { serverError } from "./sandbox.ts";
-import type { AiAssist, AiStatus, Analysis, Dispute, DisputeDocument, DraftCheck, EvidenceChecklist } from "../../shared/types.ts";
+import type { AiAssist, AiStatus, Analysis, Dispute, DisputeDocument, DocumentPage, DraftCheck, EvidenceChecklist } from "../../shared/types.ts";
 
 // Sends only which record to analyze; the server loads the record itself. Nothing here talks to PayPal.
 export async function fetchAnalysis(dispute: Dispute, signal?: AbortSignal): Promise<Analysis> {
@@ -135,6 +135,18 @@ export async function uploadDocument(dispute: Pick<Dispute, "dispute_id">, file:
       signal,
     }),
   );
+}
+
+// The text read from one PDF, page by page. Untrusted: it is shown as plain text only.
+export async function fetchDocumentPages(dispute: Pick<Dispute, "source" | "dispute_id">, documentId: string, signal?: AbortSignal): Promise<DocumentPage[]> {
+  const response = await fetch("/api/documents/pages", { method: "POST", headers: { "Content-Type": "application/json" }, body: lookupBody(dispute, { document_id: documentId }), signal });
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw serverError(response, body);
+  const pages = (body as { pages?: unknown } | null)?.pages;
+  if (!Array.isArray(pages) || !pages.every((p) => typeof p?.page === "number" && typeof p?.text === "string")) {
+    throw new Error("The DisputeDesk server sent unexpected document text.");
+  }
+  return pages as DocumentPage[];
 }
 
 export async function deleteDocument(dispute: Pick<Dispute, "source" | "dispute_id">, documentId: string, signal?: AbortSignal): Promise<DisputeDocument[]> {

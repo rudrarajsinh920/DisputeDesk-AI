@@ -22,6 +22,8 @@ import {
 import { AI_OFF_BAD_MODEL, AI_OFF_NO_KEY } from "./config.ts";
 import { openDatabase } from "./db.ts";
 import { NOT_PROOF, analyzeDispute } from "./evidence.ts";
+import { createExtractor } from "./extract.ts";
+import { textPdf } from "./test-pdfs.ts";
 import { createGeminiClient } from "./gemini.ts";
 import { createPayPalClient, normalizeDetails } from "./paypal.ts";
 import { buildProvenance } from "./provenance.ts";
@@ -842,6 +844,7 @@ const PROTECTED: [string, string][] = [
   ["POST", "/api/documents"],
   ["POST", "/api/documents/upload"],
   ["POST", "/api/documents/delete"],
+  ["POST", "/api/documents/pages"],
   ["GET", "/api/health"],
   ["GET", "/api/intelligence"],
   ["POST", "/api/intelligence/explain"],
@@ -849,7 +852,7 @@ const PROTECTED: [string, string][] = [
 // Sign-in and sign-out are the only routes without a session check.
 const PUBLIC_ROUTES = ["POST /api/auth/login", "POST /api/auth/logout"];
 // Admin is read-only: the only write-method routes admin may call compute an answer and change nothing.
-const ADMIN_READ_ONLY_POSTS = ["/api/analysis", "/api/analysis/ai/example", "/api/analysis/checklist", "/api/documents"];
+const ADMIN_READ_ONLY_POSTS = ["/api/analysis", "/api/analysis/ai/example", "/api/analysis/checklist", "/api/documents", "/api/documents/pages"];
 
 // Synthetic upload fixtures: a file signature and a few bytes, never a real document.
 const PDF = Buffer.from("%PDF-1.4\n% synthetic DisputeDesk test file\n%%EOF\n");
@@ -918,6 +921,7 @@ test("each route allows exactly the intended roles", async () => {
     ["documents of DEMO-1001", "/api/documents", body("DEMO-1001"), [200, 200, 404, 403, 403]],
     ["document upload to DEMO-1001 (admin is read-only)", "/api/documents/upload", upload("DEMO-1001", PDF, "application/pdf"), [403, 201, 404, 403, 403]],
     ["document delete on DEMO-1001 (admin is read-only)", "/api/documents/delete", lookup("demo", "DEMO-1001", { document_id: "00000000-0000-4000-8000-000000000000" }), [403, 404, 404, 403, 403]],
+    ["document text on DEMO-1001", "/api/documents/pages", lookup("demo", "DEMO-1001", { document_id: "00000000-0000-4000-8000-000000000000" }), [404, 404, 404, 403, 403]],
     ["health", "/api/health", undefined, [200, 200, 200, 403, 403]],
     ["insights", "/api/intelligence", undefined, [200, 200, 200, 403, 403]],
     ["insights explanation (admin is read-only)", "/api/intelligence/explain", { method: "POST" }, [403, 200, 200, 403, 403]],
@@ -1961,7 +1965,8 @@ test("a merchant uploads a PDF, PNG and JPEG to their demo dispute and lists met
     assert.equal(res.body.document.display_name, name);
     assert.equal(res.body.document.media_type, type);
     assert.equal(res.body.document.byte_size, bytes.length);
-    assert.equal(res.body.document.status, "pending", "nothing reads the file in this phase");
+    // A PDF waits for its text to be read; an image has no text layer (no OCR).
+    assert.equal(res.body.document.status, type === "application/pdf" ? "pending" : "no_text");
     assert.equal(res.body.document.page_count, null);
   }
   const list = await get(app, "/api/documents", lookup("demo", "DEMO-1001"));
@@ -2148,7 +2153,8 @@ test("deleting a document removes its file with it; the audit keeps the ID only"
 test("documents change no evidence status, readiness, checklist, draft, Insights, buyer view or Gemini request", async () => {
   const db = openDatabase(":memory:");
   const ai = mockAi();
-  const app = createApp(null, ai.client, undefined, { accounts: TEST_ACCOUNTS, db, now: NOV_4 });
+  const extractor = createExtractor(db, { now: NOV_4 });
+  const app = createApp(null, ai.client, undefined, { accounts: TEST_ACCOUNTS, db, now: NOV_4, extractor });
   // A merchant confirmation is part of what the merchant sees; files must not change it either.
   assert.equal((await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1001", "shipping_tracking"))).status, 200);
   // Each Gemini-backed route is called once; what it answered and the exact request Gemini received are both compared.
@@ -2173,10 +2179,76 @@ test("documents change no evidence status, readiness, checklist, draft, Insights
     const before = await snapshot(id);
     assert.equal(before.draft.status, 200);
     assert.ok(before.draft.sent.length === 1 && before.buyerExplained.sent.length === 1, "Gemini was asked, so its request is compared");
-    const files: [Buffer, string][] = [[PDF, "application/pdf"], [PNG, "image/png"], [JPEG, "image/jpeg"]];
+    // A text PDF that claims exactly what the records lack: its text is read and stored, and still changes nothing.
+    const claims = Buffer.from(textPdf([[`Proof of delivery for ${id}`, "Tracking 1Z999AA10123456784, delivered and signed"]]));
+    const files: [Buffer, string][] = [[PDF, "application/pdf"], [claims, "application/pdf"], [PNG, "image/png"], [JPEG, "image/jpeg"]];
     for (const [bytes, type] of files) assert.equal((await get(app, "/api/documents/upload", upload(id, bytes, type, "proof of delivery.pdf"))).status, 201);
-    assert.deepEqual(await snapshot(id), before, id);
+    await extractor.idle();
+    const read = await get(app, "/api/documents", lookup("demo", id));
+    assert.deepEqual(read.body.documents.map((d: { status: string }) => d.status).sort(), ["extracted", "failed", "no_text", "no_text"]);
+    const after = await snapshot(id);
+    assert.deepEqual(after, before, id);
+    assert.ok(!JSON.stringify(after.draft.sent).includes("1Z999"), "no document text reaches Gemini");
   }
+});
+
+test("an uploaded PDF's text is read in the background and shown page by page to its owner and admin only", async () => {
+  const db = openDatabase(":memory:");
+  const extractor = createExtractor(db);
+  const app = createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, db, extractor });
+  const pdf = Buffer.from(textPdf([["Synthetic packing slip PS-0042"], ["<script>alert(1)</script>"]]));
+  const up = await get(app, "/api/documents/upload", upload("DEMO-1001", pdf, "application/pdf", "slip.pdf"));
+  assert.equal(up.status, 201);
+  assert.equal(up.body.document.status, "pending");
+  const id = up.body.document.id as string;
+  await extractor.idle();
+
+  const listed = (await get(app, "/api/documents", lookup("demo", "DEMO-1001"))).body.documents[0];
+  assert.equal(listed.status, "extracted");
+  assert.equal(listed.page_count, 2);
+  assert.ok(!JSON.stringify(listed).includes("PS-0042"), "the list holds metadata only");
+
+  const pages = await get(app, "/api/documents/pages", lookup("demo", "DEMO-1001", { document_id: id }));
+  assert.equal(pages.status, 200);
+  assert.equal(pages.body.document.id, id);
+  assert.deepEqual(
+    pages.body.pages.map((p: { page: number; text: string }) => [p.page, p.text]),
+    [[1, "Synthetic packing slip PS-0042"], [2, "<script>alert(1)</script>"]],
+  );
+  assert.ok(pages.body.pages.every((p: { text_sha256: string }) => /^[0-9a-f]{64}$/.test(p.text_sha256)));
+  assert.match(pages.headers.get("content-type") ?? "", /^application\/json/, "text is sent as JSON data, never as a page");
+
+  // Admin reads it; another merchant and buyers do not, and another merchant's answer matches a missing document.
+  assert.equal((await get(app, "/api/documents/pages", lookup("demo", "DEMO-1001", { document_id: id }), "admin")).status, 200);
+  assert.equal((await get(app, "/api/documents/pages", lookup("demo", "DEMO-1001", { document_id: id }), "merchant-b")).status, 404);
+  const sideways = await get(app, "/api/documents/pages", lookup("demo", "DEMO-1003", { document_id: id }), "merchant-b");
+  const missing = await get(app, "/api/documents/pages", lookup("demo", "DEMO-1003", { document_id: "00000000-0000-4000-8000-000000000000" }), "merchant-b");
+  assert.equal(sideways.status, 404);
+  assert.deepEqual(sideways.body, missing.body);
+  for (const buyer of ["buyer-a", "buyer-b"]) {
+    assert.equal((await get(app, "/api/documents/pages", lookup("demo", "DEMO-1001", { document_id: id }), buyer)).status, 403);
+  }
+  assert.equal((await get(app, "/api/documents/pages", lookup("demo", "DEMO-1001", { document_id: "not-an-id" }))).status, 400);
+  assert.equal((await get(app, "/api/documents/pages", lookup("paypal_sandbox", "PP-D-1", { document_id: id }))).status, 409);
+
+  // Deleting the document deletes its text.
+  assert.equal((await get(app, "/api/documents/delete", lookup("demo", "DEMO-1001", { document_id: id }))).status, 200);
+  assert.equal(countRows(db, "SELECT COUNT(*) AS n FROM document_pages"), 0);
+  assert.equal((await get(app, "/api/documents/pages", lookup("demo", "DEMO-1001", { document_id: id }))).status, 404);
+});
+
+test("PDFs left unread by an earlier run are read when the server starts", async () => {
+  const db = openDatabase(":memory:");
+  // An extractor that never finishes stands in for a server stopped mid-read.
+  const stuck = { enqueue() {}, idle: () => Promise.resolve() };
+  const first = createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, db, extractor: stuck });
+  const pdf = Buffer.from(textPdf([["Synthetic restart page"]]));
+  assert.equal((await get(first, "/api/documents/upload", upload("DEMO-1001", pdf, "application/pdf", "restart.pdf"))).status, 201);
+  assert.equal(countRows(db, "SELECT COUNT(*) AS n FROM documents WHERE status = 'pending'"), 1);
+  const extractor = createExtractor(db);
+  createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, db, extractor });
+  await extractor.idle();
+  assert.equal(countRows(db, "SELECT COUNT(*) AS n FROM documents WHERE status = 'extracted'"), 1);
 });
 
 test("an upload from another site's page is refused before the file is stored", async () => {

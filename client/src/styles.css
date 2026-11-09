@@ -1278,6 +1278,51 @@ details summary {
   cursor: not-allowed;
 }
 
+.document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Text read from a file: untrusted, so it wraps anywhere and scrolls inside its own box instead of
+   stretching the page. Line breaks from the file are kept. */
+.document-text {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.document-pages {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.document-pages li {
+  min-width: 0;
+}
+
+.document-page-label {
+  font-weight: 600;
+}
+
+.document-page-text {
+  max-height: 320px;
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .document-error {
   margin: 8px 0 0;
   color: var(--text);

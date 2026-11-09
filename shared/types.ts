@@ -214,6 +214,13 @@ export interface DisputeDocument {
   // ISO 8601, UTC.
   uploaded_at: string;
 }
+// One page of text read from a PDF's text layer (Stage 3.3): exactly as written in the file, untrusted, not checked
+// against the records. Pages are numbered from 1; a page with no text has an empty string.
+export interface DocumentPage {
+  page: number;
+  text: string;
+  text_sha256: string;
+}
 export const DOCUMENT_MEDIA_TYPES: readonly DocumentMediaType[] = ["application/pdf", "image/png", "image/jpeg"];
 export const DOCUMENT_LIMITS = { maxBytes: 5 * 1024 * 1024, perDispute: 10, perAccountBytes: 50 * 1024 * 1024, nameLength: 120 } as const;
 
