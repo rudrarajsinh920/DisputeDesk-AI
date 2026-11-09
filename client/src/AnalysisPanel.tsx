@@ -340,7 +340,7 @@ function ChecklistItems({ checklist, refsById }: { checklist: EvidenceChecklist;
           No reason-specific checklist for this reason; showing general evidence.
         </p>
       )}
-      <p className="muted">{counts.join(" · ")}</p>
+      <p className="muted">{counts.join(" · ")}. Counts only: review each item before you respond.</p>
       <ul className="findings ledger">
         {applicable.map((item) => {
           const refs = item.refs.flatMap((id) => refsById.get(id) ?? []);

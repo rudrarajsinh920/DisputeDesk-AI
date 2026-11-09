@@ -47,6 +47,12 @@ kind of claim needs its own record, so tracking never counts as proof of deliver
 a message said, and refunds, offers and attachments are never backed because DisputeDesk holds no records of them.
 The check is advisory and never edits or blocks the merchant's text.
 
+**Evidence checklist per reason.** Each dispute gets a checklist for its reason (item not received, not as described,
+unauthorized, duplicate, credit not processed; other reasons get a general list). Statuses come from the same rules:
+available, missing, conflicting, or not shown by the records. Each gap says why it may matter, where the merchant might
+look (labelled by kind, such as carrier or order system), what to check before adding it, and what DisputeDesk can't
+see. Every item is labelled general or DisputeDesk guidance; none is presented as an official PayPal requirement.
+
 **Real PayPal sandbox disputes.** DisputeDesk reads disputes live from the PayPal sandbox and analyses each one from
 its own PayPal record: the buyer's messages, the disputed transaction and item, any submitted tracking or delivery
 evidence, and PayPal's respond-by date. When the record has no tracking, it shows as Unverified, never Missing, and

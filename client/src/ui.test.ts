@@ -1052,6 +1052,7 @@ test("the overview line counts gaps, records and conflicts, with no score or com
     out,
   );
   assert.ok(n("conflicting") > 0);
+  assert.match(out, /Counts only: review each item before you respond\./, "zero gaps is never shown as ready");
   for (const d of demoDisputes) assert.doesNotMatch(text(checklistHtml(d)), /score|percent|%|\bcomplete\b|ready to submit/i, d.dispute_id);
 });
 
