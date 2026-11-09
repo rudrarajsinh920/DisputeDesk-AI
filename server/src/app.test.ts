@@ -838,6 +838,9 @@ const PROTECTED: [string, string][] = [
   ["POST", "/api/analysis/check"],
   ["POST", "/api/analysis/checklist"],
   ["POST", "/api/analysis/checklist/confirm"],
+  ["POST", "/api/documents"],
+  ["POST", "/api/documents/upload"],
+  ["POST", "/api/documents/delete"],
   ["GET", "/api/health"],
   ["GET", "/api/intelligence"],
   ["POST", "/api/intelligence/explain"],
@@ -845,7 +848,17 @@ const PROTECTED: [string, string][] = [
 // Sign-in and sign-out are the only routes without a session check.
 const PUBLIC_ROUTES = ["POST /api/auth/login", "POST /api/auth/logout"];
 // Admin is read-only: the only write-method routes admin may call compute an answer and change nothing.
-const ADMIN_READ_ONLY_POSTS = ["/api/analysis", "/api/analysis/ai/example", "/api/analysis/checklist"];
+const ADMIN_READ_ONLY_POSTS = ["/api/analysis", "/api/analysis/ai/example", "/api/analysis/checklist", "/api/documents"];
+
+// Synthetic upload fixtures: a file signature and a few bytes, never a real document.
+const PDF = Buffer.from("%PDF-1.4\n% synthetic DisputeDesk test file\n%%EOF\n");
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("synthetic png")]);
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("synthetic jpeg")]);
+const upload = (disputeId: string | null, bytes: Buffer, type: string, name = "receipt.pdf"): RequestInit => ({
+  method: "POST",
+  headers: { "Content-Type": type, "X-Document-Name": encodeURIComponent(name), ...(disputeId ? { "X-Dispute-Id": disputeId } : {}) },
+  body: new Uint8Array(bytes),
+});
 
 test("every protected route refuses missing, forged and expired sessions, and calls nothing", async () => {
   let t = 1_000_000;
@@ -901,6 +914,9 @@ test("each route allows exactly the intended roles", async () => {
     ["evidence checklist of DEMO-1001", "/api/analysis/checklist", body("DEMO-1001"), [200, 200, 404, 403, 403]],
     ["sandbox evidence checklist", "/api/analysis/checklist", lookup("paypal_sandbox", "PP-D-1"), [200, 200, 403, 403, 403]],
     ["gap confirmation on DEMO-1001 (admin is read-only)", "/api/analysis/checklist/confirm", lookup("demo", "DEMO-1001", { item_id: "shipping_tracking", confirmed: true }), [403, 200, 404, 403, 403]],
+    ["documents of DEMO-1001", "/api/documents", body("DEMO-1001"), [200, 200, 404, 403, 403]],
+    ["document upload to DEMO-1001 (admin is read-only)", "/api/documents/upload", upload("DEMO-1001", PDF, "application/pdf"), [403, 201, 404, 403, 403]],
+    ["document delete on DEMO-1001 (admin is read-only)", "/api/documents/delete", lookup("demo", "DEMO-1001", { document_id: "00000000-0000-4000-8000-000000000000" }), [403, 404, 404, 403, 403]],
     ["health", "/api/health", undefined, [200, 200, 200, 403, 403]],
     ["insights", "/api/intelligence", undefined, [200, 200, 200, 403, 403]],
     ["insights explanation (admin is read-only)", "/api/intelligence/explain", { method: "POST" }, [403, 200, 200, 403, 403]],
@@ -1912,4 +1928,249 @@ test("a confirmation on an item that is no longer a gap is kept but not shown", 
   const withdraw = await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1003", "order_confirmation", false), "merchant-b");
   assert.equal(withdraw.status, 200, "it can still be withdrawn");
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM gap_confirmations").get()!.n, 0);
+});
+
+// ---- Merchant documents (Stage 3.2): upload, list, delete. Synthetic files only. ----
+
+const documentsApp = (paypal: Parameters<typeof createApp>[0] = null, now?: () => number) => {
+  const db = openDatabase(":memory:");
+  return { db, app: createApp(paypal, null, undefined, { accounts: TEST_ACCOUNTS, db, now }) };
+};
+// A distinct synthetic PDF of the given size, so each one has its own hash.
+const sizedPdf = (size: number, seed: number) => {
+  const bytes = Buffer.alloc(size, 0x20);
+  PDF.copy(bytes);
+  bytes.writeUInt32BE(seed, size - 4);
+  return bytes;
+};
+const countRows = (db: DatabaseSync, sql: string) => Number(db.prepare(sql).get()!.n);
+
+test("a merchant uploads a PDF, PNG and JPEG to their demo dispute and lists metadata only", async () => {
+  const { db, app } = documentsApp();
+  const files: [Buffer, string, string][] = [
+    [PDF, "application/pdf", "invoice.pdf"],
+    [PNG, "image/png", "label.png"],
+    [JPEG, "image/jpeg", "parcel.jpg"],
+  ];
+  for (const [bytes, type, name] of files) {
+    const res = await get(app, "/api/documents/upload", upload("DEMO-1001", bytes, type, name));
+    assert.equal(res.status, 201, type);
+    assert.deepEqual(Object.keys(res.body.document).sort(), ["account_id", "byte_size", "display_name", "id", "media_type", "page_count", "status", "uploaded_at"]);
+    assert.match(res.body.document.id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    assert.equal(res.body.document.display_name, name);
+    assert.equal(res.body.document.media_type, type);
+    assert.equal(res.body.document.byte_size, bytes.length);
+    assert.equal(res.body.document.status, "pending", "nothing reads the file in this phase");
+    assert.equal(res.body.document.page_count, null);
+  }
+  const list = await get(app, "/api/documents", lookup("demo", "DEMO-1001"));
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.body.documents.map((d: { display_name: string }) => d.display_name), ["invoice.pdf", "label.png", "parcel.jpg"]);
+  assert.ok(!list.text.includes("synthetic"), "the bytes are never listed");
+  // The audit holds the document ID only: never the filename or anything from the file.
+  const audited = db.prepare("SELECT account_id, dispute_id, detail FROM audit_log WHERE event = 'document_uploaded'").all();
+  assert.equal(audited.length, 3);
+  for (const row of audited) {
+    assert.equal(row.account_id, "merchant-a");
+    assert.equal(row.dispute_id, "DEMO-1001");
+    assert.match(String(row.detail), /^[0-9a-f-]{36}$/);
+  }
+  assert.equal(countRows(db, "SELECT COUNT(*) AS n FROM document_blobs"), 3);
+});
+
+test("uploads that are not a PDF, PNG or JPEG of the declared type are refused and stored nowhere", async () => {
+  const { db, app } = documentsApp();
+  const html = Buffer.from("<!doctype html><script>alert(1)</script>");
+  const svg = Buffer.from("<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>");
+  const zip = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
+  const cases: [string, RequestInit, number, string][] = [
+    ["HTML", upload("DEMO-1001", html, "text/html"), 415, "unsupported_media_type"],
+    ["SVG", upload("DEMO-1001", svg, "image/svg+xml"), 415, "unsupported_media_type"],
+    ["DOCX or ZIP", upload("DEMO-1001", zip, "application/zip"), 415, "unsupported_media_type"],
+    ["ZIP declared as PDF", upload("DEMO-1001", zip, "application/pdf"), 415, "unsupported_media_type"],
+    ["HTML declared as PDF", upload("DEMO-1001", html, "application/pdf"), 415, "unsupported_media_type"],
+    ["PDF declared as PNG", upload("DEMO-1001", PDF, "image/png"), 415, "unsupported_media_type"],
+    ["PNG declared as JPEG", upload("DEMO-1001", PNG, "image/jpeg"), 415, "unsupported_media_type"],
+    ["no Content-Type", { method: "POST", headers: { "X-Dispute-Id": "DEMO-1001" }, body: new Uint8Array(PDF) }, 415, "unsupported_media_type"],
+    ["empty file", upload("DEMO-1001", Buffer.alloc(0), "application/pdf"), 400, "empty_file"],
+    ["over 5 MB", upload("DEMO-1001", sizedPdf(5 * 1024 * 1024 + 1, 1), "application/pdf"), 413, "payload_too_large"],
+    ["no dispute", upload(null, PDF, "application/pdf"), 400, "invalid_request"],
+    ["unknown dispute", upload("DEMO-9999", PDF, "application/pdf"), 404, "dispute_not_found"],
+  ];
+  for (const [label, init, status, code] of cases) {
+    const res = await get(app, "/api/documents/upload", init);
+    assert.equal(res.status, status, label);
+    assert.equal(res.body.error.code, code, label);
+  }
+  assert.equal(countRows(db, "SELECT COUNT(*) AS n FROM documents"), 0);
+  assert.equal(countRows(db, "SELECT COUNT(*) AS n FROM document_blobs"), 0);
+  // Exactly 5 MB is allowed.
+  assert.equal((await get(app, "/api/documents/upload", upload("DEMO-1001", sizedPdf(5 * 1024 * 1024, 2), "application/pdf"))).status, 201);
+});
+
+test("filenames are kept as plain display text only", async () => {
+  const { app } = documentsApp();
+  const cases: [string, string][] = [
+    ["../../etc/passwd", ".._.._etc_passwd"],
+    ["C:\\Windows\\x.pdf", "C:_Windows_x.pdf"],
+    ["bad\u0000\u0007name\r\n.pdf", "badname.pdf"],
+    ["invoice\u202Efdp.exe", "invoicefdp.exe"],
+    ["<img src=x onerror=alert(1)>.pdf", "<img src=x onerror=alert(1)>.pdf"],
+    ["..", "document"],
+    ["", "document"],
+  ];
+  for (const [i, [raw, shown]] of cases.entries()) {
+    const res = await get(app, "/api/documents/upload", upload("DEMO-1001", sizedPdf(64, i), "application/pdf", raw));
+    assert.equal(res.status, 201, raw);
+    assert.equal(res.body.document.display_name, shown, JSON.stringify(raw));
+  }
+  const long = await get(app, "/api/documents/upload", upload("DEMO-1002", sizedPdf(64, 99), "application/pdf", "a".repeat(500)));
+  assert.equal(long.body.document.display_name, "a".repeat(120));
+  // A header that is not valid percent-encoding becomes "document".
+  const broken = await get(app, "/api/documents/upload", {
+    method: "POST",
+    headers: { "Content-Type": "application/pdf", "X-Dispute-Id": "DEMO-1002", "X-Document-Name": "%E0%A4%A" },
+    body: new Uint8Array(sizedPdf(64, 100)),
+  });
+  assert.equal(broken.body.document.display_name, "document");
+});
+
+test("documents stay with their merchant: other accounts, buyers and admin writes are refused", async () => {
+  const { db, app } = documentsApp();
+  const mine = (await get(app, "/api/documents/upload", upload("DEMO-1001", PDF, "application/pdf"))).body.document.id;
+  const notFound = { code: "dispute_not_found", message: "No demo dispute has this ID.", upstream_status: null };
+  const denied = () => countRows(db, "SELECT COUNT(*) AS n FROM audit_log WHERE event = 'dispute_access_denied'");
+
+  // Merchant B can't reach merchant A's dispute, by list or by document ID: the same 404 as an unknown dispute, audited.
+  const before = denied();
+  const attempts: [string, RequestInit][] = [
+    ["/api/documents", lookup("demo", "DEMO-1001")],
+    ["/api/documents/delete", lookup("demo", "DEMO-1001", { document_id: mine })],
+    ["/api/documents/upload", upload("DEMO-1001", PNG, "image/png")],
+  ];
+  for (const [path, init] of attempts) {
+    const res = await get(app, path, init, "merchant-b");
+    assert.equal(res.status, 404, path);
+    assert.deepEqual(res.body.error, notFound, path);
+  }
+  assert.equal(denied() - before, 3);
+  // Naming merchant A's document on merchant B's own dispute finds nothing either.
+  const sideways = await get(app, "/api/documents/delete", lookup("demo", "DEMO-1003", { document_id: mine }), "merchant-b");
+  assert.equal(sideways.status, 404);
+  assert.equal(sideways.body.error.code, "document_not_found");
+  assert.deepEqual((await get(app, "/api/documents", lookup("demo", "DEMO-1003"), "merchant-b")).body.documents, []);
+
+  // Buyer A shares DEMO-1001 with merchant A and still can't see or touch its documents.
+  for (const [path, init] of attempts) assert.equal((await get(app, path, init, "buyer-a")).status, 403, path);
+
+  // Admin reads the list read-only and can't upload or delete.
+  const adminList = await get(app, "/api/documents", lookup("demo", "DEMO-1001"), "admin");
+  assert.deepEqual(adminList.body.documents.map((d: { id: string; account_id: string }) => [d.id, d.account_id]), [[mine, "merchant-a"]]);
+  assert.equal((await get(app, "/api/documents/upload", upload("DEMO-1001", PNG, "image/png"), "admin")).status, 403);
+  assert.equal((await get(app, "/api/documents/delete", lookup("demo", "DEMO-1001", { document_id: mine }), "admin")).status, 403);
+  assert.equal(countRows(db, "SELECT COUNT(*) AS n FROM documents"), 1, "nothing else was stored or removed");
+});
+
+test("documents are for demo disputes only; a sandbox request never reaches PayPal", async () => {
+  const paypal = mockPayPal({ disputes: () => json(200, { items: [sandboxItem] }) });
+  const { db, app } = documentsApp(paypal.client);
+  const list = await get(app, "/api/documents", lookup("paypal_sandbox", "PP-D-1"));
+  assert.equal(list.status, 409);
+  assert.equal(list.body.error.code, "documents_demo_only");
+  const del = await get(app, "/api/documents/delete", lookup("paypal_sandbox", "PP-D-1", { document_id: "00000000-0000-4000-8000-000000000000" }));
+  assert.equal(del.status, 409);
+  // Uploads always look up a demo dispute: a sandbox ID is simply not one.
+  assert.equal((await get(app, "/api/documents/upload", upload("PP-D-1", PDF, "application/pdf"))).status, 404);
+  assert.equal(paypal.calls.length, 0);
+  // The database itself refuses a document on a dispute it doesn't hold.
+  const insert = db.prepare(
+    "INSERT INTO documents (id, account_id, dispute_id, display_name, media_type, byte_size, sha256, status, uploaded_at) VALUES (?, 'merchant-a', 'PP-D-1', 'x', 'application/pdf', 1, ?, 'pending', 1)",
+  );
+  assert.throws(() => insert.run("00000000-0000-4000-8000-000000000001", "0".repeat(64)), /FOREIGN KEY/);
+});
+
+test("a dispute holds at most 10 documents, an account 50 MB, and the same file only once", async () => {
+  const { app } = documentsApp();
+  for (let i = 0; i < 10; i++) {
+    assert.equal((await get(app, "/api/documents/upload", upload("DEMO-1001", sizedPdf(5 * 1024 * 1024, i), "application/pdf"))).status, 201, `file ${i + 1}`);
+  }
+  const eleventh = await get(app, "/api/documents/upload", upload("DEMO-1001", sizedPdf(64, 10), "application/pdf"));
+  assert.equal(eleventh.status, 409);
+  assert.equal(eleventh.body.error.code, "too_many_documents");
+  const full = await get(app, "/api/documents/upload", upload("DEMO-1002", sizedPdf(64, 11), "application/pdf"));
+  assert.equal(full.status, 409);
+  assert.equal(full.body.error.code, "storage_full", "10 × 5 MB uses the whole 50 MB");
+
+  const { app: other } = documentsApp();
+  assert.equal((await get(other, "/api/documents/upload", upload("DEMO-1001", PDF, "application/pdf"))).status, 201);
+  const again = await get(other, "/api/documents/upload", upload("DEMO-1001", PDF, "application/pdf", "renamed.pdf"));
+  assert.equal(again.status, 409);
+  assert.equal(again.body.error.code, "duplicate_document");
+  assert.equal((await get(other, "/api/documents/upload", upload("DEMO-1002", PDF, "application/pdf"))).status, 201, "the same file may go on another dispute");
+});
+
+test("uploads are limited per merchant in each 15-minute window", async () => {
+  let t = 1_000_000;
+  const { app } = documentsApp(null, () => t);
+  for (let i = 0; i < 20; i++) await get(app, "/api/documents/upload", upload("DEMO-1001", Buffer.from("not a file"), "application/pdf"));
+  const blocked = await get(app, "/api/documents/upload", upload("DEMO-1001", PDF, "application/pdf"));
+  assert.equal(blocked.status, 429);
+  assert.equal(blocked.body.error.code, "too_many_uploads");
+  assert.equal(blocked.headers.get("retry-after"), "900");
+  assert.equal((await get(app, "/api/documents/upload", upload("DEMO-1003", PDF, "application/pdf"), "merchant-b")).status, 201, "other merchants are not affected");
+  t += 15 * 60_000 + 1;
+  assert.equal((await get(app, "/api/documents/upload", upload("DEMO-1001", PDF, "application/pdf"))).status, 201);
+});
+
+test("deleting a document removes its file with it; the audit keeps the ID only", async () => {
+  const { db, app } = documentsApp();
+  const id = (await get(app, "/api/documents/upload", upload("DEMO-1001", PDF, "application/pdf", "secret-name.pdf"))).body.document.id;
+  // Later phases fill pages and links; they must go with the document too.
+  db.prepare("INSERT INTO document_pages (document_id, page, text, text_sha256, method) VALUES (?, 1, 'synthetic', ?, 'pdf_text')").run(id, "0".repeat(64));
+  db.prepare("INSERT INTO document_links (document_id, item_id, linked_at) VALUES (?, 'shipping_tracking', 1)").run(id);
+  assert.equal((await get(app, "/api/documents/delete", lookup("demo", "DEMO-1002", { document_id: id }))).status, 404, "it belongs to DEMO-1001");
+  const res = await get(app, "/api/documents/delete", lookup("demo", "DEMO-1001", { document_id: id }));
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.documents, []);
+  for (const table of ["documents", "document_blobs", "document_pages", "document_links"]) assert.equal(countRows(db, `SELECT COUNT(*) AS n FROM ${table}`), 0, table);
+  const again = await get(app, "/api/documents/delete", lookup("demo", "DEMO-1001", { document_id: id }));
+  assert.equal(again.status, 404);
+  assert.equal(again.body.error.code, "document_not_found");
+  const audited = db.prepare("SELECT event, detail FROM audit_log WHERE event LIKE 'document_%' ORDER BY id").all().map((r) => ({ ...r }));
+  assert.deepEqual(audited, [{ event: "document_uploaded", detail: id }, { event: "document_deleted", detail: id }]);
+  assert.ok(!JSON.stringify(db.prepare("SELECT * FROM audit_log").all()).includes("secret-name"));
+  for (const bad of [{}, { document_id: 7 }, { document_id: "../x" }, { document_id: id.toUpperCase() }]) {
+    assert.equal((await get(app, "/api/documents/delete", lookup("demo", "DEMO-1001", bad))).status, 400, JSON.stringify(bad));
+  }
+});
+
+test("documents change no evidence status, readiness, checklist or draft", async () => {
+  const { app } = documentsApp();
+  const snapshot = async (id: string) => ({
+    analysis: (await get(app, "/api/analysis", lookup("demo", id))).body,
+    checklist: (await get(app, "/api/analysis/checklist", lookup("demo", id))).body,
+    list: (await get(app, "/api/disputes", {})).body,
+  });
+  for (const id of ["DEMO-1001", "DEMO-1002"]) {
+    const before = await snapshot(id);
+    const files: [Buffer, string][] = [[PDF, "application/pdf"], [PNG, "image/png"], [JPEG, "image/jpeg"]];
+    for (const [bytes, type] of files) assert.equal((await get(app, "/api/documents/upload", upload(id, bytes, type, "proof of delivery.pdf"))).status, 201);
+    assert.deepEqual(await snapshot(id), before, id);
+  }
+});
+
+test("an upload from another site's page is refused before the file is stored", async () => {
+  const { db, app } = documentsApp();
+  await withServer(app, async (base) => {
+    const cookie = await signIn(app, base, "merchant-a");
+    for (const extra of [{ Origin: "https://evil.example" }, { "Sec-Fetch-Site": "cross-site" }] as Record<string, string>[]) {
+      const res = await fetch(`${base}/api/documents/upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/pdf", "X-Dispute-Id": "DEMO-1001", Cookie: cookie, ...extra },
+        body: new Uint8Array(PDF),
+      });
+      assert.equal(res.status, 403);
+    }
+  });
+  assert.equal(countRows(db, "SELECT COUNT(*) AS n FROM documents"), 0);
 });

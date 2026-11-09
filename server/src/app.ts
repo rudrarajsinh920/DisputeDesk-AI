@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import express from "express";
 import type { NextFunction, Request, Response } from "express";
 import type { DatabaseSync } from "node:sqlite";
@@ -6,8 +6,8 @@ import demoAccounts from "../../demo-accounts.json" with { type: "json" };
 import extraDemos from "../../demo-disputes.json" with { type: "json" };
 import sample from "../../sample-dispute.json" with { type: "json" };
 import { readiness } from "../../shared/readiness.ts";
-import { CONFIRMABLE } from "../../shared/types.ts";
-import type { Dispute, EvidenceChecklist, Role } from "../../shared/types.ts";
+import { CONFIRMABLE, DOCUMENT_LIMITS, DOCUMENT_MEDIA_TYPES } from "../../shared/types.ts";
+import type { Dispute, DocumentMediaType, EvidenceChecklist, Role } from "../../shared/types.ts";
 import { MAX_CHECK_TEXT, VALIDATION_EXAMPLE_MODEL, buildAiRequest, checkMerchantDraft, composeAiAssist, validationExampleAnswer } from "./assist.ts";
 import {
   AI_WORDING_LIMIT,
@@ -49,7 +49,22 @@ import type { GeminiClient } from "./gemini.ts";
 import { PayPalError } from "./paypal.ts";
 import type { PayPalClient } from "./paypal.ts";
 import { assistWithRefs, withProvenance } from "./provenance.ts";
-import { audit, confirmGap, findAccountByEmail, getAccount, listAccounts, listAudit, listConfirmations, loadDisputes, seedDemo, withdrawGap } from "./store.ts";
+import { cleanDocumentName, sniffMediaType } from "./documents.ts";
+import {
+  addDocument,
+  audit,
+  confirmGap,
+  deleteDocument,
+  findAccountByEmail,
+  getAccount,
+  listAccounts,
+  listAudit,
+  listConfirmations,
+  listDocuments,
+  loadDisputes,
+  seedDemo,
+  withdrawGap,
+} from "./store.ts";
 import { validateDispute, validateLogin, validateLookup } from "./validate.ts";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -91,6 +106,8 @@ function notConfigured(res: Response) {
 // Gemini calls per account in each sign-in window (15 minutes), across drafts, buyer and insights explanations.
 // A cost guard: past it, drafts answer 429 and explanations fall back to the standard wording.
 export const AI_MAX_CALLS = 20;
+// Upload attempts per merchant in each sign-in window (15 minutes), counted before the body is read.
+export const UPLOAD_MAX_CALLS = 20;
 
 // AI errors become: 429 for rate limits (with Retry-After), 504 for timeouts, 502 for everything else.
 const AI_STATUS: Partial<Record<AiError["code"], number>> = { ai_rate_limited: 429, ai_timeout: 504 };
@@ -130,6 +147,7 @@ export function createApp(
     aiLimiter.fail([key]);
     return true;
   };
+  const uploadLimiter = createLoginLimiter(now);
   // Checked against when the email is unknown, so a wrong email takes as long as a wrong password.
   const dummyHash = hashPassword(randomBytes(16).toString("hex"));
 
@@ -157,8 +175,9 @@ export function createApp(
 
   // The caller names a record; the server loads it, so the source label and every field come from the server.
   // Sends the error response itself and returns null when the record can't be used.
-  async function findDispute(req: Request, res: Response): Promise<Dispute | null> {
-    const result = validateLookup(req.body);
+  // lookup defaults to the JSON body; the upload route, whose body is the file, passes its own.
+  async function findDispute(req: Request, res: Response, lookup: unknown = req.body): Promise<Dispute | null> {
+    const result = validateLookup(lookup);
     if (!result.ok) {
       res.status(400).json({
         error: { code: "invalid_request", message: "The analysis request is not valid.", details: result.errors, upstream_status: null },
@@ -494,6 +513,104 @@ export function createApp(
       withdrawGap(db, now(), account.id, dispute.dispute_id, body.item_id);
     }
     res.json(checklistFor(dispute, account));
+  });
+
+  // ---- Merchant documents (Stage 3). Demo disputes only. DisputeDesk stores the file and has not checked it:
+  // no route here changes an evidence status, the readiness counts, the draft or anything sent to Gemini. ----
+
+  const documentsFor = (disputeId: string, account: Account) => listDocuments(db, disputeId, account.role === "admin" ? null : account.id);
+  const notForSandbox = (res: Response) =>
+    sendError(res, 409, "documents_demo_only", "Documents are kept for demo disputes only. PayPal sandbox disputes are never stored.");
+
+  // A merchant sees their own documents on the dispute; admin sees every account's (read-only). Buyers: 403.
+  app.post("/api/documents", requireRole("merchant", "admin"), express.json({ limit: "1kb" }), async (req, res) => {
+    // Checked before any lookup, so a sandbox request never reaches PayPal.
+    if ((req.body as { source?: unknown } | undefined)?.source === "paypal_sandbox") return notForSandbox(res);
+    const dispute = await findDispute(req, res);
+    if (!dispute) return;
+    res.json({ documents: documentsFor(dispute.dispute_id, signedIn(res)) });
+  });
+
+  // The body is the file itself (no multipart). The dispute comes in X-Dispute-Id and the percent-encoded filename
+  // in X-Document-Name, so neither ends up in a URL. Merchants only; admin is read-only.
+  app.post(
+    "/api/documents/upload",
+    requireRole("merchant"),
+    (req, res, next) => {
+      const declared = (req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+      if (!DOCUMENT_MEDIA_TYPES.includes(declared as DocumentMediaType)) {
+        sendError(res, 415, "unsupported_media_type", "Upload a PDF, PNG or JPEG file.");
+        return;
+      }
+      const key = `upload:${signedIn(res).id}`;
+      if (uploadLimiter.blocked([key], UPLOAD_MAX_CALLS)) {
+        res.set("Retry-After", String(LOGIN_WINDOW_MS / 1000));
+        sendError(res, 429, "too_many_uploads", "Too many uploads. Try again later.");
+        return;
+      }
+      uploadLimiter.fail([key]);
+      next();
+    },
+    express.raw({ limit: DOCUMENT_LIMITS.maxBytes, type: () => true }),
+    async (req, res) => {
+      const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      if (bytes.length === 0) {
+        sendError(res, 400, "empty_file", "The file is empty.");
+        return;
+      }
+      const declared = (req.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+      // The first bytes decide the type, and they must agree with what the browser declared.
+      if (sniffMediaType(bytes) !== declared) {
+        sendError(res, 415, "unsupported_media_type", "The file's contents are not a PDF, PNG or JPEG of the declared type.");
+        return;
+      }
+      const disputeId = req.headers["x-dispute-id"];
+      const dispute = await findDispute(req, res, { source: "demo", dispute_id: typeof disputeId === "string" ? disputeId : undefined });
+      if (!dispute) return;
+      const account = signedIn(res);
+      const result = addDocument(
+        db,
+        now(),
+        {
+          id: randomUUID(),
+          account_id: account.id,
+          dispute_id: dispute.dispute_id,
+          display_name: cleanDocumentName(typeof req.headers["x-document-name"] === "string" ? req.headers["x-document-name"] : undefined),
+          media_type: declared as DocumentMediaType,
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+        },
+        bytes,
+      );
+      if (!result.ok) {
+        const refusal = {
+          too_many: ["too_many_documents", `A dispute can hold at most ${DOCUMENT_LIMITS.perDispute} documents. Delete one first.`],
+          account_full: ["storage_full", "Your documents already use the 50 MB allowed per account. Delete one first."],
+          duplicate: ["duplicate_document", "This file is already attached to this dispute."],
+        }[result.reason];
+        sendError(res, 409, refusal[0], refusal[1]);
+        return;
+      }
+      res.status(201).json({ document: result.document, documents: documentsFor(dispute.dispute_id, account) });
+    },
+  );
+
+  // Deletes the merchant's own document: the file goes with it. Admin is read-only.
+  app.post("/api/documents/delete", requireRole("merchant"), express.json({ limit: "1kb" }), async (req, res) => {
+    const body = req.body as { source?: unknown; document_id?: unknown } | undefined;
+    if (typeof body?.document_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(body.document_id)) {
+      sendError(res, 400, "invalid_request", "document_id must be a document ID.");
+      return;
+    }
+    if (body.source === "paypal_sandbox") return notForSandbox(res);
+    const dispute = await findDispute(req, res);
+    if (!dispute) return;
+    const account = signedIn(res);
+    // Another account's document answers exactly like a missing one.
+    if (!deleteDocument(db, now(), account.id, dispute.dispute_id, body.document_id)) {
+      sendError(res, 404, "document_not_found", "No document with this ID is attached to this dispute.");
+      return;
+    }
+    res.json({ documents: documentsFor(dispute.dispute_id, account) });
   });
 
   // On demand only. The rules run first; Gemini words their findings; assist.ts checks every line it returns.

@@ -31,7 +31,9 @@ import { SIGNED_OUT_EVENT, serverError } from "./sandbox.ts";
 import accountsFile from "../../demo-accounts.json" with { type: "json" };
 import extraDemos from "../../demo-disputes.json" with { type: "json" };
 import sample from "../../sample-dispute.json" with { type: "json" };
-import type { AccountInfo, AiAssist, BuyerDispute, Dispute } from "../../shared/types.ts";
+import type { AccountInfo, AiAssist, BuyerDispute, Dispute, DisputeDocument } from "../../shared/types.ts";
+import { DOCUMENT_ADMIN_NOTICE, DOCUMENT_NOTICE, DocumentsView, fileProblem, formatSize } from "./Documents.tsx";
+import type { DocumentActions } from "./Documents.tsx";
 
 // Test fixture: the synthetic records the server serves. The page itself no longer bundles them.
 const demoDisputes = [sample, ...extraDemos].map((record) => ({ ...record, source: "demo" })) as Dispute[];
@@ -725,8 +727,8 @@ test("the client calls only DisputeDesk's own read and analysis endpoints", () =
     .map((f) => readFileSync(new URL(f, dir), "utf8"))
     .join("\n");
   const urls = [...new Set([...sources.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(urls, ["/api/admin/accounts", "/api/admin/audit", "/api/admin/settings", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/analysis/check", "/api/analysis/checklist", "/api/analysis/checklist/confirm", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
-  assert.equal((sources.match(/fetch\(/g) ?? []).length, 17, "each fetch call uses one of the endpoints above");
+  assert.deepEqual(urls, ["/api/admin/accounts", "/api/admin/audit", "/api/admin/settings", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/analysis/check", "/api/analysis/checklist", "/api/analysis/checklist/confirm", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/documents", "/api/documents/delete", "/api/documents/upload", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
+  assert.equal((sources.match(/fetch\(/g) ?? []).length, 20, "each fetch call uses one of the endpoints above");
   assert.doesNotMatch(sources, /paypal\.com|generativelanguage|method:\s*"(PUT|PATCH|DELETE)"/i);
 });
 
@@ -1172,4 +1174,86 @@ test("the merchant's caveat sits in the row under the tag, outside the folded gu
   const admin = text(html(createElement(ChecklistView, { load: { status: "ready", checklist: withConf }, refsById, onRetry: noop })));
   assert.ok(!admin.includes(CONFIRMED_NOTE), "admin reads who confirmed, not the merchant's own wording");
   assert.match(admin, /Merchant-confirmed by Demo Merchant A, Nov 9, 2026. DisputeDesk has not seen the record./);
+});
+
+// ---- Merchant documents (Stage 3.2) ----
+
+const docFixture = (n: number, extra: Partial<DisputeDocument> = {}): DisputeDocument => ({
+  id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+  account_id: "merchant-a",
+  display_name: `synthetic-${n}.pdf`,
+  media_type: "application/pdf",
+  byte_size: 2048,
+  page_count: null,
+  status: "pending",
+  uploaded_at: "2026-11-09T10:00:00.000Z",
+  ...extra,
+});
+const docActions = (extra: Partial<DocumentActions> = {}): DocumentActions => ({
+  canEdit: true,
+  pending: null,
+  announce: "",
+  error: null,
+  onUpload: noop,
+  onDelete: noop,
+  ...extra,
+});
+
+test("the documents list shows each file as not verified, with a delete button and an upload field for the merchant", () => {
+  const docs = [docFixture(1), docFixture(2, { media_type: "image/png", display_name: "label.png", byte_size: 3 * 1024 * 1024 })];
+  const markup = html(createElement(DocumentsView, { load: { status: "ready", documents: docs }, onRetry: noop, actions: docActions() }));
+  const out = text(markup);
+  assert.match(out, /Your documents/);
+  assert.ok(out.includes(DOCUMENT_NOTICE));
+  assert.equal(out.match(/Not verified/g)?.length, 2);
+  assert.match(out, /PDF · 2 KB · added Nov 9, 2026/);
+  assert.match(out, /PNG image · 3\.0 MB/);
+  assert.equal(out.match(/Stored\. Text not read yet\./g)?.length, 2);
+  assert.doesNotMatch(out.replace(/Not verified/g, ""), /verified/i, "nothing calls a document verified");
+  assert.match(markup, /aria-label="Delete label\.png"/);
+  assert.match(markup, /<label for="document-file">Add a file \(PDF, PNG or JPEG, up to 5 MB\)<\/label><input id="document-file" type="file" accept="application\/pdf,image\/png,image\/jpeg"/);
+  assert.doesNotMatch(markup, /style=/, "no inline styles under the strict CSP");
+});
+
+test("a filename is shown as text, never as markup", () => {
+  const evil = docFixture(1, { display_name: "<img src=x onerror=alert(1)>.pdf" });
+  const markup = html(createElement(DocumentsView, { load: { status: "ready", documents: [evil] }, onRetry: noop, actions: docActions() }));
+  assert.ok(!markup.includes("<img"));
+  assert.ok(markup.includes("&lt;img src=x onerror=alert(1)&gt;.pdf"));
+});
+
+test("admin reads the documents list without upload or delete; a full dispute disables the upload field", () => {
+  const docs = Array.from({ length: 10 }, (_, i) => docFixture(i + 1));
+  const readOnly = html(createElement(DocumentsView, { load: { status: "ready", documents: docs }, onRetry: noop }));
+  assert.match(text(readOnly), /^ Documents Files merchants/);
+  assert.ok(text(readOnly).includes(DOCUMENT_ADMIN_NOTICE));
+  assert.ok(text(readOnly).includes("· merchant-a"), "admin sees which account added each file");
+  assert.doesNotMatch(readOnly, /<button|type="file"/);
+  const full = html(createElement(DocumentsView, { load: { status: "ready", documents: docs }, onRetry: noop, actions: docActions() }));
+  assert.match(full, /This dispute already has 10 documents\. Delete one to add another\./);
+  assert.match(full, /type="file"[^>]*disabled=""/);
+  const failed = html(createElement(DocumentsView, { load: { status: "ready", documents: [] }, onRetry: noop, actions: docActions({ error: "Choose a PDF, PNG or JPEG file." }) }));
+  assert.match(failed, /aria-describedby="document-error"/);
+  assert.match(failed, /<p class="document-error" id="document-error" role="alert">Choose a PDF, PNG or JPEG file\.<\/p>/);
+  assert.match(text(failed), /No documents attached\./);
+});
+
+test("the browser refuses wrong file types and sizes before uploading; the server checks again", () => {
+  assert.equal(fileProblem({ type: "application/pdf", size: 10 }), null);
+  assert.equal(fileProblem({ type: "image/jpeg", size: 5 * 1024 * 1024 }), null);
+  assert.equal(fileProblem({ type: "image/svg+xml", size: 10 }), "Choose a PDF, PNG or JPEG file.");
+  assert.equal(fileProblem({ type: "", size: 10 }), "Choose a PDF, PNG or JPEG file.");
+  assert.equal(fileProblem({ type: "application/pdf", size: 0 }), "The file is empty.");
+  assert.equal(fileProblem({ type: "application/pdf", size: 5 * 1024 * 1024 + 1 }), "The file is larger than 5 MB.");
+  assert.equal(formatSize(10), "1 KB");
+  assert.equal(formatSize(1536 * 1024), "1.5 MB");
+});
+
+test("documents appear on demo disputes only, and never in the buyer's view", () => {
+  const merchantView = html(createElement(AnalysisView, { dispute: demo, analysis: analyzeDispute(demo) }));
+  assert.match(merchantView, /id="case-documents"/);
+  const sandboxView = html(createElement(AnalysisView, { dispute: sandbox[0], analysis: analyzeDispute(sandbox[0]) }));
+  assert.doesNotMatch(sandboxView, /case-documents/);
+  const buyerSource = readFileSync(new URL("./Buyer.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(buyerSource, /Documents|\/api\/documents/);
 });

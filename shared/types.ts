@@ -199,6 +199,24 @@ export interface GapConfirmation {
   confirmed_at: string;
 }
 
+// A file a merchant uploaded to a demo dispute (Stage 3). Metadata only: the bytes never leave the server here.
+// DisputeDesk has not checked what the file says or whether it is genuine.
+export type DocumentMediaType = "application/pdf" | "image/png" | "image/jpeg";
+export type DocumentStatus = "pending" | "extracted" | "no_text" | "failed";
+export interface DisputeDocument {
+  id: string;
+  account_id: string;
+  display_name: string;
+  media_type: DocumentMediaType;
+  byte_size: number;
+  page_count: number | null;
+  status: DocumentStatus;
+  // ISO 8601, UTC.
+  uploaded_at: string;
+}
+export const DOCUMENT_MEDIA_TYPES: readonly DocumentMediaType[] = ["application/pdf", "image/png", "image/jpeg"];
+export const DOCUMENT_LIMITS = { maxBytes: 5 * 1024 * 1024, perDispute: 10, perAccountBytes: 50 * 1024 * 1024, nameLength: 120 } as const;
+
 // Only these statuses can be confirmed. Available items need no confirmation; conflicting records are resolved
 // at their source; not-applicable items are not gaps.
 export const CONFIRMABLE: readonly ChecklistStatus[] = ["missing", "needs_confirmation"];

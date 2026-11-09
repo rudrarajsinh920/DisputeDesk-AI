@@ -1,5 +1,5 @@
 import { serverError } from "./sandbox.ts";
-import type { AiAssist, AiStatus, Analysis, Dispute, DraftCheck, EvidenceChecklist } from "../../shared/types.ts";
+import type { AiAssist, AiStatus, Analysis, Dispute, DisputeDocument, DraftCheck, EvidenceChecklist } from "../../shared/types.ts";
 
 // Sends only which record to analyze; the server loads the record itself. Nothing here talks to PayPal.
 export async function fetchAnalysis(dispute: Dispute, signal?: AbortSignal): Promise<Analysis> {
@@ -106,6 +106,41 @@ export async function fetchConfirm(
     throw new Error("The DisputeDesk server sent an unexpected checklist.");
   }
   return checklist;
+}
+
+// ---- Merchant documents (Stage 3). Demo disputes only. The server answers with the dispute's document list. ----
+
+async function documentList(response: Response): Promise<DisputeDocument[]> {
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw serverError(response, body);
+  const documents = (body as { documents?: unknown } | null)?.documents;
+  if (!Array.isArray(documents)) throw new Error("The DisputeDesk server sent an unexpected document list.");
+  return documents as DisputeDocument[];
+}
+
+const lookupBody = (dispute: Pick<Dispute, "source" | "dispute_id">, extra: object = {}) =>
+  JSON.stringify({ source: dispute.source, dispute_id: dispute.dispute_id, ...extra });
+
+export async function fetchDocuments(dispute: Pick<Dispute, "source" | "dispute_id">, signal?: AbortSignal): Promise<DisputeDocument[]> {
+  return documentList(await fetch("/api/documents", { method: "POST", headers: { "Content-Type": "application/json" }, body: lookupBody(dispute), signal }));
+}
+
+// The body is the file itself. The filename travels percent-encoded in a header, never in the URL.
+export async function uploadDocument(dispute: Pick<Dispute, "dispute_id">, file: File, signal?: AbortSignal): Promise<DisputeDocument[]> {
+  return documentList(
+    await fetch("/api/documents/upload", {
+      method: "POST",
+      headers: { "Content-Type": file.type, "X-Dispute-Id": dispute.dispute_id, "X-Document-Name": encodeURIComponent(file.name) },
+      body: file,
+      signal,
+    }),
+  );
+}
+
+export async function deleteDocument(dispute: Pick<Dispute, "source" | "dispute_id">, documentId: string, signal?: AbortSignal): Promise<DisputeDocument[]> {
+  return documentList(
+    await fetch("/api/documents/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: lookupBody(dispute, { document_id: documentId }), signal }),
+  );
 }
 
 export { MAX_CHECK_TEXT, countMarkers, readiness } from "../../shared/readiness.ts";

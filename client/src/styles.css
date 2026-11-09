@@ -1197,6 +1197,93 @@ details summary {
   overflow-wrap: anywhere;
 }
 
+/* Merchant documents: names are untrusted text, so they wrap anywhere and never widen the page.
+   min-width: 0 stops the file field's native width from stretching the detail column. */
+.documents {
+  min-width: 0;
+}
+
+.documents-notice {
+  margin: 6px 0 12px;
+  color: var(--text);
+}
+
+.document-list {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.document-list li {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  min-width: 0;
+}
+
+.document-list p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.document-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.document-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.document-upload {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.document-upload {
+  min-width: 0;
+}
+
+.document-upload input[type="file"] {
+  width: 100%;
+  max-width: 100%;
+  min-height: 44px;
+  color: var(--text);
+}
+
+/* The native picker button, drawn like the secondary buttons. */
+.document-upload input[type="file"]::file-selector-button {
+  min-height: 38px;
+  margin-right: 10px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.document-upload input[type="file"]:disabled::file-selector-button {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.document-error {
+  margin: 8px 0 0;
+  color: var(--text);
+  font-weight: 600;
+}
+
 /* Pressed shows a check mark as well as a colour change. The busy spinner keeps its own ::before. */
 .confirm-gap .button[aria-pressed="true"]:not([aria-disabled="true"])::before {
   content: "\2713";

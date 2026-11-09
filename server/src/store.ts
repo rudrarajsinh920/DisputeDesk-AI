@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { Dispute, GapConfirmation } from "../../shared/types.ts";
+import type { DisputeDocument, Dispute, DocumentMediaType, DocumentStatus, GapConfirmation } from "../../shared/types.ts";
+import { DOCUMENT_LIMITS } from "../../shared/types.ts";
 import type { Account } from "./auth.ts";
 import { transaction } from "./db.ts";
 import type { AUDIT_EVENTS } from "./db.ts";
@@ -188,6 +189,71 @@ export function withdrawGap(db: DatabaseSync, at: number, accountId: string, dis
       .prepare("DELETE FROM gap_confirmations WHERE account_id = ? AND dispute_id = ? AND item_id = ?")
       .run(accountId, disputeId, itemId);
     if (changes > 0) audit(db, at, "gap_confirmation_withdrawn", { account_id: accountId, dispute_id: disputeId, detail: itemId });
+    return changes > 0;
+  });
+}
+
+// ---- Merchant documents (migration v5). The bytes stay in document_blobs and are never listed. ----
+
+const toDocument = (r: Row): DisputeDocument => ({
+  id: r.id as string,
+  account_id: r.account_id as string,
+  display_name: r.display_name as string,
+  media_type: r.media_type as DocumentMediaType,
+  byte_size: r.byte_size as number,
+  page_count: r.page_count as number | null,
+  status: r.status as DocumentStatus,
+  uploaded_at: new Date(r.uploaded_at as number).toISOString(),
+});
+
+// One dispute's documents from accounts that still have access to it. onlyAccount limits them to one account
+// (a merchant sees only their own); null returns every account's (admin, read-only).
+export function listDocuments(db: DatabaseSync, disputeId: string, onlyAccount: string | null): DisputeDocument[] {
+  const rows = db
+    .prepare(
+      `SELECT d.id, d.account_id, d.display_name, d.media_type, d.byte_size, d.page_count, d.status, d.uploaded_at FROM documents d
+       JOIN dispute_access x ON x.account_id = d.account_id AND x.dispute_id = d.dispute_id
+       WHERE d.dispute_id = ? AND (? IS NULL OR d.account_id = ?)
+       ORDER BY d.uploaded_at, d.id`,
+    )
+    .all(disputeId, onlyAccount, onlyAccount) as Row[];
+  return rows.map(toDocument);
+}
+
+export type AddDocumentResult = { ok: true; document: DisputeDocument } | { ok: false; reason: "too_many" | "account_full" | "duplicate" };
+
+// Stores a file and audits it in one transaction. The limits are checked inside it, so two uploads at once can't
+// both slip under them. Status starts "pending": nothing reads the file yet.
+export function addDocument(
+  db: DatabaseSync,
+  at: number,
+  doc: { id: string; account_id: string; dispute_id: string; display_name: string; media_type: DocumentMediaType; sha256: string },
+  bytes: Uint8Array,
+): AddDocumentResult {
+  return transaction(db, (): AddDocumentResult => {
+    const onDispute = db.prepare("SELECT COUNT(*) AS n FROM documents WHERE account_id = ? AND dispute_id = ?").get(doc.account_id, doc.dispute_id)!.n as number;
+    if (onDispute >= DOCUMENT_LIMITS.perDispute) return { ok: false, reason: "too_many" };
+    const used = db.prepare("SELECT COALESCE(SUM(byte_size), 0) AS n FROM documents WHERE account_id = ?").get(doc.account_id)!.n as number;
+    if (used + bytes.length > DOCUMENT_LIMITS.perAccountBytes) return { ok: false, reason: "account_full" };
+    const same = db.prepare("SELECT 1 FROM documents WHERE account_id = ? AND dispute_id = ? AND sha256 = ?").get(doc.account_id, doc.dispute_id, doc.sha256);
+    if (same) return { ok: false, reason: "duplicate" };
+    db.prepare(
+      "INSERT INTO documents (id, account_id, dispute_id, display_name, media_type, byte_size, sha256, page_count, status, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'pending', ?)",
+    ).run(doc.id, doc.account_id, doc.dispute_id, doc.display_name, doc.media_type, bytes.length, doc.sha256, at);
+    db.prepare("INSERT INTO document_blobs (document_id, bytes) VALUES (?, ?)").run(doc.id, bytes);
+    // IDs only: never the filename, the text or a hash.
+    audit(db, at, "document_uploaded", { account_id: doc.account_id, dispute_id: doc.dispute_id, detail: doc.id });
+    const row = db.prepare("SELECT * FROM documents WHERE id = ?").get(doc.id) as Row;
+    return { ok: true, document: toDocument(row) };
+  });
+}
+
+// Deletes the account's own document on that dispute; the bytes, pages and links go with it (foreign keys).
+// Returns false, changing nothing, when there is no such document for this account and dispute.
+export function deleteDocument(db: DatabaseSync, at: number, accountId: string, disputeId: string, documentId: string): boolean {
+  return transaction(db, () => {
+    const { changes } = db.prepare("DELETE FROM documents WHERE id = ? AND account_id = ? AND dispute_id = ?").run(documentId, accountId, disputeId);
+    if (changes > 0) audit(db, at, "document_deleted", { account_id: accountId, dispute_id: disputeId, detail: documentId });
     return changes > 0;
   });
 }

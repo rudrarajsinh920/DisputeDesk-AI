@@ -29,7 +29,18 @@ const V2_AUDIT_EVENTS = [...V1_AUDIT_EVENTS, "buyer_explanation_generated"] as c
 const V3_AUDIT_EVENTS = [...V2_AUDIT_EVENTS, "intelligence_viewed", "intelligence_explanation_generated"] as const;
 // Version 4's list, frozen with that migration.
 const V4_AUDIT_EVENTS = [...V3_AUDIT_EVENTS, "gap_confirmed", "gap_confirmation_withdrawn"] as const;
-export const AUDIT_EVENTS = V4_AUDIT_EVENTS;
+// Version 5's list, frozen with that migration. Stage 3 adds every document event at once, so later phases need no rebuild.
+const V5_AUDIT_EVENTS = [
+  ...V4_AUDIT_EVENTS,
+  "document_uploaded",
+  "document_extracted",
+  "document_extraction_failed",
+  "document_deleted",
+  "document_linked",
+  "document_unlinked",
+  "document_downloaded",
+] as const;
+export const AUDIT_EVENTS = V5_AUDIT_EVENTS;
 
 // SQLite can't change a CHECK constraint, so a longer event list means copying the audit log into a new table.
 // Rows keep their ids; the indexes and append-only triggers are recreated on the new table.
@@ -175,6 +186,49 @@ export const MIGRATIONS: Migration[] = [
       ) STRICT, WITHOUT ROWID;
       CREATE INDEX idx_gap_confirmations_dispute ON gap_confirmations (dispute_id);
       ${rebuildAuditLog(V4_AUDIT_EVENTS)}
+    `,
+  },
+  {
+    version: 5,
+    name: "merchant documents: files, extracted pages and checklist links; their audit events",
+    // A file a merchant uploads to one of their demo disputes: merchant-owned, demo disputes only (the disputes
+    // foreign key), PDF, PNG or JPEG up to 5 MB. Bytes sit in their own table so listing never loads them.
+    // Pages and links are filled by later phases: text read from a PDF, and the merchant's statement that a file
+    // is the record for a checklist item. Neither ever changes an evidence status.
+    sql: `
+      CREATE TABLE documents (
+        id TEXT PRIMARY KEY CHECK (length(id) = 36),
+        account_id TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+        dispute_id TEXT NOT NULL REFERENCES disputes (dispute_id) ON DELETE CASCADE,
+        display_name TEXT NOT NULL CHECK (length(display_name) BETWEEN 1 AND 120),
+        media_type TEXT NOT NULL CHECK (media_type IN ('application/pdf', 'image/png', 'image/jpeg')),
+        byte_size INTEGER NOT NULL CHECK (byte_size BETWEEN 1 AND 5242880),
+        sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+        page_count INTEGER CHECK (page_count BETWEEN 0 AND 20),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'extracted', 'no_text', 'failed')),
+        uploaded_at INTEGER NOT NULL,
+        UNIQUE (account_id, dispute_id, sha256)
+      ) STRICT;
+      CREATE INDEX idx_documents_dispute ON documents (dispute_id);
+      CREATE TABLE document_blobs (
+        document_id TEXT PRIMARY KEY REFERENCES documents (id) ON DELETE CASCADE,
+        bytes BLOB NOT NULL
+      ) STRICT, WITHOUT ROWID;
+      CREATE TABLE document_pages (
+        document_id TEXT NOT NULL REFERENCES documents (id) ON DELETE CASCADE,
+        page INTEGER NOT NULL CHECK (page BETWEEN 1 AND 20),
+        text TEXT NOT NULL CHECK (length(text) <= 200000),
+        text_sha256 TEXT NOT NULL CHECK (length(text_sha256) = 64),
+        method TEXT NOT NULL CHECK (method IN ('pdf_text')),
+        PRIMARY KEY (document_id, page)
+      ) STRICT, WITHOUT ROWID;
+      CREATE TABLE document_links (
+        document_id TEXT NOT NULL REFERENCES documents (id) ON DELETE CASCADE,
+        item_id TEXT NOT NULL CHECK (length(item_id) BETWEEN 1 AND 40 AND item_id NOT GLOB '*[^a-z_]*'),
+        linked_at INTEGER NOT NULL,
+        PRIMARY KEY (document_id, item_id)
+      ) STRICT, WITHOUT ROWID;
+      ${rebuildAuditLog(V5_AUDIT_EVENTS)}
     `,
   },
 ];

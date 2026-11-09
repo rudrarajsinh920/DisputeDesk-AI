@@ -24,6 +24,7 @@ import type {
   VerificationState,
 } from "../../shared/types.ts";
 import { CONFIRMABLE } from "../../shared/types.ts";
+import { DocumentsSection } from "./Documents.tsx";
 import { StatePanel } from "./ui.tsx";
 
 type Load = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; analysis: Analysis };
@@ -495,6 +496,8 @@ export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: 
       <ReadinessSummary analysis={analysis} />
       <ClaimAndRecords dispute={dispute} analysis={analysis} />
       <ChecklistSection dispute={dispute} refsById={refsById} canConfirm={canDraft} />
+      {/* Documents are kept for demo disputes only; PayPal sandbox disputes are never stored. */}
+      {dispute.source === "demo" && <DocumentsSection dispute={dispute} canEdit={canDraft} />}
 
       <section className="detail-section" id="case-evidence">
         <h3>Evidence analysis</h3>

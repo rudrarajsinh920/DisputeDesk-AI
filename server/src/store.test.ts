@@ -188,10 +188,86 @@ test("upgrading a version 3 database adds the confirmation table and events and 
   db.prepare("INSERT INTO audit_log (at, event, account_id, dispute_id, detail) VALUES (1, 'intelligence_viewed', 'merchant-c', NULL, 'account, 14 demo disputes')").run();
   const before = db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r }));
   assert.throws(() => db.prepare("INSERT INTO audit_log (at, event) VALUES (2, 'gap_confirmed')").run(), /constraint/);
-  migrate(db);
+  // Up to version 4 only: this test is about that migration. Version 5 has its own test.
+  migrate(db, MIGRATIONS.slice(0, 4));
   assert.equal(schemaVersion(db), 4);
   assert.deepEqual(db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r })), before, "entries copied unchanged");
   for (const event of ["gap_confirmed", "gap_confirmation_withdrawn"]) db.prepare("INSERT INTO audit_log (at, event) VALUES (2, ?)").run(event);
   assert.throws(() => db.prepare("DELETE FROM audit_log").run(), /append-only/);
   assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE name = 'gap_confirmations'").get());
+});
+
+const DOCUMENT_EVENTS = [
+  "document_uploaded",
+  "document_extracted",
+  "document_extraction_failed",
+  "document_deleted",
+  "document_linked",
+  "document_unlinked",
+  "document_downloaded",
+];
+
+test("upgrading a version 4 database adds the document tables and events, keeps every audit entry and confirmation", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec("PRAGMA foreign_keys = ON");
+  migrate(db, MIGRATIONS.slice(0, 4));
+  seedDemo(db, DEMO_ACCOUNTS, DEMO_DISPUTES, 1);
+  confirmGap(db, 2, "merchant-a", "DEMO-1001", "shipping_tracking");
+  db.prepare("INSERT INTO audit_log (at, event, account_id, dispute_id, detail) VALUES (3, 'login_succeeded', 'merchant-a', NULL, NULL)").run();
+  const before = db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r }));
+  const confirmations = db.prepare("SELECT * FROM gap_confirmations").all().map((r) => ({ ...r }));
+  assert.throws(() => db.prepare("INSERT INTO audit_log (at, event) VALUES (4, 'document_uploaded')").run(), /constraint/);
+
+  migrate(db);
+  assert.equal(schemaVersion(db), 5);
+  assert.deepEqual(db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r })), before, "entries copied unchanged");
+  assert.deepEqual(db.prepare("SELECT * FROM gap_confirmations").all().map((r) => ({ ...r })), confirmations);
+  for (const event of DOCUMENT_EVENTS) db.prepare("INSERT INTO audit_log (at, event) VALUES (4, ?)").run(event);
+  assert.equal(Number(db.prepare("SELECT MAX(id) AS id FROM audit_log").get()!.id), before.length + DOCUMENT_EVENTS.length, "ids keep counting");
+  assert.throws(() => db.prepare("UPDATE audit_log SET event = 'logout'").run(), /append-only/);
+  assert.throws(() => db.prepare("DELETE FROM audit_log").run(), /append-only/);
+  for (const table of ["documents", "document_blobs", "document_pages", "document_links"]) {
+    assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table), table);
+  }
+  assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE name = 'idx_documents_dispute'").get());
+});
+
+test("the documents table refuses bad rows; a removed demo dispute takes its documents with it", () => {
+  const db = openDatabase(":memory:");
+  seedDemo(db, DEMO_ACCOUNTS, DEMO_DISPUTES, 1);
+  const insert = (id: string, fields: Partial<Record<string, string | number>> = {}) => {
+    const row = { account_id: "merchant-d", dispute_id: "DEMO-3001", display_name: "x.pdf", media_type: "application/pdf", byte_size: 10, sha256: id.slice(0, 1).repeat(64), status: "pending", ...fields };
+    db.prepare(
+      "INSERT INTO documents (id, account_id, dispute_id, display_name, media_type, byte_size, sha256, status, uploaded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)",
+    ).run(id, row.account_id, row.dispute_id, row.display_name, row.media_type, row.byte_size, row.sha256, row.status);
+  };
+  const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  for (const [label, fields] of [
+    ["short id", { id: "abc" }],
+    ["HTML", { media_type: "text/html" }],
+    ["SVG", { media_type: "image/svg+xml" }],
+    ["empty", { byte_size: 0 }],
+    ["over 5 MB", { byte_size: 5 * 1024 * 1024 + 1 }],
+    ["no name", { display_name: "" }],
+    ["long name", { display_name: "a".repeat(121) }],
+    ["bad hash", { sha256: "abc" }],
+    ["unknown status", { status: "verified" }],
+    ["unknown account", { account_id: "nobody" }],
+  ] as [string, Record<string, string | number>][]) {
+    const { id: badId, ...rest } = fields;
+    assert.throws(() => insert(String(badId ?? id(1)), rest), /constraint/i, label);
+  }
+  insert(id(2));
+  assert.throws(() => db.prepare("INSERT INTO document_pages (document_id, page, text, text_sha256, method) VALUES (?, 21, 'x', ?, 'pdf_text')").run(id(2), "0".repeat(64)), /constraint/);
+  assert.throws(() => db.prepare("INSERT INTO document_pages (document_id, page, text, text_sha256, method) VALUES (?, 1, 'x', ?, 'ocr')").run(id(2), "0".repeat(64)), /constraint/);
+  assert.throws(() => db.prepare("INSERT INTO document_links (document_id, item_id, linked_at) VALUES (?, 'Bad-Item', 1)").run(id(2)), /constraint/);
+  db.prepare("INSERT INTO document_blobs (document_id, bytes) VALUES (?, ?)").run(id(2), new Uint8Array([1, 2, 3]));
+  assert.deepEqual(new Uint8Array(db.prepare("SELECT bytes FROM document_blobs").get()!.bytes as Uint8Array), new Uint8Array([1, 2, 3]));
+  // A restart with the same demo files keeps the document; a dispute dropped from them removes it.
+  seedDemo(db, DEMO_ACCOUNTS, DEMO_DISPUTES, 2);
+  assert.equal(Number(db.prepare("SELECT COUNT(*) AS n FROM documents").get()!.n), 1);
+  const accounts = DEMO_ACCOUNTS.map((a) => ({ ...a, dispute_ids: a.dispute_ids.filter((d) => d !== "DEMO-3001") }));
+  seedDemo(db, accounts, DEMO_DISPUTES.filter((d) => d.dispute_id !== "DEMO-3001"), 3);
+  assert.equal(Number(db.prepare("SELECT COUNT(*) AS n FROM documents").get()!.n), 0);
+  assert.equal(Number(db.prepare("SELECT COUNT(*) AS n FROM document_blobs").get()!.n), 0);
 });
