@@ -231,6 +231,20 @@ export const MIGRATIONS: Migration[] = [
       ${rebuildAuditLog(V5_AUDIT_EVENTS)}
     `,
   },
+  {
+    version: 6,
+    name: "documents: only a merchant with access to the dispute may own one",
+    // A trigger, not a foreign key to dispute_access: seeding deletes and re-grants access rows on every start,
+    // and a cascade from them would delete every document. Existing rows are not rechecked.
+    sql: `
+      CREATE TRIGGER documents_owner_check BEFORE INSERT ON documents
+      WHEN NOT EXISTS (SELECT 1 FROM accounts WHERE id = NEW.account_id AND role = 'merchant')
+        OR NOT EXISTS (SELECT 1 FROM dispute_access WHERE account_id = NEW.account_id AND dispute_id = NEW.dispute_id)
+      BEGIN
+        SELECT RAISE(ABORT, 'document owner constraint failed: the account must be a merchant with access to the dispute');
+      END;
+    `,
+  },
 ];
 
 // Runs fn inside one write transaction: every write commits, or none does. fn must be synchronous.

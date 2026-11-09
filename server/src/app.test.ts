@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import http from "node:http";
+import { gzipSync } from "node:zlib";
 import type { AddressInfo } from "node:net";
 import type { Dispute } from "../../shared/types.ts";
 import type { DatabaseSync } from "node:sqlite";
@@ -2082,11 +2083,11 @@ test("documents are for demo disputes only; a sandbox request never reaches PayP
   // Uploads always look up a demo dispute: a sandbox ID is simply not one.
   assert.equal((await get(app, "/api/documents/upload", upload("PP-D-1", PDF, "application/pdf"))).status, 404);
   assert.equal(paypal.calls.length, 0);
-  // The database itself refuses a document on a dispute it doesn't hold.
+  // The database itself refuses a document on a dispute it doesn't hold (the ownership trigger fires before the foreign key).
   const insert = db.prepare(
     "INSERT INTO documents (id, account_id, dispute_id, display_name, media_type, byte_size, sha256, status, uploaded_at) VALUES (?, 'merchant-a', 'PP-D-1', 'x', 'application/pdf', 1, ?, 'pending', 1)",
   );
-  assert.throws(() => insert.run("00000000-0000-4000-8000-000000000001", "0".repeat(64)), /FOREIGN KEY/);
+  assert.throws(() => insert.run("00000000-0000-4000-8000-000000000001", "0".repeat(64)), /constraint failed/);
 });
 
 test("a dispute holds at most 10 documents, an account 50 MB, and the same file only once", async () => {
@@ -2192,4 +2193,67 @@ test("an upload from another site's page is refused before the file is stored", 
     }
   });
   assert.equal(countRows(db, "SELECT COUNT(*) AS n FROM documents"), 0);
+});
+
+// Sends the headers and only the first bytes of a body that claims to be 5 MB, and never finishes it. A server
+// that tried to read the body would wait; one that answers first never buffered it.
+async function partialUpload(app: App, disputeId: string | null, as: string) {
+  const server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const port = (server.address() as AddressInfo).port;
+    const cookie = await signIn(app, `http://127.0.0.1:${port}`, as);
+    return await new Promise<{ status: number; body: { error: { code: string } } }>((resolve, reject) => {
+      const headers: Record<string, string> = { Cookie: cookie, "Content-Type": "application/pdf", "Content-Length": String(5 * 1024 * 1024) };
+      if (disputeId) headers["X-Dispute-Id"] = disputeId;
+      const req = http.request({ host: "127.0.0.1", port, method: "POST", path: "/api/documents/upload", headers }, (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => (text += chunk));
+        res.on("end", () => resolve({ status: res.statusCode!, body: JSON.parse(text) }));
+      });
+      req.on("error", reject);
+      req.setTimeout(5000, () => req.destroy(new Error("the server waited for the upload body")));
+      req.write(PDF);
+    });
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+}
+
+test("an upload to a dispute the merchant can't reach is refused before the body is read, exactly like a missing one", async () => {
+  const { db, app } = documentsApp();
+  const other = await partialUpload(app, "DEMO-1001", "merchant-b");
+  const missing = await partialUpload(app, "DEMO-9999", "merchant-b");
+  assert.equal(other.status, 404);
+  assert.deepEqual(other.body, missing.body, "another merchant's dispute answers like a missing one");
+  assert.deepEqual(auditRows(db).filter((r) => r.event === "dispute_access_denied").at(-1), {
+    event: "dispute_access_denied",
+    account_id: "merchant-b",
+    dispute_id: "DEMO-1001",
+    detail: "demo",
+  });
+  assert.equal((await partialUpload(app, null, "merchant-b")).status, 400, "no dispute ID");
+  assert.equal(countRows(db, "SELECT COUNT(*) AS n FROM documents"), 0);
+  // Role and rate-limit checks still come first.
+  assert.equal((await partialUpload(app, "DEMO-1001", "buyer-a")).status, 403);
+  assert.equal((await partialUpload(app, "DEMO-1001", "admin")).status, 403);
+});
+
+test("compressed upload bodies are refused; plain PDF, PNG and JPEG uploads still work", async () => {
+  const { db, app } = documentsApp();
+  const gzipped = upload("DEMO-1001", gzipSync(PDF), "application/pdf");
+  (gzipped.headers as Record<string, string>)["Content-Encoding"] = "gzip";
+  const refused = await get(app, "/api/documents/upload", gzipped);
+  assert.equal(refused.status, 415);
+  assert.equal(refused.body.error.code, "unsupported_content_encoding");
+  assert.equal(countRows(db, "SELECT COUNT(*) AS n FROM documents"), 0);
+  const identity = upload("DEMO-1001", PDF, "application/pdf");
+  (identity.headers as Record<string, string>)["Content-Encoding"] = "identity";
+  assert.equal((await get(app, "/api/documents/upload", identity)).status, 201);
+  for (const [bytes, type] of [[PNG, "image/png"], [JPEG, "image/jpeg"]] as [Buffer, string][]) {
+    assert.equal((await get(app, "/api/documents/upload", upload("DEMO-1002", bytes, type))).status, 201, type);
+  }
+  assert.equal(countRows(db, "SELECT COUNT(*) AS n FROM documents"), 3);
 });

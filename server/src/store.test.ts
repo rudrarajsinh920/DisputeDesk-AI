@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { DEMO_ACCOUNTS, DEMO_DISPUTES } from "./app.ts";
 import { DatabaseSync } from "node:sqlite";
 import { MIGRATIONS, migrate, openDatabase, schemaVersion } from "./db.ts";
-import { audit, confirmGap, createAccount, findAccountByEmail, getAccount, listAccounts, listConfirmations, loadDisputes, seedDemo, withdrawGap } from "./store.ts";
+import { addDocument, audit, confirmGap, createAccount, findAccountByEmail, getAccount, listAccounts, listConfirmations, loadDisputes, seedDemo, withdrawGap } from "./store.ts";
 import type { Account } from "./auth.ts";
 
 const HASH = "scrypt$16384$8$1$c2FsdHNhbHRzYWx0c2FsdA==$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2U=";
@@ -218,7 +218,8 @@ test("upgrading a version 4 database adds the document tables and events, keeps 
   const confirmations = db.prepare("SELECT * FROM gap_confirmations").all().map((r) => ({ ...r }));
   assert.throws(() => db.prepare("INSERT INTO audit_log (at, event) VALUES (4, 'document_uploaded')").run(), /constraint/);
 
-  migrate(db);
+  // Up to version 5 only: this test is about that migration. Version 6 has its own test.
+  migrate(db, MIGRATIONS.slice(0, 5));
   assert.equal(schemaVersion(db), 5);
   assert.deepEqual(db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r })), before, "entries copied unchanged");
   assert.deepEqual(db.prepare("SELECT * FROM gap_confirmations").all().map((r) => ({ ...r })), confirmations);
@@ -270,4 +271,52 @@ test("the documents table refuses bad rows; a removed demo dispute takes its doc
   seedDemo(db, accounts, DEMO_DISPUTES.filter((d) => d.dispute_id !== "DEMO-3001"), 3);
   assert.equal(Number(db.prepare("SELECT COUNT(*) AS n FROM documents").get()!.n), 0);
   assert.equal(Number(db.prepare("SELECT COUNT(*) AS n FROM document_blobs").get()!.n), 0);
+});
+
+test("version 6: only a merchant with access to the dispute can own a document, and re-seeding keeps documents", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec("PRAGMA foreign_keys = ON");
+  migrate(db, MIGRATIONS.slice(0, 5));
+  seedDemo(db, DEMO_ACCOUNTS, DEMO_DISPUTES, 1);
+  const raw = (docId: string, account: string, dispute: string, hash: string) =>
+    db
+      .prepare(
+        "INSERT INTO documents (id, account_id, dispute_id, display_name, media_type, byte_size, sha256, status, uploaded_at) VALUES (?, ?, ?, 'x.pdf', 'application/pdf', 1, ?, 'pending', 1)",
+      )
+      .run(docId, account, dispute, hash.repeat(64));
+  const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+  raw(id(1), "merchant-a", "DEMO-1001", "a");
+  const auditBefore = db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r }));
+
+  migrate(db);
+  assert.equal(schemaVersion(db), 6);
+  assert.deepEqual(db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r })), auditBefore, "audit log unchanged");
+  assert.equal(Number(db.prepare("SELECT COUNT(*) AS n FROM documents").get()!.n), 1, "existing documents kept");
+
+  // A merchant with access: allowed, directly and through the store.
+  raw(id(2), "merchant-a", "DEMO-1002", "b");
+  const doc = { account_id: "merchant-a", dispute_id: "DEMO-1001", display_name: "y.pdf", media_type: "application/pdf" as const, sha256: "c".repeat(64) };
+  assert.equal(addDocument(db, 2, { id: id(3), ...doc }, new Uint8Array([0x25])).ok, true);
+  // Refused by the trigger: no access row, a buyer with access, another merchant, admin, an unknown account.
+  for (const [label, account, dispute] of [
+    ["merchant without access", "merchant-a", "DEMO-1003"],
+    ["buyer with access", "buyer-a", "DEMO-1001"],
+    ["another merchant", "merchant-b", "DEMO-1001"],
+    ["admin", "admin", "DEMO-1001"],
+    ["unknown account", "nobody", "DEMO-1001"],
+  ]) {
+    assert.throws(() => raw(id(9), account, dispute, "d"), /document owner constraint failed/, label);
+  }
+  // The store's insert is refused too, and its transaction rolls back (no blob, no audit row).
+  const auditRows = () => Number(db.prepare("SELECT COUNT(*) AS n FROM audit_log").get()!.n);
+  const rowsBefore = auditRows();
+  assert.throws(() => addDocument(db, 3, { id: id(4), ...doc, account_id: "merchant-b", sha256: "e".repeat(64) }, new Uint8Array([0x25])), /document owner/);
+  assert.equal(auditRows(), rowsBefore);
+  assert.equal(Number(db.prepare("SELECT COUNT(*) AS n FROM document_blobs WHERE document_id = ?").get(id(4))!.n), 0);
+
+  // Restarts delete and re-grant access rows; documents stay, and so does the trigger.
+  seedDemo(db, DEMO_ACCOUNTS, DEMO_DISPUTES, 4);
+  seedDemo(db, DEMO_ACCOUNTS, DEMO_DISPUTES, 5);
+  assert.equal(Number(db.prepare("SELECT COUNT(*) AS n FROM documents").get()!.n), 3);
+  assert.throws(() => raw(id(9), "merchant-b", "DEMO-1001", "d"), /document owner constraint failed/);
 });

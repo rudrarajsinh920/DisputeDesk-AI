@@ -551,7 +551,17 @@ export function createApp(
       uploadLimiter.fail([key]);
       next();
     },
-    express.raw({ limit: DOCUMENT_LIMITS.maxBytes, type: () => true }),
+    // The dispute is checked before the body is read, so a file for a dispute this merchant can't reach is never
+    // buffered. Same 404 and access-denied audit as every other route.
+    async (req, res, next) => {
+      const disputeId = req.headers["x-dispute-id"];
+      const dispute = await findDispute(req, res, { source: "demo", dispute_id: typeof disputeId === "string" ? disputeId : undefined });
+      if (!dispute) return;
+      res.locals.uploadDispute = dispute;
+      next();
+    },
+    // inflate: false refuses compressed bodies (415): files are sent as they are.
+    express.raw({ limit: DOCUMENT_LIMITS.maxBytes, type: () => true, inflate: false }),
     async (req, res) => {
       const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
       if (bytes.length === 0) {
@@ -564,9 +574,7 @@ export function createApp(
         sendError(res, 415, "unsupported_media_type", "The file's contents are not a PDF, PNG or JPEG of the declared type.");
         return;
       }
-      const disputeId = req.headers["x-dispute-id"];
-      const dispute = await findDispute(req, res, { source: "demo", dispute_id: typeof disputeId === "string" ? disputeId : undefined });
-      if (!dispute) return;
+      const dispute = res.locals.uploadDispute as Dispute;
       const account = signedIn(res);
       const result = addDocument(
         db,
@@ -693,6 +701,10 @@ export function createApp(
     }
     if (bodyError === "entity.too.large") {
       res.status(413).json({ error: { code: "payload_too_large", message: "The request body is too large.", upstream_status: null } });
+      return;
+    }
+    if (bodyError === "encoding.unsupported") {
+      res.status(415).json({ error: { code: "unsupported_content_encoding", message: "Send the request body uncompressed.", upstream_status: null } });
       return;
     }
     if (error instanceof AiError) {
