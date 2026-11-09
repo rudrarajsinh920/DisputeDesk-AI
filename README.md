@@ -168,14 +168,18 @@ gitignored: it holds password hashes and session hashes, never passwords or sess
   that account's sessions. PayPal sandbox disputes are never stored: they are read live, so the two never mix.
 - **Tables.** `accounts`, `disputes` (demo only), `dispute_evidence` (one row per supplied flag; no row means "not
   supplied", never "false"), `dispute_access`, `sessions` (keyed by a hash of the token) and `audit_log`. Migration 2
-  adds each dispute's opened date and the buyer explanation audit event; migration 3 adds the insights audit events. An
-  existing database is upgraded in place.
+  adds each dispute's opened date and the buyer explanation audit event; migration 3 adds the insights audit events;
+  migration 4 adds `gap_confirmations`; migration 5 adds `documents` and its related tables; migration 6 makes the
+  database refuse a document whose owner is not a merchant with access to that dispute. An existing database is
+  upgraded in place. Back up the database file before the first start of a newer server.
 - **Audit log.** Sign-in (succeeded, failed, locked out), sign-out, a refused request for another account's dispute,
-  analysis, AI drafts, the validation example, buyer explanations, insights views and insights summaries. Entries name the account and dispute, never a password, token, hash or
+  analysis, AI drafts, the validation example, buyer explanations, insights views and insights summaries, gap
+  confirmations and their withdrawal, and document uploads and deletions. Entries name the account and dispute, never a password, token, hash or
   an unknown email. The log cannot be changed or deleted from the app, and it is
   never trimmed: the server prints its entry count at start. To archive it, stop the server and copy the database
-  file; to start a fresh log, then delete `server/data`.
-- To start over, stop the server and delete the `server/data` folder.
+  file; to start a fresh log, then delete `server/data/disputedesk.sqlite`.
+- To start over, stop the server and delete `server/data/disputedesk.sqlite` only. Don't delete the whole folder:
+  it also holds your database backups.
 
 ## Test
 
@@ -202,6 +206,8 @@ Before you start: both terminals running, and the server log says `AI drafting: 
    adds a "Merchant-confirmed" tag and the line "DisputeDesk has not seen the record. Your confirmation does not change
    its evidence status." The overview still counts it under "Needs attention" ("1 merchant-confirmed"). Press the
    button again to withdraw it.
+   Optional: under **Your documents**, upload a synthetic PDF, PNG or JPEG. It is listed as "Not verified", and the
+   readiness line and checklist do not change. Delete it afterwards.
 3. **Response draft.** The rule draft starts with the review header and has 5 markers to resolve. Type in it: the marker
    count updates. Reset restores it.
 4. **Generate AI draft.** The section names the model before you click. Result: "Checked, no issues found", the AI wording
@@ -232,7 +238,8 @@ Before you start: both terminals running, and the server log says `AI drafting: 
 12. Close on the footnote: DisputeDesk never submits responses to PayPal.
 
 The demo can be repeated as often as needed: drafts are not saved, and reloading the page resets every draft. Gap
-confirmations are saved until withdrawn, so withdraw the one from step 2 before the next run.
+confirmations and uploaded documents are saved until withdrawn or deleted, so clear the ones from step 2 before the
+next run.
 
 ## If something goes wrong during the demo
 
@@ -249,6 +256,10 @@ Keep screenshots or a screen recording of a successful run as a backup.
 ## Limits
 
 - Evidence statuses come from flags in the records. DisputeDesk does not open or inspect the documents themselves.
+- Merchants can upload PDF, PNG and JPEG files to their own demo disputes: at most 5 MB per file, 10 per dispute and
+  50 MB per account. Files are stored in the database as they are and shown as "Not verified". DisputeDesk does not
+  read their text, scan them for viruses, or let them change evidence statuses, readiness, the checklist, drafts or
+  anything sent to Gemini. They can't be downloaded, linked to a checklist item, or added to a PayPal sandbox dispute.
 - The AI checks are rules and patterns. They catch the listed kinds of invented detail, not every possible one, which is
   why merchant review stays mandatory. The same holds for Check my edits: its claim matching is advisory.
 - The PayPal integration only reads (an access token, the dispute list and each dispute's record). It never creates,

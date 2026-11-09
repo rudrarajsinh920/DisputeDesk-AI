@@ -28,6 +28,8 @@ delivered with no proof of delivery. Each dispute opens with an evidence readine
 missing or unverified items, conflicts, gaps left to fill: counts only, never a score) and a "Claim and records" view
 that puts the buyer's claim beside what the records show and what they leave out, without deciding who is right.
 Evidence statuses come from the evidence flags on each record; DisputeDesk does not open the documents themselves.
+Merchants can attach PDF, PNG or JPEG files to their own demo disputes. These are labelled "Not verified" and never
+change an evidence status, the readiness summary, the draft or what Gemini sees.
 DisputeDesk then writes a response draft that starts with "requires merchant
 review" and marks every gap the merchant still has to fill. Missing evidence is never treated as proof that something
 did not happen.
@@ -44,7 +46,7 @@ it; DisputeDesk checks records, it does not inspect the documents themselves. Th
 rests on. "Check my edits" then checks the merchant's own wording paragraph by paragraph, with no AI call: each
 paragraph is backed by DisputeDesk's records, not in them, or needs checking against the merchant's own records. Each
 kind of claim needs its own record, so tracking never counts as proof of delivery, a message record never proves what
-a message said, and refunds, offers and attachments are never backed because DisputeDesk holds no records of them.
+a message said, and refunds, offers and attachments are never backed because DisputeDesk has no checked records of them.
 The check is advisory and never edits or blocks the merchant's text.
 
 **Evidence checklist per reason.** Each dispute gets a checklist for its reason (item not received, not as described,
