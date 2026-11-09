@@ -6,7 +6,8 @@ import demoAccounts from "../../demo-accounts.json" with { type: "json" };
 import extraDemos from "../../demo-disputes.json" with { type: "json" };
 import sample from "../../sample-dispute.json" with { type: "json" };
 import { readiness } from "../../shared/readiness.ts";
-import type { Dispute, Role } from "../../shared/types.ts";
+import { CONFIRMABLE } from "../../shared/types.ts";
+import type { Dispute, EvidenceChecklist, Role } from "../../shared/types.ts";
 import { MAX_CHECK_TEXT, VALIDATION_EXAMPLE_MODEL, buildAiRequest, checkMerchantDraft, composeAiAssist, validationExampleAnswer } from "./assist.ts";
 import {
   AI_WORDING_LIMIT,
@@ -48,7 +49,7 @@ import type { GeminiClient } from "./gemini.ts";
 import { PayPalError } from "./paypal.ts";
 import type { PayPalClient } from "./paypal.ts";
 import { assistWithRefs, withProvenance } from "./provenance.ts";
-import { audit, findAccountByEmail, getAccount, listAccounts, listAudit, loadDisputes, seedDemo } from "./store.ts";
+import { audit, confirmGap, findAccountByEmail, getAccount, listAccounts, listAudit, listConfirmations, loadDisputes, seedDemo, withdrawGap } from "./store.ts";
 import { validateDispute, validateLogin, validateLookup } from "./validate.ts";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -445,11 +446,54 @@ export function createApp(
     res.json(withProvenance(dispute, analyzeDispute(dispute)));
   });
 
-  // Evidence checklist for the dispute's reason, derived from the same analysis. Read-only: nothing is stored or audited.
+  // The checklist plus the confirmations the account may see: a merchant only their own, admin every account's.
+  // Only confirmations of items that are still gaps are returned; one on an item a later record filled, or that the
+  // reason no longer lists, is kept but not shown. Sandbox disputes are never stored, so they have none.
+  const checklistFor = (dispute: Dispute, account: Account): EvidenceChecklist => {
+    const checklist = buildChecklist(dispute, analyzeDispute(dispute));
+    const gaps = new Set(checklist.items.filter((i) => CONFIRMABLE.includes(i.status)).map((i) => i.id));
+    const confirmations =
+      dispute.source === "demo"
+        ? listConfirmations(db, dispute.dispute_id, account.role === "admin" ? null : account.id).filter((c) => gaps.has(c.item_id))
+        : [];
+    return { ...checklist, confirmations };
+  };
+
+  // Evidence checklist for the dispute's reason, derived from the same analysis. Reading it is not audited.
   app.post("/api/analysis/checklist", requireRole("merchant", "admin"), express.json({ limit: "4kb" }), async (req, res) => {
     const dispute = await findDispute(req, res);
     if (!dispute) return;
-    res.json(buildChecklist(dispute, analyzeDispute(dispute)));
+    res.json(checklistFor(dispute, signedIn(res)));
+  });
+
+  // A merchant records that they hold a record for a gap, or withdraws that. It changes no status, count, draft or
+  // AI input: DisputeDesk has not seen the record. Merchants only (admin is read-only), demo disputes only.
+  app.post("/api/analysis/checklist/confirm", requireRole("merchant"), express.json({ limit: "1kb" }), async (req, res) => {
+    const body = req.body as { source?: unknown; item_id?: unknown; confirmed?: unknown } | undefined;
+    if (typeof body?.item_id !== "string" || !/^[a-z_]{1,40}$/.test(body.item_id) || typeof body.confirmed !== "boolean") {
+      sendError(res, 400, "invalid_request", "item_id must be a checklist item ID and confirmed must be true or false.");
+      return;
+    }
+    // Checked before any lookup, so a sandbox request never reaches PayPal.
+    if (body.source === "paypal_sandbox") {
+      sendError(res, 409, "not_confirmable", "Confirmations are kept for demo disputes only. PayPal sandbox disputes are never stored.");
+      return;
+    }
+    const dispute = await findDispute(req, res);
+    if (!dispute) return;
+    const account = signedIn(res);
+    const item = buildChecklist(dispute, analyzeDispute(dispute)).items.find((i) => i.id === body.item_id);
+    if (body.confirmed) {
+      if (!item || !CONFIRMABLE.includes(item.status)) {
+        sendError(res, 409, "not_confirmable", "Only a missing item or one not shown by the records can be confirmed.");
+        return;
+      }
+      confirmGap(db, now(), account.id, dispute.dispute_id, item.id);
+    } else {
+      // Withdrawing is always allowed, so a confirmation on an item that has since changed can still be removed.
+      withdrawGap(db, now(), account.id, dispute.dispute_id, body.item_id);
+    }
+    res.json(checklistFor(dispute, account));
   });
 
   // On demand only. The rules run first; Gemini words their findings; assist.ts checks every line it returns.

@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { MAX_CHECK_TEXT, countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis, fetchChecklist, fetchDraftCheck, readiness } from "./analysis.ts";
-import { humanize } from "../../shared/disputes.ts";
+import { MAX_CHECK_TEXT, countMarkers, fetchAiAssist, fetchAiStatus, fetchAnalysis, fetchChecklist, fetchConfirm, fetchDraftCheck, readiness } from "./analysis.ts";
+import { formatDate, humanize } from "../../shared/disputes.ts";
 import type {
   AiAssist,
   AiStatus,
   Analysis,
+  ChecklistItem,
   ChecklistStatus,
   ClaimSupport,
   Dispute,
   DraftCheck,
   DraftLine,
   EvidenceChecklist,
+  GapConfirmation,
   EvidenceRef,
   EvidenceStatus,
   ParagraphClaim,
@@ -21,6 +23,7 @@ import type {
   SourceType,
   VerificationState,
 } from "../../shared/types.ts";
+import { CONFIRMABLE } from "../../shared/types.ts";
 import { StatePanel } from "./ui.tsx";
 
 type Load = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; analysis: Analysis };
@@ -288,9 +291,25 @@ const TIERS: Record<RequirementTier, { label: string; className: string }> = {
 
 export type ChecklistLoad = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; checklist: EvidenceChecklist };
 
-function ChecklistSection({ dispute, refsById }: { dispute: Dispute; refsById: Map<string, EvidenceRef> }) {
+// Merchants may confirm gaps on demo disputes; admin only reads confirmations. Sandbox disputes are never stored.
+export interface ConfirmState {
+  canConfirm: boolean;
+  pending: string | null;
+  // Read out by screen readers after a change; focus stays on the button.
+  announce: string;
+  error: string | null;
+  onConfirm: (itemId: string, confirmed: boolean) => void;
+}
+const READ_ONLY: ConfirmState = { canConfirm: false, pending: null, announce: "", error: null, onConfirm: () => {} };
+
+export const CONFIRM_LIMIT = "Your confirmation is recorded as yours. It does not change the evidence status, and DisputeDesk has not seen the record.";
+
+function ChecklistSection({ dispute, refsById, canConfirm }: { dispute: Dispute; refsById: Map<string, EvidenceRef>; canConfirm: boolean }) {
   const [load, setLoad] = useState<ChecklistLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const [pending, setPending] = useState<string | null>(null);
+  const [announce, setAnnounce] = useState("");
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     setLoad({ status: "loading" });
@@ -302,13 +321,41 @@ function ChecklistSection({ dispute, refsById }: { dispute: Dispute; refsById: M
       });
     return () => controller.abort();
   }, [dispute, attempt]);
-  return <ChecklistView load={load} refsById={refsById} onRetry={() => setAttempt((n) => n + 1)} />;
+  const onConfirm = (itemId: string, confirmed: boolean) => {
+    if (pending) return;
+    setPending(itemId);
+    setError(null);
+    setAnnounce("");
+    // The screen redraws from the server's answer, never from a guess.
+    fetchConfirm(dispute, itemId, confirmed)
+      .then((checklist) => {
+        setLoad({ status: "ready", checklist });
+        setAnnounce(confirmed ? "Confirmation recorded." : "Confirmation withdrawn.");
+      })
+      .catch((e: unknown) => setError(`Couldn't save that. ${e instanceof Error ? e.message : String(e)}`))
+      .finally(() => setPending(null));
+  };
+  const confirm: ConfirmState = { canConfirm: canConfirm && dispute.source === "demo", pending, announce, error, onConfirm };
+  return <ChecklistView load={load} refsById={refsById} onRetry={() => setAttempt((n) => n + 1)} confirm={confirm} />;
 }
 
-export function ChecklistView({ load, refsById, onRetry }: { load: ChecklistLoad; refsById: Map<string, EvidenceRef>; onRetry: () => void }) {
+export function ChecklistView({
+  load,
+  refsById,
+  onRetry,
+  confirm = READ_ONLY,
+}: {
+  load: ChecklistLoad;
+  refsById: Map<string, EvidenceRef>;
+  onRetry: () => void;
+  confirm?: ConfirmState;
+}) {
   return (
     <section className="detail-section checklist" id="case-checklist" aria-labelledby="checklist-title" aria-busy={load.status === "loading"}>
       <h3 id="checklist-title">Evidence checklist for this reason</h3>
+      <p className="sr-only" role="status" aria-live="polite">
+        {confirm.announce}
+      </p>
       {load.status === "loading" && <p className="muted">Loading the checklist…</p>}
       {load.status === "error" && (
         <>
@@ -318,18 +365,23 @@ export function ChecklistView({ load, refsById, onRetry }: { load: ChecklistLoad
           </button>
         </>
       )}
-      {load.status === "ready" && <ChecklistItems checklist={load.checklist} refsById={refsById} />}
+      {load.status === "ready" && <ChecklistItems checklist={load.checklist} refsById={refsById} confirm={confirm} />}
     </section>
   );
 }
 
-function ChecklistItems({ checklist, refsById }: { checklist: EvidenceChecklist; refsById: Map<string, EvidenceRef> }) {
+function ChecklistItems({ checklist, refsById, confirm }: { checklist: EvidenceChecklist; refsById: Map<string, EvidenceRef>; confirm: ConfirmState }) {
   const applicable = checklist.items.filter((i) => i.status !== "not_applicable");
   const notApplicable = checklist.items.filter((i) => i.status === "not_applicable");
+  const byItem = new Map<string, GapConfirmation[]>();
+  for (const c of checklist.confirmations ?? []) byItem.set(c.item_id, [...(byItem.get(c.item_id) ?? []), c]);
+  const isConfirmed = (i: ChecklistItem) => CONFIRMABLE.includes(i.status) && byItem.has(i.id);
+  const gaps = applicable.filter((i) => CONFIRMABLE.includes(i.status));
   const count = (...s: ChecklistStatus[]) => applicable.filter((i) => s.includes(i.status)).length;
-  // Counts only: never a score, a share or a word like "complete".
+  // Counts only: never a score, a share or a word like "complete". A confirmed gap is counted on its own, never as a record.
   const counts = [
-    `Needs attention: ${count("missing", "needs_confirmation")}`,
+    `Needs attention: ${gaps.filter((i) => !isConfirmed(i)).length}`,
+    `Merchant-confirmed: ${gaps.filter(isConfirmed).length}`,
     `Record available: ${count("available")}`,
     `Conflicting: ${count("conflicting")}`,
   ];
@@ -341,9 +393,15 @@ function ChecklistItems({ checklist, refsById }: { checklist: EvidenceChecklist;
         </p>
       )}
       <p className="muted">{counts.join(" · ")}. Counts only: review each item before you respond.</p>
+      {confirm.error && (
+        <p className="error-text" role="alert">
+          {confirm.error}
+        </p>
+      )}
       <ul className="findings ledger">
         {applicable.map((item) => {
           const refs = item.refs.flatMap((id) => refsById.get(id) ?? []);
+          const confirmations = isConfirmed(item) ? byItem.get(item.id)! : [];
           return (
             <li key={item.id} className="finding">
               <div className="finding-head">
@@ -351,8 +409,15 @@ function ChecklistItems({ checklist, refsById }: { checklist: EvidenceChecklist;
                 {item.priority === "key" && <span className="key-tag">Key for this reason</span>}
                 <span className={TIERS[item.tier].className}>{TIERS[item.tier].label}</span>
                 <span className={CHECKLIST_STATUS[item.status].className}>{CHECKLIST_STATUS[item.status].label}</span>
+                {confirmations.length > 0 && <span className="tag tag-confirmed">Merchant-confirmed</span>}
               </div>
               <p className="muted">Why it may matter: {item.why}</p>
+              {!confirm.canConfirm &&
+                confirmations.map((c) => (
+                  <p key={c.account_id} className="muted">
+                    Merchant-confirmed by {c.display_name}, {formatDate(c.confirmed_at)}. DisputeDesk has not seen the record.
+                  </p>
+                ))}
               {item.status !== "available" && (
                 <details className="checklist-guide">
                   <summary>How to fill this gap</summary>
@@ -372,6 +437,20 @@ function ChecklistItems({ checklist, refsById }: { checklist: EvidenceChecklist;
                   </ul>
                   <h4>What DisputeDesk can't see</h4>
                   <p>{item.limits}</p>
+                  {confirm.canConfirm && CONFIRMABLE.includes(item.status) && (
+                    <div className="confirm-gap">
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        aria-pressed={confirmations.length > 0}
+                        aria-disabled={confirm.pending === item.id || undefined}
+                        onClick={() => confirm.onConfirm(item.id, confirmations.length === 0)}
+                      >
+                        I have this in my records
+                      </button>
+                      <p className="muted">{CONFIRM_LIMIT}</p>
+                    </div>
+                  )}
                 </details>
               )}
               {refs.length > 0 && (
@@ -412,7 +491,7 @@ export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: 
     <>
       <ReadinessSummary analysis={analysis} />
       <ClaimAndRecords dispute={dispute} analysis={analysis} />
-      <ChecklistSection dispute={dispute} refsById={refsById} />
+      <ChecklistSection dispute={dispute} refsById={refsById} canConfirm={canDraft} />
 
       <section className="detail-section" id="case-evidence">
         <h3>Evidence analysis</h3>

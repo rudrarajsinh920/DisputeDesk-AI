@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { DEMO_ACCOUNTS, DEMO_DISPUTES } from "./app.ts";
-import { openDatabase } from "./db.ts";
-import { audit, createAccount, findAccountByEmail, getAccount, listAccounts, loadDisputes, seedDemo } from "./store.ts";
+import { DatabaseSync } from "node:sqlite";
+import { MIGRATIONS, migrate, openDatabase, schemaVersion } from "./db.ts";
+import { audit, confirmGap, createAccount, findAccountByEmail, getAccount, listAccounts, listConfirmations, loadDisputes, seedDemo, withdrawGap } from "./store.ts";
 import type { Account } from "./auth.ts";
 
 const HASH = "scrypt$16384$8$1$c2FsdHNhbHRzYWx0c2FsdA==$a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2V5a2U=";
@@ -127,4 +128,70 @@ test("audit entries record who did what, with no free text beyond a short detail
     { at: 5, event: "analysis_viewed", account_id: "merchant-a", dispute_id: "DEMO-1001", detail: null },
     { at: 6, event: "login_failed", account_id: null, dispute_id: null, detail: null },
   ]);
+});
+
+// ---- Stage 2.2b: merchant gap confirmations (migration v4). ----
+
+const events = (db: ReturnType<typeof seeded>) =>
+  (db.prepare("SELECT event, account_id, dispute_id, detail FROM audit_log ORDER BY id").all() as Record<string, unknown>[]).map((r) => ({ ...r }));
+
+test("a confirmation is recorded once with its audit entry, and withdrawing removes it", () => {
+  const db = seeded();
+  assert.equal(confirmGap(db, 10, "merchant-a", "DEMO-1001", "shipping_tracking"), true);
+  assert.equal(confirmGap(db, 20, "merchant-a", "DEMO-1001", "shipping_tracking"), false, "confirming again changes nothing");
+  assert.deepEqual(listConfirmations(db, "DEMO-1001", "merchant-a"), [
+    { item_id: "shipping_tracking", account_id: "merchant-a", display_name: "Demo Merchant A", confirmed_at: new Date(10).toISOString() },
+  ]);
+  assert.equal(withdrawGap(db, 30, "merchant-a", "DEMO-1001", "shipping_tracking"), true);
+  assert.equal(withdrawGap(db, 40, "merchant-a", "DEMO-1001", "shipping_tracking"), false, "nothing left to withdraw");
+  assert.deepEqual(listConfirmations(db, "DEMO-1001", null), []);
+  assert.deepEqual(events(db), [
+    { event: "gap_confirmed", account_id: "merchant-a", dispute_id: "DEMO-1001", detail: "shipping_tracking" },
+    { event: "gap_confirmation_withdrawn", account_id: "merchant-a", dispute_id: "DEMO-1001", detail: "shipping_tracking" },
+  ]);
+});
+
+test("the table holds only IDs and a time, for stored demo disputes, with a plain item ID", () => {
+  const db = seeded();
+  const columns = (db.prepare("PRAGMA table_info(gap_confirmations)").all() as { name: string }[]).map((c) => c.name);
+  assert.deepEqual(columns, ["account_id", "dispute_id", "item_id", "confirmed_at"]);
+  const insert = (dispute: string, item: string) =>
+    db.prepare("INSERT INTO gap_confirmations (account_id, dispute_id, item_id, confirmed_at) VALUES ('merchant-a', ?, ?, 1)").run(dispute, item);
+  assert.throws(() => insert("PP-D-1", "shipping_tracking"), /FOREIGN KEY/, "sandbox disputes are never stored, so they can't be confirmed");
+  for (const bad of ["", "Shipping", "drop table; --", "x".repeat(41)]) assert.throws(() => insert("DEMO-1001", bad), /constraint/, bad);
+});
+
+test("confirmations survive a restart and go with their dispute or account; only accounts with access are listed", () => {
+  const db = seeded();
+  confirmGap(db, 10, "merchant-a", "DEMO-1001", "shipping_tracking");
+  confirmGap(db, 10, "merchant-d", "DEMO-3001", "customer_communication");
+  seedDemo(db, DEMO_ACCOUNTS, DEMO_DISPUTES, 2);
+  assert.equal(listConfirmations(db, "DEMO-1001", null).length, 1, "kept across a restart");
+  assert.deepEqual(listConfirmations(db, "DEMO-1001", "merchant-b"), [], "one account never sees another's");
+
+  // Merchant A loses access to DEMO-1001: the row stays, but is not listed.
+  const lessAccess = DEMO_ACCOUNTS.map((a) => (a.id === "merchant-a" ? { ...a, dispute_ids: ["DEMO-1002"] } : a));
+  seedDemo(db, lessAccess, DEMO_DISPUTES, 3);
+  assert.deepEqual(listConfirmations(db, "DEMO-1001", null), []);
+
+  // DEMO-3001 leaves the demo files: its confirmation goes with it.
+  const without = DEMO_DISPUTES.filter((d) => d.dispute_id !== "DEMO-3001");
+  const accounts = DEMO_ACCOUNTS.map((a) => ({ ...a, dispute_ids: a.dispute_ids.filter((id) => id !== "DEMO-3001") }));
+  seedDemo(db, accounts, without, 4);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM gap_confirmations WHERE dispute_id = 'DEMO-3001'").get()!.n, 0);
+});
+
+test("upgrading a version 3 database adds the confirmation table and events and keeps every audit entry", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec("PRAGMA foreign_keys = ON");
+  migrate(db, MIGRATIONS.slice(0, 3));
+  db.prepare("INSERT INTO audit_log (at, event, account_id, dispute_id, detail) VALUES (1, 'intelligence_viewed', 'merchant-c', NULL, 'account, 14 demo disputes')").run();
+  const before = db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r }));
+  assert.throws(() => db.prepare("INSERT INTO audit_log (at, event) VALUES (2, 'gap_confirmed')").run(), /constraint/);
+  migrate(db);
+  assert.equal(schemaVersion(db), 4);
+  assert.deepEqual(db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r })), before, "entries copied unchanged");
+  for (const event of ["gap_confirmed", "gap_confirmation_withdrawn"]) db.prepare("INSERT INTO audit_log (at, event) VALUES (2, ?)").run(event);
+  assert.throws(() => db.prepare("DELETE FROM audit_log").run(), /append-only/);
+  assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE name = 'gap_confirmations'").get());
 });

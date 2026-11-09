@@ -185,7 +185,23 @@ export interface EvidenceChecklist {
   reason_known: boolean;
   items: ChecklistItem[];
   notes: string[];
+  // Added by the server route, not by buildChecklist. A merchant sees only their own; admin sees every account's.
+  // A confirmation never changes an item's status or any count: DisputeDesk has not seen the record it refers to.
+  confirmations?: GapConfirmation[];
 }
+
+// A merchant's statement that they hold a record for a gap (Stage 2.2b). IDs and a time only, never free text.
+export interface GapConfirmation {
+  item_id: string;
+  account_id: string;
+  display_name: string;
+  // ISO 8601, UTC.
+  confirmed_at: string;
+}
+
+// Only these statuses can be confirmed. Available items need no confirmation; conflicting records are resolved
+// at their source; not-applicable items are not gaps.
+export const CONFIRMABLE: readonly ChecklistStatus[] = ["missing", "needs_confirmation"];
 
 // AI-assisted explanations and draft (server/src/assist.ts). The rule-based Analysis stays authoritative.
 // A supplied record value the model may cite by id (R1, R2…).

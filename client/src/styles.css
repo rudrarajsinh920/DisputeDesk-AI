@@ -1174,6 +1174,27 @@ details summary {
   margin-top: 12px;
 }
 
+/* Merchant-confirmed (Stage 2.2b): an outline tag, so it never reads as a system status badge. */
+.tag-confirmed {
+  background: transparent;
+  color: var(--text);
+  border-color: currentColor;
+  border-style: dashed;
+}
+
+.confirm-gap {
+  margin-top: 12px;
+}
+
+.confirm-gap p {
+  margin: 6px 0 0;
+}
+
+/* Pressed shows a check mark as well as a colour change. The busy spinner keeps its own ::before. */
+.confirm-gap .button[aria-pressed="true"]:not([aria-disabled="true"])::before {
+  content: "\2713";
+}
+
 .draft-sources ul {
   display: grid;
   gap: 8px;

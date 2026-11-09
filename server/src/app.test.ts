@@ -20,7 +20,7 @@ import {
 } from "./auth.ts";
 import { AI_OFF_BAD_MODEL, AI_OFF_NO_KEY } from "./config.ts";
 import { openDatabase } from "./db.ts";
-import { analyzeDispute } from "./evidence.ts";
+import { NOT_PROOF, analyzeDispute } from "./evidence.ts";
 import { createGeminiClient } from "./gemini.ts";
 import { createPayPalClient, normalizeDetails } from "./paypal.ts";
 import { buildProvenance } from "./provenance.ts";
@@ -837,6 +837,7 @@ const PROTECTED: [string, string][] = [
   ["POST", "/api/analysis/ai/example"],
   ["POST", "/api/analysis/check"],
   ["POST", "/api/analysis/checklist"],
+  ["POST", "/api/analysis/checklist/confirm"],
   ["GET", "/api/health"],
   ["GET", "/api/intelligence"],
   ["POST", "/api/intelligence/explain"],
@@ -899,6 +900,7 @@ test("each route allows exactly the intended roles", async () => {
     ["sandbox analysis", "/api/analysis", lookup("paypal_sandbox", "PP-D-1"), [200, 200, 403, 403, 403]],
     ["evidence checklist of DEMO-1001", "/api/analysis/checklist", body("DEMO-1001"), [200, 200, 404, 403, 403]],
     ["sandbox evidence checklist", "/api/analysis/checklist", lookup("paypal_sandbox", "PP-D-1"), [200, 200, 403, 403, 403]],
+    ["gap confirmation on DEMO-1001 (admin is read-only)", "/api/analysis/checklist/confirm", lookup("demo", "DEMO-1001", { item_id: "shipping_tracking", confirmed: true }), [403, 200, 404, 403, 403]],
     ["health", "/api/health", undefined, [200, 200, 200, 403, 403]],
     ["insights", "/api/intelligence", undefined, [200, 200, 200, 403, 403]],
     ["insights explanation (admin is read-only)", "/api/intelligence/explain", { method: "POST" }, [403, 200, 200, 403, 403]],
@@ -1762,7 +1764,8 @@ test("the checklist route returns the checklist built from the rules for every d
   for (const d of DEMO_DISPUTES) {
     const res = await get(app, "/api/analysis/checklist", lookup("demo", d.dispute_id), "admin");
     assert.equal(res.status, 200, d.dispute_id);
-    assert.deepEqual(res.body, buildChecklist(d, analyzeDispute(d)), d.dispute_id);
+    // The 2.1 checklist is unchanged; 2.2b only adds the confirmations key (none here).
+    assert.deepEqual(res.body, { ...buildChecklist(d, analyzeDispute(d)), confirmations: [] }, d.dispute_id);
   }
   const rows = db.prepare("SELECT event FROM audit_log").all() as { event: string }[];
   assert.ok(!rows.some((r) => r.event.includes("checklist")), "the checklist is not audited");
@@ -1793,4 +1796,120 @@ test("checklist data reaches no other response and is never sent to Gemini", asy
   }
   assert.ok(ai.calls.length > 0);
   for (const call of ai.calls) for (const key of CHECKLIST_KEYS) assert.ok(!call.body.includes(key), `Gemini was sent "${key}"`);
+});
+
+// ---- Stage 2.2b: merchant gap confirmations ----
+
+const confirm = (dispute_id: string, item_id: unknown, confirmed: unknown = true, source = "demo") => lookup(source, dispute_id, { item_id, confirmed });
+const ownerOf = (id: string) => DEMO_ACCOUNTS.find((a) => a.role === "merchant" && a.dispute_ids.includes(id))!.id;
+const gapsOf = (d: Dispute) => buildChecklist(d, analyzeDispute(d)).items.filter((i) => i.status === "missing" || i.status === "needs_confirmation");
+
+test("confirming every gap on every demo record changes no status, count, draft, claim or other checklist field", async () => {
+  const db = openDatabase(":memory:");
+  const app = appOn(db);
+  for (const d of DEMO_DISPUTES) {
+    const owner = ownerOf(d.dispute_id);
+    const analysisBefore = (await get(app, "/api/analysis", lookup("demo", d.dispute_id), owner)).body;
+    const checklistBefore = (await get(app, "/api/analysis/checklist", lookup("demo", d.dispute_id), owner)).body;
+    const draftCheck = lookup("demo", d.dispute_id, { text: analysisBefore.draft.text });
+    const claimsBefore = (await get(app, "/api/analysis/check", draftCheck, owner)).body;
+    const gaps = gapsOf(d);
+    for (const item of gaps) {
+      const res = await get(app, "/api/analysis/checklist/confirm", confirm(d.dispute_id, item.id), owner);
+      assert.equal(res.status, 200, `${d.dispute_id} ${item.id}`);
+    }
+    const after = (await get(app, "/api/analysis/checklist", lookup("demo", d.dispute_id), owner)).body;
+    assert.deepEqual({ ...after, confirmations: [] }, checklistBefore, `${d.dispute_id}: items, statuses and notes unchanged`);
+    assert.deepEqual(after.confirmations.map((c: { item_id: string }) => c.item_id).sort(), gaps.map((i) => i.id).sort(), d.dispute_id);
+    for (const item of after.items.filter((i: { status: string }) => i.status === "missing")) {
+      assert.ok(item.limits.endsWith(NOT_PROOF), `${d.dispute_id} ${item.id}: still says missing is not proof`);
+    }
+    assert.deepEqual((await get(app, "/api/analysis", lookup("demo", d.dispute_id), owner)).body, analysisBefore, `${d.dispute_id}: analysis, readiness and draft`);
+    assert.deepEqual((await get(app, "/api/analysis/check", draftCheck, owner)).body, claimsBefore, `${d.dispute_id}: claim check`);
+  }
+});
+
+test("only gaps can be confirmed; bad input is refused; sandbox disputes never reach PayPal", async () => {
+  const paypal = mockPayPal();
+  const db = openDatabase(":memory:");
+  const app = createApp(paypal.client, null, undefined, { accounts: TEST_ACCOUNTS, db });
+  const conflicting = await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1002", "proof_of_delivery"));
+  assert.equal(conflicting.status, 409, "conflicting records are resolved at their source");
+  assert.equal(conflicting.body.error.code, "not_confirmable");
+  assert.equal((await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1002", "order_confirmation"))).status, 409, "available");
+  assert.equal((await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-2014", "shipping_tracking"), "merchant-c")).status, 409, "not applicable");
+  assert.equal((await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1001", "made_up"))).status, 409, "not on the checklist");
+  const bad: [unknown, unknown][] = [["Shipping", true], ["drop table; --", true], [42, true], ["shipping_tracking", "yes"], ["shipping_tracking", null]];
+  for (const [item, value] of bad) {
+    assert.equal((await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1001", item, value))).status, 400, `${String(item)} ${String(value)}`);
+  }
+  const sandbox = await get(app, "/api/analysis/checklist/confirm", confirm("PP-D-1", "shipping_tracking", true, "paypal_sandbox"));
+  assert.equal(sandbox.status, 409);
+  assert.equal(paypal.calls.length, 0, "a sandbox confirmation never calls PayPal");
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM gap_confirmations").get()!.n, 0, "nothing was written");
+});
+
+test("confirming twice is one row and one event; withdraw and confirm again add one event each", async () => {
+  let t = 1_000;
+  const db = openDatabase(":memory:");
+  const app = createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, db, now: () => t });
+  const first = await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1001", "shipping_tracking"));
+  t += 5_000;
+  const again = await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1001", "shipping_tracking"));
+  assert.deepEqual(again.body.confirmations, first.body.confirmations, "same confirmed_at");
+  assert.deepEqual(first.body.confirmations, [
+    { item_id: "shipping_tracking", account_id: "merchant-a", display_name: "Demo Merchant A", confirmed_at: new Date(1_000).toISOString() },
+  ]);
+  assert.deepEqual((await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1001", "shipping_tracking", false))).body.confirmations, []);
+  assert.equal((await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1001", "shipping_tracking", false))).status, 200, "withdrawing nothing is fine");
+  await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1001", "shipping_tracking"));
+  const gapEvents = (db.prepare("SELECT event, detail FROM audit_log WHERE event LIKE 'gap_%' ORDER BY id").all() as Record<string, unknown>[]).map((r) => ({ ...r }));
+  assert.deepEqual(gapEvents, [
+    { event: "gap_confirmed", detail: "shipping_tracking" },
+    { event: "gap_confirmation_withdrawn", detail: "shipping_tracking" },
+    { event: "gap_confirmed", detail: "shipping_tracking" },
+  ]);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM gap_confirmations").get()!.n, 1);
+});
+
+test("a confirmation stays with its account: other merchants get 404, buyers, insights and Gemini never see it", async () => {
+  const ai = mockAi();
+  const db = openDatabase(":memory:");
+  const app = createApp(null, ai.client, undefined, { accounts: TEST_ACCOUNTS, db });
+  assert.equal((await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1001", "shipping_tracking"), "merchant-a")).status, 200);
+
+  const other = await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1001", "proof_of_delivery"), "merchant-b");
+  const missing = await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-9999", "proof_of_delivery"), "merchant-b");
+  assert.equal(other.status, 404);
+  assert.equal(other.text, missing.text, "another account's dispute looks exactly like a missing one");
+  assert.ok(db.prepare("SELECT 1 FROM audit_log WHERE event = 'dispute_access_denied' AND account_id = 'merchant-b' AND dispute_id = 'DEMO-1001'").get());
+
+  const admin = await get(app, "/api/analysis/checklist", lookup("demo", "DEMO-1001"), "admin");
+  assert.deepEqual(admin.body.confirmations.map((c: { display_name: string }) => c.display_name), ["Demo Merchant A"], "admin reads it");
+  const seen = [
+    await get(app, "/api/disputes", {}, "merchant-a"),
+    await get(app, "/api/disputes", {}, "admin"),
+    await get(app, "/api/intelligence", {}, "merchant-a"),
+    await get(app, "/api/intelligence", {}, "admin"),
+    await get(app, "/api/analysis", lookup("demo", "DEMO-1001"), "merchant-a"),
+    await get(app, "/api/buyer/disputes", {}, "buyer-a"),
+    await get(app, "/api/buyer/explain", lookup("demo", "DEMO-1001"), "buyer-a"),
+    await get(app, "/api/analysis/ai", lookup("demo", "DEMO-1001"), "merchant-a"),
+    await get(app, "/api/analysis/checklist", lookup("demo", "DEMO-1003"), "merchant-b"),
+  ];
+  for (const res of seen) assert.doesNotMatch(res.text, /confirmed_at|gap_confirm|"confirmations":\[\{/, res.text.slice(0, 80));
+  assert.ok(ai.calls.length > 0);
+  for (const call of ai.calls) assert.doesNotMatch(call.body, /gap_confirm|confirmed_at|confirmations|Merchant-confirmed/i, "Gemini is never told about confirmations");
+});
+
+test("a confirmation on an item that is no longer a gap is kept but not shown", async () => {
+  const db = openDatabase(":memory:");
+  const app = appOn(db);
+  // As if DEMO-1003's order confirmation had been a gap when Merchant B confirmed it; it is on record now.
+  db.prepare("INSERT INTO gap_confirmations (account_id, dispute_id, item_id, confirmed_at) VALUES ('merchant-b', 'DEMO-1003', 'order_confirmation', 1)").run();
+  const res = await get(app, "/api/analysis/checklist", lookup("demo", "DEMO-1003"), "merchant-b");
+  assert.deepEqual(res.body.confirmations, []);
+  const withdraw = await get(app, "/api/analysis/checklist/confirm", confirm("DEMO-1003", "order_confirmation", false), "merchant-b");
+  assert.equal(withdraw.status, 200, "it can still be withdrawn");
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM gap_confirmations").get()!.n, 0);
 });

@@ -27,7 +27,9 @@ const V1_AUDIT_EVENTS = [
 const V2_AUDIT_EVENTS = [...V1_AUDIT_EVENTS, "buyer_explanation_generated"] as const;
 // Version 3's list, frozen with that migration. A new event needs a new migration and a new list.
 const V3_AUDIT_EVENTS = [...V2_AUDIT_EVENTS, "intelligence_viewed", "intelligence_explanation_generated"] as const;
-export const AUDIT_EVENTS = V3_AUDIT_EVENTS;
+// Version 4's list, frozen with that migration.
+const V4_AUDIT_EVENTS = [...V3_AUDIT_EVENTS, "gap_confirmed", "gap_confirmation_withdrawn"] as const;
+export const AUDIT_EVENTS = V4_AUDIT_EVENTS;
 
 // SQLite can't change a CHECK constraint, so a longer event list means copying the audit log into a new table.
 // Rows keep their ids; the indexes and append-only triggers are recreated on the new table.
@@ -156,6 +158,24 @@ export const MIGRATIONS: Migration[] = [
     version: 3,
     name: "insights audit events",
     sql: rebuildAuditLog(V3_AUDIT_EVENTS),
+  },
+  {
+    version: 4,
+    name: "merchant gap confirmations; their audit events",
+    // A merchant's statement that they hold a record for a checklist gap. IDs and a time only: no note, file or value.
+    // Demo disputes only, through the disputes foreign key (sandbox disputes are never stored). Removing a dispute or
+    // an account from the demo files removes its confirmations; restarts keep them (seedDemo upserts disputes).
+    sql: `
+      CREATE TABLE gap_confirmations (
+        account_id TEXT NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+        dispute_id TEXT NOT NULL REFERENCES disputes (dispute_id) ON DELETE CASCADE,
+        item_id TEXT NOT NULL CHECK (length(item_id) BETWEEN 1 AND 40 AND item_id NOT GLOB '*[^a-z_]*'),
+        confirmed_at INTEGER NOT NULL,
+        PRIMARY KEY (account_id, dispute_id, item_id)
+      ) STRICT, WITHOUT ROWID;
+      CREATE INDEX idx_gap_confirmations_dispute ON gap_confirmations (dispute_id);
+      ${rebuildAuditLog(V4_AUDIT_EVENTS)}
+    `,
   },
 ];
 

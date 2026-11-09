@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { Dispute } from "../../shared/types.ts";
+import type { Dispute, GapConfirmation } from "../../shared/types.ts";
 import type { Account } from "./auth.ts";
 import { transaction } from "./db.ts";
 import type { AUDIT_EVENTS } from "./db.ts";
@@ -147,7 +147,52 @@ export function audit(
   db.prepare("INSERT INTO audit_log (at, event, account_id, dispute_id, detail) VALUES (?, ?, ?, ?, ?)").run(at, event, account_id, dispute_id, detail);
 }
 
-export type AuditEntry = { id: number; at: number; event: AuditEvent; account_id: string | null; dispute_id: string | null; detail: string | null };
+// ---- Merchant gap confirmations (migration v4). IDs and a time only. ----
+
+// One dispute's confirmations, from accounts that still have access to it. onlyAccount limits them to one account
+// (a merchant sees only their own); null returns every account's (admin).
+export function listConfirmations(db: DatabaseSync, disputeId: string, onlyAccount: string | null): GapConfirmation[] {
+  const rows = db
+    .prepare(
+      `SELECT c.item_id, c.account_id, a.display_name, c.confirmed_at FROM gap_confirmations c
+       JOIN accounts a ON a.id = c.account_id
+       JOIN dispute_access x ON x.account_id = c.account_id AND x.dispute_id = c.dispute_id
+       WHERE c.dispute_id = ? AND (? IS NULL OR c.account_id = ?)
+       ORDER BY c.confirmed_at, c.item_id, c.account_id`,
+    )
+    .all(disputeId, onlyAccount, onlyAccount) as Row[];
+  return rows.map((r) => ({
+    item_id: r.item_id as string,
+    account_id: r.account_id as string,
+    display_name: r.display_name as string,
+    confirmed_at: new Date(r.confirmed_at as number).toISOString(),
+  }));
+}
+
+// Records the confirmation and its audit entry together. Confirming again changes nothing and is not audited.
+// Returns whether anything changed.
+export function confirmGap(db: DatabaseSync, at: number, accountId: string, disputeId: string, itemId: string): boolean {
+  return transaction(db, () => {
+    const { changes } = db
+      .prepare("INSERT INTO gap_confirmations (account_id, dispute_id, item_id, confirmed_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")
+      .run(accountId, disputeId, itemId, at);
+    if (changes > 0) audit(db, at, "gap_confirmed", { account_id: accountId, dispute_id: disputeId, detail: itemId });
+    return changes > 0;
+  });
+}
+
+// Deletes the account's own confirmation and audits it. Withdrawing one that doesn't exist changes nothing.
+export function withdrawGap(db: DatabaseSync, at: number, accountId: string, disputeId: string, itemId: string): boolean {
+  return transaction(db, () => {
+    const { changes } = db
+      .prepare("DELETE FROM gap_confirmations WHERE account_id = ? AND dispute_id = ? AND item_id = ?")
+      .run(accountId, disputeId, itemId);
+    if (changes > 0) audit(db, at, "gap_confirmation_withdrawn", { account_id: accountId, dispute_id: disputeId, detail: itemId });
+    return changes > 0;
+  });
+}
+
+export type AuditEntry ={ id: number; at: number; event: AuditEvent; account_id: string | null; dispute_id: string | null; detail: string | null };
 
 // Newest first. Entries never hold secrets (see `audit`), so admin may read them as they are.
 export function listAudit(db: DatabaseSync, limit = 200): AuditEntry[] {

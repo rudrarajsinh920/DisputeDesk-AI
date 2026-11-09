@@ -148,7 +148,8 @@ test("upgrading a version 2 database adds the insights audit events and keeps ev
   const before = db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r }));
   assert.throws(() => db.prepare("INSERT INTO audit_log (at, event) VALUES (2, 'intelligence_viewed')").run(), /constraint/);
 
-  migrate(db);
+  // Up to version 3 only: this test is about that migration. Version 4 has its own test.
+  migrate(db, MIGRATIONS.slice(0, 3));
   assert.equal(schemaVersion(db), 3);
   assert.deepEqual(db.prepare("SELECT * FROM audit_log ORDER BY id").all().map((r) => ({ ...r })), before, "entries copied unchanged");
   for (const event of ["intelligence_viewed", "intelligence_explanation_generated"]) db.prepare("INSERT INTO audit_log (at, event) VALUES (2, ?)").run(event);

@@ -12,9 +12,9 @@ import { buildChecklist } from "../../server/src/checklist.ts";
 import { analyzeDispute } from "../../server/src/evidence.ts";
 import { VALIDATION_EXAMPLE_MODEL, validationExampleAnswer } from "../../server/src/assist.ts";
 import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
-import { AiResult, AiSectionView, AnalysisView, CheckResult, ChecklistView, ClaimAndRecords, DISCARD_EDITS, DraftEditor, ReadinessSummary, ValidationExampleView } from "./AnalysisPanel.tsx";
+import { AiResult, AiSectionView, AnalysisView, CONFIRM_LIMIT, CheckResult, ChecklistView, ClaimAndRecords, DISCARD_EDITS, DraftEditor, ReadinessSummary, ValidationExampleView } from "./AnalysisPanel.tsx";
 import { readiness } from "./analysis.ts";
-import type { AiState, ExampleState } from "./AnalysisPanel.tsx";
+import type { AiState, ConfirmState, ExampleState } from "./AnalysisPanel.tsx";
 import { AccountView } from "./Account.tsx";
 import { AdminAccounts, AdminAudit, AdminOverview, AdminSettings, AdminSystem, ownerNames } from "./Admin.tsx";
 import type { AdminAccount, AuditEntry, Health, Settings } from "./Admin.tsx";
@@ -725,8 +725,8 @@ test("the client calls only DisputeDesk's own read and analysis endpoints", () =
     .map((f) => readFileSync(new URL(f, dir), "utf8"))
     .join("\n");
   const urls = [...new Set([...sources.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(urls, ["/api/admin/accounts", "/api/admin/audit", "/api/admin/settings", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/analysis/check", "/api/analysis/checklist", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
-  assert.equal((sources.match(/fetch\(/g) ?? []).length, 16, "each fetch call uses one of the endpoints above");
+  assert.deepEqual(urls, ["/api/admin/accounts", "/api/admin/audit", "/api/admin/settings", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/analysis/check", "/api/analysis/checklist", "/api/analysis/checklist/confirm", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
+  assert.equal((sources.match(/fetch\(/g) ?? []).length, 17, "each fetch call uses one of the endpoints above");
   assert.doesNotMatch(sources, /paypal\.com|generativelanguage|method:\s*"(PUT|PATCH|DELETE)"/i);
 });
 
@@ -1048,7 +1048,7 @@ test("the overview line counts gaps, records and conflicts, with no score or com
   const n = (...s: string[]) => applicable.filter((i) => s.includes(i.status)).length;
   const out = text(checklistHtml(conflict));
   assert.ok(
-    out.includes(`Needs attention: ${n("missing", "needs_confirmation")} · Record available: ${n("available")} · Conflicting: ${n("conflicting")}`),
+    out.includes(`Needs attention: ${n("missing", "needs_confirmation")} · Merchant-confirmed: 0 · Record available: ${n("available")} · Conflicting: ${n("conflicting")}`),
     out,
   );
   assert.ok(n("conflicting") > 0);
@@ -1087,4 +1087,55 @@ test("the analysis view places the checklist between claim and records and the e
   const out = html(createElement(AnalysisView, { dispute: demo, analysis: withProvenance(demo, analyzeDispute(demo)) }));
   const at = (id: string) => out.indexOf(`id="${id}"`);
   assert.ok(at("case-sides") < at("case-checklist") && at("case-checklist") < at("case-evidence"));
+});
+
+// ---- Stage 2.2b: merchant gap confirmations ----
+
+const gapDispute = demoDisputes.find((d) => d.dispute_id === "DEMO-1001")!;
+const confirmedOn = (d: Dispute, itemIds: string[], name = "Demo Merchant A") => {
+  const { checklist, refsById } = checklistOf(d);
+  const confirmations = itemIds.map((item_id) => ({ item_id, account_id: "merchant-a", display_name: name, confirmed_at: "2026-11-09T10:00:00.000Z" }));
+  return { checklist: { ...checklist, confirmations }, refsById };
+};
+const confirmView = (d: Dispute, itemIds: string[], state: Partial<ConfirmState>) => {
+  const { checklist, refsById } = confirmedOn(d, itemIds);
+  const confirm: ConfirmState = { canConfirm: true, pending: null, announce: "", error: null, onConfirm: noop, ...state };
+  return html(createElement(ChecklistView, { load: { status: "ready", checklist }, refsById, onRetry: noop, confirm }));
+};
+
+test("a merchant can confirm only gaps; the status badge stays and the limit sentence is always shown", () => {
+  const { checklist } = checklistOf(gapDispute);
+  const gaps = checklist.items.filter((i) => i.status === "missing" || i.status === "needs_confirmation");
+  assert.ok(gaps.length >= 2, "DEMO-1001 has gaps to confirm");
+  const out = confirmView(gapDispute, [gaps[0].id], {});
+  const buttons = [...out.matchAll(/<button[^>]*aria-pressed="(true|false)"[^>]*>([^<]*)<\/button>/g)];
+  assert.equal(buttons.length, gaps.length, "one button per gap, none on available or not-applicable items");
+  assert.deepEqual(buttons.map((b) => b[2]), gaps.map(() => "I have this in my records"), "the label stays the same; aria-pressed carries the state");
+  assert.deepEqual(buttons.map((b) => b[1]), gaps.map((g, i) => String(i === 0)));
+  assert.equal(text(out).split(CONFIRM_LIMIT).length - 1, gaps.length, "the limit sentence sits next to every button");
+  const row = text(out).slice(text(out).indexOf(gaps[0].label));
+  assert.match(row, /^[^·]*?(Missing from records|Not shown by records) Merchant-confirmed/, "the system status is still shown, then the confirmation");
+  assert.match(text(out), new RegExp(`Needs attention: ${gaps.length - 1} · Merchant-confirmed: 1 ·`));
+  assert.match(out, /role="status" aria-live="polite"/);
+});
+
+test("conflicting records can't be confirmed; admin reads who confirmed and when, with no button", () => {
+  const conflict = demoDisputes.find((d) => d.dispute_id === "DEMO-1002")!;
+  assert.doesNotMatch(confirmView(conflict, [], {}), /aria-pressed/, "DEMO-1002 has only available and conflicting items");
+
+  const { checklist, refsById } = confirmedOn(gapDispute, ["shipping_tracking"]);
+  const admin = text(html(createElement(ChecklistView, { load: { status: "ready", checklist }, refsById, onRetry: noop })));
+  assert.match(admin, /Merchant-confirmed by Demo Merchant A, Nov 9, 2026\. DisputeDesk has not seen the record\./);
+  assert.doesNotMatch(html(createElement(ChecklistView, { load: { status: "ready", checklist }, refsById, onRetry: noop })), /<button[^>]*aria-pressed/);
+});
+
+test("a confirmation on an item that is no longer a gap shows nothing; busy and error states are plain", () => {
+  const complete = demoDisputes.find((d) => d.dispute_id === "DEMO-1003")!;
+  const stale = text(confirmView(complete, ["order_confirmation"], {}));
+  assert.doesNotMatch(stale, /Merchant-confirmed by|Merchant-confirmed: [1-9]/);
+  const busy = confirmView(gapDispute, [], { pending: "shipping_tracking" });
+  assert.match(busy, /aria-disabled="true"/, "the busy button stays focusable");
+  const failed = text(confirmView(gapDispute, [], { error: "Couldn't save that. Server unavailable." }));
+  assert.match(failed, /Couldn't save that\. Server unavailable\./);
+  for (const d of demoDisputes) assert.doesNotMatch(text(confirmView(d, [], {})), /verified by you|proves|resolved|\bcomplete\b/i, d.dispute_id);
 });

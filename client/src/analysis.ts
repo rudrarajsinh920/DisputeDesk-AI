@@ -85,6 +85,29 @@ export async function fetchChecklist(dispute: Pick<Dispute, "source" | "dispute_
   return checklist;
 }
 
+// Records or withdraws the signed-in merchant's statement that they hold a record for a gap. Sends IDs only; the
+// server checks the item is a gap, stores who and when, and answers with the updated checklist.
+export async function fetchConfirm(
+  dispute: Pick<Dispute, "source" | "dispute_id">,
+  itemId: string,
+  confirmed: boolean,
+  signal?: AbortSignal,
+): Promise<EvidenceChecklist> {
+  const response = await fetch("/api/analysis/checklist/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source: dispute.source, dispute_id: dispute.dispute_id, item_id: itemId, confirmed }),
+    signal,
+  });
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw serverError(response, body);
+  const checklist = body as EvidenceChecklist | null;
+  if (checklist?.dispute_id !== dispute.dispute_id || !Array.isArray(checklist.items) || !Array.isArray(checklist.confirmations)) {
+    throw new Error("The DisputeDesk server sent an unexpected checklist.");
+  }
+  return checklist;
+}
+
 export { MAX_CHECK_TEXT, countMarkers, readiness } from "../../shared/readiness.ts";
 export type { Readiness } from "../../shared/readiness.ts";
 
