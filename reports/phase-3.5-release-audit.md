@@ -3,8 +3,8 @@
 **Date:** 2026-11-10
 **Base:** `master` at `d3db9f7`, 8 commits ahead of `origin/master`, not pushed.
 **Verdict:** **PASS WITH CONDITIONS.** No critical, high or medium finding is open. The project is **not release-ready**:
-the demo video does not exist yet (release blocker), and the saved file name of a download has not been checked in
-Chrome, Edge or Firefox.
+the demo video does not exist yet (release blocker). The saved file name of a download, open at the time of the audit
+(C2), was later checked by hand in Chrome and passed (§11).
 
 Nothing was committed, pushed or deployed. The real database and both backups were never opened (SHA-256 identical
 before and after). PayPal and Gemini were not called. No dependency was added.
@@ -60,7 +60,7 @@ The scratch server ran on a file copy of the real database (it migrated v4 → v
 | Show text | Pages 1 and 2 shown as written, with the untrusted-text label |
 | Link to Shipping tracking | "Linked to: Shipping tracking (not verified)"; checklist row tag "Document attached, not verified"; "Needs attention: 2 (0 merchant-confirmed, 1 with a document attached)"; readiness still "Key evidence 0 of 2" |
 | Unlink | Tag and count suffix gone |
-| **Download button clicked** | `POST /api/documents/download` 200. The file was saved to the Downloads folder: 981 bytes, SHA-256 `bb9f604d…09e5`, identical to the upload. The page did not open or show it; "… handed to your browser's downloads." was announced. **The built-in browser saved it as `38af6b9b-…-94864179c001.tmp`, not under the file's name**, so the saved name is unverified (condition C2). |
+| **Download button clicked** | `POST /api/documents/download` 200. The file was saved to the Downloads folder: 981 bytes, SHA-256 `bb9f604d…09e5`, identical to the upload. The page did not open or show it; "… handed to your browser's downloads." was announced. **The built-in browser saved it as `38af6b9b-…-94864179c001.tmp`, not under the file's name**, so the saved name was unverified at the time (condition C2; closed later in Chrome, §11). |
 | Delete | List and checklist both updated; focus stays in the section (the delete confirmation was accepted by the test) |
 | Malformed PDF | "DisputeDesk couldn't read text from this file."; the server kept running |
 | Buyer A | No document information on screen; every document route and the checklist answer 403 |
@@ -78,7 +78,7 @@ The scratch server ran on a file copy of the real database (it migrated v4 → v
 | D1 | Medium (docs) | README said DisputeDesk does not read document text and that files can't be downloaded or linked; the audit-log list and limits left out Stages 3.3–3.4; no extraction limits were documented. Devpost said "316 automated tests" and said nothing of text, links or downloads. | Fixed (§6) |
 | U1 | Low (accessibility) | "Link to checklist gaps" toggle 21 px tall at every width, below the 24 px minimum target. Root cause: no padding on the `summary`. | Fixed: `padding: 12px 0` (`styles.css`), measured 45 px; regression test added |
 | C1 | Release blocker | No demo video: the Devpost link is still "(YouTube link here)". | Open: needs the video |
-| C2 | Low (verification gap) | The real Download click saved exact bytes, but the built-in browser named the file with a random `.tmp` name, so the `download` attribute's file name was not observed in a standard browser. | Open: check once in Chrome |
+| C2 | Low (verification gap) | The real Download click saved exact bytes, but the built-in browser named the file with a random `.tmp` name, so the `download` attribute's file name was not observed in a standard browser. | **PASS, closed** (2026-11-10): manual Chrome check saved `DisputeDesk-Chrome-Download-Test.pdf`, 981 bytes, SHA-256 identical to the upload (§11) |
 | I1 | Info | The real database is at version 4; the next server start migrates it to 6. Migrating copies of both backups (v3 and v4) to 6 kept all 602 audit rows with integrity ok. | Back up before the next start |
 | I2 | Info | Memory pdfjs uses outside the JavaScript heap has no operating-system cap (a hostile PDF can use a lot of memory for up to 10 s); the child-process cleanup is tested on Windows only. | Documented in README Limits |
 | I3 | Info | Files are stored unencrypted in SQLite and not virus-scanned. | Documented |
@@ -135,7 +135,7 @@ production-grade security or encryption at rest is claimed. Demo and PayPal sand
 | 1 | Critical and high findings resolved | None found |
 | 2 | No open medium affecting privacy, security, evidence or data | Met |
 | 3 | Merchant, buyer and admin workflows pass | Met (browser and tests) |
-| 4 | Actual download verified in a browser | Met for the bytes; the saved name is open (C2) |
+| 4 | Actual download verified in a browser | Met: bytes in the audit; saved name in the later Chrome check (C2 closed, §11) |
 | 5 | Document content isolated from Gemini and evidence | Met |
 | 6 | Tests, typechecks and build pass | Met |
 | 7 | README and Devpost match the implementation | Met, except the missing video link |
@@ -145,6 +145,26 @@ production-grade security or encryption at rest is claimed. Demo and PayPal sand
 ## 10. Needs manual approval or action
 
 1. Record the demo video and replace "(YouTube link here)" in `reports/devpost-description.md` (release blocker).
-2. Download a file once in Chrome and check its saved name (C2).
+2. ~~Download a file once in Chrome and check its saved name (C2).~~ Done 2026-11-10, passed (§11).
 3. Back up `server/data/disputedesk.sqlite` before the next server start, which migrates it from version 4 to 6.
 4. Commit this stage's changes, and push when ready.
+
+## 11. Addendum (2026-11-10): Chrome download check, C2 closed
+
+The audit above left C2 open: the built-in browser saved the download under a random `.tmp` name, so the file name
+set by the page was never observed. A manual check in Chrome closed that gap afterwards.
+
+| Item | Result |
+|------|--------|
+| Browser | Google Chrome 156.0.8078.80, Windows 11 |
+| Setup | Scratch copy of the database, outbound calls blocked, Demo Merchant A, DEMO-1001, synthetic 2-page PDF; the real database and backups unchanged (SHA-256 before and after) |
+| Intended file name | `DisputeDesk-Chrome-Download-Test.pdf` |
+| Saved file name | `DisputeDesk-Chrome-Download-Test.pdf` in the Downloads folder; no duplicate such as `(1)` |
+| Size | 981 bytes, same as the upload |
+| SHA-256 | `bb9f604d8a509de41bd1fe568f52215f5c27cd34404412b1d00dc851970009e5`, same as the upload |
+| Byte comparison (`cmp`) | Identical |
+| Opened automatically | No. The page did not show or run the file; the tester opened the saved file afterwards from Chrome's downloads. |
+| Result | **PASS.** C2 closed. |
+
+Not covered: Edge and Firefox were not tested. The README Limits line on the unchecked download name was not changed
+in this correction. The demo-video blocker (C1) remains open.
