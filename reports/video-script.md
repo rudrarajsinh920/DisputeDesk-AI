@@ -87,5 +87,5 @@ It reads real PayPal sandbox disputes read-only, and it has over 400 automated t
 ## After recording
 
 1. In Clipchamp, cut any long waits. Then click Export and choose 1080p.
-2. Upload the video to YouTube as Public or Unlisted. Devpost needs a link anyone can open.
+2. Upload the video to YouTube as **Public**. The hackathon asks for a public video under three minutes.
 3. Paste the YouTube link into Devpost, and into `reports/devpost-description.md` under Links.
