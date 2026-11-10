@@ -1033,6 +1033,36 @@ test("a POST from another site's page is refused, even with a valid session", as
   });
 });
 
+test("deployed: only the configured API name and page origin get through, nothing else", async () => {
+  const deployed = createApp(null, null, undefined, {
+    accounts: TEST_ACCOUNTS,
+    allowedHosts: ["disputedesk-api.onrender.com"],
+    pageOrigins: ["https://disputedesk.vercel.app"],
+  });
+  // Host guard: the API's own name passes, local names still pass, everything else is refused.
+  for (const host of ["disputedesk-api.onrender.com", "disputedesk-api.onrender.com:443", "localhost:5173"]) {
+    assert.equal(JSON.parse((await getWithHost(deployed, "/api/health", host)).text).error.code, "not_signed_in", host);
+  }
+  for (const host of ["evil.example", "disputedesk.vercel.app", "disputedesk-api.onrender.com.evil.example", "evil-onrender.com"]) {
+    assert.equal(JSON.parse((await getWithHost(deployed, "/api/health", host)).text).error.code, "forbidden_host", host);
+  }
+  // Origin check: the listed page origin may sign in and write; other origins, http and look-alikes may not.
+  await withServer(deployed, async (base) => {
+    const cookie = await signIn(deployed, base, "merchant-a");
+    const send = (origin: string) =>
+      fetch(`${base}/api/analysis`, { ...lookup("demo", "DEMO-1001"), headers: { "Content-Type": "application/json", Cookie: cookie, Origin: origin } });
+    assert.equal((await send("https://disputedesk.vercel.app")).status, 200);
+    assert.equal((await login(base, creds("merchant-a"), { Origin: "https://disputedesk.vercel.app" })).status, 200);
+    for (const origin of ["http://disputedesk.vercel.app", "https://disputedesk.vercel.app.evil.example", "https://evil.vercel.app", "null"]) {
+      const res = await send(origin);
+      assert.equal(res.status, 403, origin);
+      assert.equal((await res.json()).error.code, "forbidden_origin");
+    }
+  });
+  // Without settings nothing changes: the onrender name is refused, as on a local server.
+  assert.equal(JSON.parse((await getWithHost(makeApp(null), "/api/health", "disputedesk-api.onrender.com")).text).error.code, "forbidden_host");
+});
+
 test("the demo account file is synthetic, hashed, and matches the demo disputes", () => {
   const ids = DEMO_DISPUTES.map((d) => d.dispute_id);
   for (const a of DEMO_ACCOUNTS) {

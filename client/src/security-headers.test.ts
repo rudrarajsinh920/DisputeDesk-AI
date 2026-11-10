@@ -38,3 +38,17 @@ test("Vite serves the headers, keeps one hostname and port, and forwards the bro
   assert.equal(preview.strictPort, true);
   assert.equal(server.proxy["/api"].changeOrigin, false);
 });
+
+test("the deployed page (vercel.json) sends exactly the preview headers plus HSTS, and only /api goes to the API", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const vercel = JSON.parse(await readFile(new URL("../../vercel.json", import.meta.url), "utf8"));
+  assert.equal(vercel.headers.length, 1);
+  const [page] = vercel.headers;
+  // The API's own headers (server/src/app.ts) are left alone: page headers never apply to /api/.
+  assert.equal(page.source, "/((?!api/).*)");
+  const sent = Object.fromEntries(page.headers.map((h: { key: string; value: string }) => [h.key, h.value]));
+  assert.deepEqual(sent, { ...PREVIEW_HEADERS, "Strict-Transport-Security": "max-age=31536000" });
+  assert.equal(vercel.rewrites.length, 1);
+  assert.equal(vercel.rewrites[0].source, "/api/:path*");
+  assert.match(vercel.rewrites[0].destination, /^https:\/\/[a-z0-9-]+\.onrender\.com\/api\/:path\*$/);
+});

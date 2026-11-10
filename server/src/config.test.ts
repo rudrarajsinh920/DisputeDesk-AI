@@ -20,7 +20,16 @@ test("reads credentials from the .env file without touching process.env", () => 
   const env = tempEnv("PAYPAL_CLIENT_ID=file-id\nPAYPAL_CLIENT_SECRET=file-secret\n");
   try {
     const config = loadConfig(env.file, {});
-    assert.deepEqual(config, { port: 3001, paypal: { clientId: "file-id", clientSecret: "file-secret" }, ai: null, aiOff: AI_OFF_NO_KEY, trustProxy: 0 });
+    assert.deepEqual(config, {
+      port: 3001,
+      paypal: { clientId: "file-id", clientSecret: "file-secret" },
+      ai: null,
+      aiOff: AI_OFF_NO_KEY,
+      trustProxy: 0,
+      host: "127.0.0.1",
+      allowedHosts: [],
+      pageOrigins: [],
+    });
     // Compare only these keys so a failure never prints the whole environment.
     assert.notEqual(process.env.PAYPAL_CLIENT_ID, "file-id");
     assert.notEqual(process.env.PAYPAL_CLIENT_SECRET, "file-secret");
@@ -78,4 +87,29 @@ test("TRUST_PROXY is a small whole number and defaults to 0", () => {
   assert.equal(loadConfig(noFile, {}).trustProxy, 0);
   assert.equal(loadConfig(noFile, { TRUST_PROXY: "1" }).trustProxy, 1);
   for (const bad of ["-1", "11", "1.5", "yes"]) assert.throws(() => loadConfig(noFile, { TRUST_PROXY: bad }), /TRUST_PROXY must be/);
+});
+
+test("deployment settings: localhost by default, and only valid hosts and https origins are accepted", () => {
+  const noFile = path.join(tmpdir(), "no-such-dir", ".env");
+  const plain = loadConfig(noFile, {});
+  assert.equal(plain.host, "127.0.0.1");
+  assert.deepEqual(plain.allowedHosts, []);
+  assert.deepEqual(plain.pageOrigins, []);
+
+  const deployed = loadConfig(noFile, {
+    HOST: "0.0.0.0",
+    ALLOWED_HOSTS: " DisputeDesk-API.onrender.com , api.example.com",
+    PAGE_ORIGINS: "https://disputedesk.vercel.app,https://app.example.com",
+  });
+  assert.equal(deployed.host, "0.0.0.0");
+  assert.deepEqual(deployed.allowedHosts, ["disputedesk-api.onrender.com", "api.example.com"]);
+  assert.deepEqual(deployed.pageOrigins, ["https://disputedesk.vercel.app", "https://app.example.com"]);
+
+  for (const bad of ["localhost", "example.com", "1.2.3", "0.0.0.0:80"]) assert.throws(() => loadConfig(noFile, { HOST: bad }), /HOST must be/);
+  for (const bad of ["api.example.com:443", "https://api.example.com", "*.example.com", "localhost", "bad_host.com"]) {
+    assert.throws(() => loadConfig(noFile, { ALLOWED_HOSTS: bad }), /ALLOWED_HOSTS must be/, bad);
+  }
+  for (const bad of ["http://app.example.com", "https://app.example.com/", "https://app.example.com/path", "app.example.com", "*"]) {
+    assert.throws(() => loadConfig(noFile, { PAGE_ORIGINS: bad }), /PAGE_ORIGINS must be/, bad);
+  }
 });

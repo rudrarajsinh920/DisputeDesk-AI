@@ -1,0 +1,32 @@
+# Render Blueprint for the DisputeDesk API (Express + SQLite). The page is served by Vercel (vercel.json),
+# which forwards /api/* here. Demo data only: no PayPal or Gemini keys are set, so both stay off.
+services:
+  - type: web
+    name: disputedesk-api
+    runtime: node
+    # A persistent disk needs a paid plan; the free plan has none and would lose the database on every restart.
+    plan: starter
+    buildCommand: npm ci --prefix server
+    startCommand: npm start --prefix server
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      # node:sqlite and running .ts files directly need Node 24.
+      - key: NODE_VERSION
+        value: 24.20.0
+      - key: HOST
+        value: 0.0.0.0
+      - key: DATABASE_PATH
+        value: /var/data/disputedesk.sqlite
+      # Vercel's proxy, then Render's: two hops add X-Forwarded-For, so sign-in limits see the visitor's address.
+      - key: TRUST_PROXY
+        value: "2"
+      # Set in the Render dashboard after the first deploy:
+      # ALLOWED_HOSTS = this service's onrender.com name, e.g. disputedesk-api.onrender.com
+      # PAGE_ORIGINS  = the Vercel page, e.g. https://disputedesk.vercel.app
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: PAGE_ORIGINS
+        sync: false

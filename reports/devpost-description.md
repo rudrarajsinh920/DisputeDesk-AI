@@ -94,7 +94,7 @@ DisputeDesk never submits anything to PayPal. Every draft needs a human.
 - **Security:** role-based access (merchant, buyer, read-only admin), server-side sessions, sign-in limits,
   same-site write checks, a strict Content Security Policy, and a rule that another account's dispute answers 404,
   exactly like a missing one.
-- **Tests:** 398 automated tests (282 server, 116 client) with synthetic data and mocked PayPal and Gemini, so they make no network calls.
+- **Tests:** 401 automated tests (284 server, 117 client) with synthetic data and mocked PayPal and Gemini, so they make no network calls.
 
 ## Challenges we ran into
 

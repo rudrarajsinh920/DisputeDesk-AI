@@ -136,7 +136,18 @@ export function createApp(
     db = openDatabase(":memory:"),
     trustProxy = 0,
     extractor,
-  }: { accounts?: Account[]; now?: () => number; db?: DatabaseSync; trustProxy?: number; extractor?: Extractor } = {},
+    allowedHosts = [],
+    pageOrigins = [],
+  }: {
+    accounts?: Account[];
+    now?: () => number;
+    db?: DatabaseSync;
+    trustProxy?: number;
+    extractor?: Extractor;
+    // Deployment only (config.ts): names the API is reached by, and the page's own https origins.
+    allowedHosts?: string[];
+    pageOrigins?: string[];
+  } = {},
 ) {
   const app = express();
   app.disable("x-powered-by");
@@ -243,9 +254,11 @@ export function createApp(
 
   // DNS-rebinding guard: another site pointed at 127.0.0.1 still sends its own Host, so only local names pass.
   // Vite's proxy forwards the browser's Host (localhost:5173, changeOrigin: false in vite.config.ts), which is allowed.
+  // A deployed API also answers to the names in ALLOWED_HOSTS, and nothing else.
+  const knownHosts = new Set([...LOCAL_HOSTS, ...allowedHosts]);
   app.use((req, res, next) => {
     const hostname = (req.headers.host ?? "").replace(/:\d+$/, "").toLowerCase();
-    if (LOCAL_HOSTS.has(hostname)) return next();
+    if (knownHosts.has(hostname)) return next();
     res.status(403).json({
       error: { code: "forbidden_host", message: "DisputeDesk only answers requests addressed to this machine.", upstream_status: null },
     });
@@ -262,6 +275,8 @@ export function createApp(
       return;
     }
     if (req.headers.origin === undefined) return next();
+    // Deployed: the page's host forwards /api here, so Host is the API's name and the page's origin is listed instead.
+    if (pageOrigins.includes(req.headers.origin.toLowerCase())) return next();
     let host = "";
     try {
       host = new URL(req.headers.origin).host.toLowerCase();

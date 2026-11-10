@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 
@@ -24,6 +25,12 @@ export interface Config {
   aiOff: string | null;
   // Reverse proxies in front of the server, so sign-in limits key on the real client address. 0 (default): none.
   trustProxy: number;
+  // Address to listen on. 127.0.0.1 (default) keeps the server on this machine; a host needs 0.0.0.0.
+  host: string;
+  // Extra names the API may be addressed by (Host header), besides localhost. Empty by default.
+  allowedHosts: string[];
+  // HTTPS origins of a deployed page allowed to send write requests, besides the API's own origin. Empty by default.
+  pageOrigins: string[];
 }
 
 // Reads .env without copying secrets into process.env. Shell variables win, as with dotenv.
@@ -47,6 +54,28 @@ export function loadConfig(envPath: string = ENV_PATH, env: NodeJS.ProcessEnv = 
     throw new Error("TRUST_PROXY must be a whole number of proxies between 0 and 10.");
   }
 
+  const host = get("HOST") ?? "127.0.0.1";
+  if (isIP(host) === 0) throw new Error("HOST must be an IP address, such as 127.0.0.1 or 0.0.0.0.");
+
+  const list = (key: string) => (get(key) ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const allowedHosts = list("ALLOWED_HOSTS");
+  for (const h of allowedHosts) {
+    if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(h)) {
+      throw new Error("ALLOWED_HOSTS must be a comma-separated list of host names, such as api.example.com.");
+    }
+  }
+  const pageOrigins = list("PAGE_ORIGINS");
+  for (const o of pageOrigins) {
+    let ok = false;
+    try {
+      const url = new URL(o);
+      ok = url.protocol === "https:" && url.origin === o;
+    } catch {
+      // Not a URL; refused below.
+    }
+    if (!ok) throw new Error("PAGE_ORIGINS must be a comma-separated list of https origins, such as https://app.example.com.");
+  }
+
   const clientId = get("PAYPAL_CLIENT_ID");
   const clientSecret = get("PAYPAL_CLIENT_SECRET");
   const apiKey = get("GEMINI_API_KEY");
@@ -61,5 +90,8 @@ export function loadConfig(envPath: string = ENV_PATH, env: NodeJS.ProcessEnv = 
     ai: apiKey && !aiOff ? { apiKey, model } : null,
     aiOff,
     trustProxy,
+    host,
+    allowedHosts,
+    pageOrigins,
   };
 }

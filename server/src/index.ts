@@ -19,11 +19,12 @@ const app = createApp(
   config.paypal ? createPayPalClient(config.paypal) : null,
   config.ai ? createGeminiClient(config.ai) : null,
   config.aiOff ?? undefined,
-  { db, trustProxy: config.trustProxy },
+  { db, trustProxy: config.trustProxy, allowedHosts: config.allowedHosts, pageOrigins: config.pageOrigins },
 );
 
-// Localhost only: this server holds PayPal credentials, and its accounts are synthetic demo accounts.
-app.listen(config.port, "127.0.0.1", (error?: Error) => {
+// Localhost by default: this server can hold PayPal credentials, and its accounts are synthetic demo accounts.
+// HOST=0.0.0.0 only on a host; the Host and Origin checks still admit only the configured names.
+app.listen(config.port, config.host, (error?: Error) => {
   if (error) {
     console.error(`Could not start server: ${error.message}`);
     process.exitCode = 1;
@@ -31,7 +32,7 @@ app.listen(config.port, "127.0.0.1", (error?: Error) => {
   }
   const paypal = config.paypal ? "configured" : `not configured (add credentials to ${ENV_PATH})`;
   const ai = config.ai ? `on (${config.ai.model})` : `off (${config.aiOff})`;
-  console.log(`DisputeDesk server on http://127.0.0.1:${config.port}. PayPal sandbox: ${paypal}. AI drafting: ${ai}.`);
+  console.log(`DisputeDesk server on http://${config.host}:${config.port}. PayPal sandbox: ${paypal}. AI drafting: ${ai}.`);
   // The audit log is append-only and is never trimmed; this makes its growth visible (archive by copying the file).
   const auditRows = Number(db.prepare("SELECT COUNT(*) AS n FROM audit_log").get()!.n);
   console.log(`Audit log: ${auditRows} entries in ${databasePath}.`);

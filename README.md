@@ -102,6 +102,36 @@ cd client && npm run dev
 Open http://localhost:5173 (always this address, not 127.0.0.1, so the sign-in cookie stays on one host). The server
 log line says whether PayPal and AI drafting are on, and why not.
 
+## Deploy (Vercel page, Render API)
+
+The page is a static build on Vercel (`vercel.json`). Vercel forwards `/api/*` to the Express API on Render
+(`render.yaml`), so the browser sees one site and the sign-in cookie, `SameSite=Strict` and the Origin check all work
+as they do locally. The API needs Render's persistent disk for its SQLite database (Starter plan or above); Vercel's
+serverless functions have no lasting disk.
+
+The deployed site runs on demo data only: set no PayPal or Gemini keys on Render. The demo passwords are public in this
+README, so anyone could otherwise use your quota.
+
+1. **Render:** New → Blueprint, pick this repository. It creates `disputedesk-api` with a 1 GB disk at `/var/data`.
+   After the first deploy, open the service's Environment tab and set:
+   - `ALLOWED_HOSTS` = the service's own name, for example `disputedesk-api.onrender.com`
+   - `PAGE_ORIGINS` = the Vercel address, for example `https://disputedesk.vercel.app`
+2. **Vercel:** Add New → Project, import this repository, keep the root folder. If Render gave the service a different
+   name, change the `destination` in `vercel.json` to it first.
+3. Open the Vercel address and sign in with a demo account.
+
+| Setting (Render) | Value | Why |
+|---|---|---|
+| `HOST` | `0.0.0.0` | Listen beyond localhost (default `127.0.0.1`) |
+| `DATABASE_PATH` | `/var/data/disputedesk.sqlite` | The database lives on the disk and survives restarts and deploys |
+| `TRUST_PROXY` | `2` | Vercel and Render each add a hop, so sign-in limits see the visitor |
+| `ALLOWED_HOSTS` | the onrender.com name | The only name, besides localhost, the API answers to |
+| `PAGE_ORIGINS` | the https Vercel address | The only other page allowed to send write requests |
+| `NODE_VERSION` | `24.20.0` | `node:sqlite` and running `.ts` files directly |
+
+A fresh database is created on the disk on first start and filled from the demo files; your local database is never
+uploaded. Without `ALLOWED_HOSTS` and `PAGE_ORIGINS` the API refuses every request, as a local server would.
+
 ## Demo accounts
 
 Sign in with one of these **synthetic demo accounts**. They are not real people, the passwords are not real secrets,
@@ -292,15 +322,20 @@ Keep screenshots or a screen recording of a successful run as a backup.
   ligatures, so extracted text can differ slightly from what the file shows.
 - A link is the merchant's statement that a file is their record for a gap, like a confirmation; it is not evidence.
 - Download was checked in the desktop app's built-in browser (exact bytes) and by tests (headers, PDF, PNG, JPEG,
-  5 MB, hostile names). The saved file name in Chrome, Edge and Firefox has not been checked.
+  5 MB, hostile names), and by hand in Chrome 156, which saved it under its own name with the same bytes. Edge and
+  Firefox have not been checked.
 - The AI checks are rules and patterns. They catch the listed kinds of invented detail, not every possible one, which is
   why merchant review stays mandatory. The same holds for Check my edits: its claim matching is advisory.
 - The PayPal integration only reads (an access token, the dispute list and each dispute's record). It never creates,
   changes or answers a dispute, and never submits evidence. The list reads the first 50 disputes.
 - A gap confirmation is the merchant's own statement. DisputeDesk never sees the record behind it, and it is kept for
   demo disputes only.
-- Drafts are not saved. Accounts are seven synthetic demo accounts with no sign-up. The server answers only on this
-  machine (127.0.0.1).
+- Drafts are not saved. Accounts are seven synthetic demo accounts with no sign-up. By default the server answers only
+  on this machine (127.0.0.1); a deployment opts in with `HOST`, `ALLOWED_HOSTS` and `PAGE_ORIGINS`.
+- Deployed, the API's onrender.com address can also be reached directly, bypassing Vercel. Its Host and Origin checks
+  still apply, but a direct caller can set its own `X-Forwarded-For`, so the per-address sign-in limit can be dodged
+  there; the per-email limit still holds. Uploads up to 5 MB pass through Vercel's forwarding, which has not been
+  tested on a live deployment yet.
 - One server process per database. The sign-in and AI limits are kept in memory (at most 10,000 keys), so a restart
   lifts a lockout.
 - The audit log has no retention limit; it grows until it is archived and the database is deleted.
