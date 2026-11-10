@@ -117,9 +117,9 @@ Render plan and add a disk (mount it and set `DATABASE_PATH` to a file on it).
 The deployed site runs on demo data only: set no PayPal or Gemini keys on Render. The demo passwords are public in this
 README, so anyone could otherwise use your quota.
 
-1. **Render:** New → Blueprint, pick this repository. It creates the free web service `disputedesk-api`.
+1. **Render:** New → Blueprint, pick this repository. It creates the free web service `disputedesk-api-rudra`.
    After the first deploy, open the service's Environment tab and set:
-   - `ALLOWED_HOSTS` = the service's own name, for example `disputedesk-api.onrender.com`
+   - `ALLOWED_HOSTS` = the service's own name, for example `disputedesk-api-rudra.onrender.com`
    - `PAGE_ORIGINS` = the Vercel address, for example `https://disputedesk.vercel.app`
 2. **Vercel:** Add New → Project, import this repository, keep the root folder. If Render gave the service a different
    name, change the `destination` in `vercel.json` to it first.

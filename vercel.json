@@ -5,7 +5,7 @@
   "buildCommand": "npm run build --prefix client",
   "outputDirectory": "client/dist",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://disputedesk-api.onrender.com/api/:path*" }
+    { "source": "/api/:path*", "destination": "https://disputedesk-api-rudra.onrender.com/api/:path*" }
   ],
   "headers": [
     {

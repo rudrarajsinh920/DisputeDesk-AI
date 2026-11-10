@@ -2,7 +2,7 @@
 # which forwards /api/* here. Demo data only: no PayPal or Gemini keys are set, so both stay off.
 services:
   - type: web
-    name: disputedesk-api
+    name: disputedesk-api-rudra
     runtime: node
     # Free plan: no persistent disk. The database is rebuilt from the demo files on every start, so sign-ins and
     # uploads are lost when the service sleeps (after 15 idle minutes) or redeploys. A paid plan can add a disk.
@@ -19,7 +19,7 @@ services:
       - key: TRUST_PROXY
         value: "2"
       # Set in the Render dashboard after the first deploy:
-      # ALLOWED_HOSTS = this service's onrender.com name, e.g. disputedesk-api.onrender.com
+      # ALLOWED_HOSTS = this service's onrender.com name, e.g. disputedesk-api-rudra.onrender.com
       # PAGE_ORIGINS  = the Vercel page, e.g. https://disputedesk.vercel.app
       - key: ALLOWED_HOSTS
         sync: false
