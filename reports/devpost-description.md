@@ -1,6 +1,6 @@
 # DisputeDesk AI: Devpost submission draft
 
-Paste each section into the matching Devpost field. Replace the two links at the bottom once the video is up.
+Paste each section into the matching Devpost field. Replace the video link at the bottom once the video is up.
 
 ---
 
@@ -141,4 +141,5 @@ paypal, paypal-rest-api, gemini, node.js, express, typescript, react, vite, sqli
 
 - Code: https://github.com/rudrarajsinh920/DisputeDesk-AI
 - Demo video: (YouTube link here)
-- Try it: setup instructions are in the README (Setup, Run, Demo accounts).
+- Try it: https://disputedesk-ai-app.vercel.app (demo data only, live AI off; demo sign-ins are in the README under
+  Demo accounts; the free server may take about a minute to wake up). To run it locally, see Setup and Run in the README.
