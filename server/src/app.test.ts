@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import http from "node:http";
 import { gzipSync } from "node:zlib";
@@ -7,7 +8,7 @@ import type { Dispute } from "../../shared/types.ts";
 import { CONFIRMABLE } from "../../shared/types.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
-import { AI_MAX_CALLS, DEMO_ACCOUNTS, DEMO_DISPUTES, HSTS, PERMISSIONS_POLICY, createApp } from "./app.ts";
+import { AI_MAX_CALLS, DEMO_ACCOUNTS, DEMO_DISPUTES, HSTS, PERMISSIONS_POLICY, createApp, encodeFilename } from "./app.ts";
 import { countMarkers, readiness } from "../../shared/readiness.ts";
 import { MAX_CHECK_TEXT, VALIDATION_EXAMPLE_MODEL } from "./assist.ts";
 import { AI_WORDING_LIMIT, buyerGuidance, toBuyerRecord } from "./buyer.ts";
@@ -87,10 +88,11 @@ async function get(app: App, path: string, init: RequestInit = {}, as: string | 
     const headers = new Headers(init.headers);
     if (as) headers.set("Cookie", await signIn(app, base, as));
     const res = await fetch(`${base}${path}`, { ...init, headers });
-    const text = await res.text();
-    // A download is not JSON; its bytes are in text.
+    const bytes = Buffer.from(await res.arrayBuffer());
+    const text = bytes.toString();
+    // A download is not JSON; its exact bytes are in bytes.
     const json = text && !res.headers.get("content-disposition")?.startsWith("attachment");
-    return { status: res.status, headers: res.headers, text, body: json ? JSON.parse(text) : null };
+    return { status: res.status, headers: res.headers, text, bytes, body: json ? JSON.parse(text) : null };
   } finally {
     server.close();
   }
@@ -2290,9 +2292,9 @@ test("a merchant links their own document to a checklist gap, unlinks it, and do
   // Download: the original bytes, as an attachment that the browser can't render or run.
   const file = await get(app, "/api/documents/download", lookup("demo", "DEMO-1001", { document_id: id }));
   assert.equal(file.status, 200);
-  assert.equal(file.text, PDF.toString());
+  assert.ok(file.bytes.equals(PDF), "the original bytes, unchanged");
   assert.equal(file.headers.get("content-type"), "application/pdf");
-  assert.equal(file.headers.get("content-disposition"), `attachment; filename="document.pdf"; filename*=UTF-8''${encodeURIComponent('Label "1" é.pdf')}`);
+  assert.equal(file.headers.get("content-disposition"), `attachment; filename="document.pdf"; filename*=UTF-8''${encodeFilename('Label "1" é.pdf')}`);
   assert.equal(file.headers.get("x-content-type-options"), "nosniff");
   assert.ok(file.headers.get("content-security-policy")!.split("; ").includes("sandbox"));
   assert.equal(file.headers.get("cache-control"), "no-store");
@@ -2319,6 +2321,77 @@ test("a merchant links their own document to a checklist gap, unlinks it, and do
   assert.deepEqual(deleted.body.checklist.attachments, []);
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM document_links").get() as { n: number }).n, 0);
   assert.equal((await get(app, "/api/documents/download", lookup("demo", "DEMO-1001", { document_id: id }))).status, 404);
+});
+
+test("downloads keep every byte of PNG, JPEG and 5 MB files, and hostile names can't break the header", async () => {
+  const db = openDatabase(":memory:");
+  const app = createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, db, extractor: createExtractor(db) });
+  const sha = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
+  const big = Buffer.concat([PNG.subarray(0, 8), Buffer.alloc(5 * 1024 * 1024 - 8, 0xab)]);
+  const files: [Buffer, string, string, string][] = [
+    [PNG, "image/png", "it's (final) *copy*.png", "png"],
+    [JPEG, "image/jpeg", 'a\r\nSet-Cookie: x=1; "q".jpg', "jpg"],
+    [Buffer.concat([PNG, Buffer.from("rtl")]), "image/png", "‮gnp.exe", "png"],
+    [big, "image/png", "नाम".repeat(60) + ".png", "png"],
+  ];
+  // RFC 8187 value characters only: no quote, space, semicolon, CR or LF can reach the header.
+  const SAFE = /^attachment; filename="document\.(png|jpg)"; filename\*=UTF-8''[A-Za-z0-9!#test("PDFs left unread by an earlier run are read when the server starts", async () => {+.^_`|~%-]+$/;
+  for (const [bytes, type, name, extension] of files) {
+    const added = await get(app, "/api/documents/upload", upload("DEMO-1001", bytes, type, name));
+    assert.equal(added.status, 201, name);
+    const file = await get(app, "/api/documents/download", lookup("demo", "DEMO-1001", { document_id: added.body.document.id }));
+    assert.equal(file.status, 200);
+    assert.equal(sha(file.bytes), sha(bytes), `${name}: same SHA-256`);
+    assert.equal(file.headers.get("content-type"), type);
+    const disposition = file.headers.get("content-disposition")!;
+    assert.match(disposition, SAFE, name);
+    assert.ok(disposition.startsWith(`attachment; filename="document.${extension}"`));
+    assert.equal(decodeURIComponent(disposition.split("''")[1]), added.body.document.display_name, "the stored (cleaned) name, decoded");
+    assert.equal(file.headers.get("set-cookie"), null);
+  }
+  // Malformed requests: no file content, just the usual JSON errors.
+  for (const body of [{}, { document_id: "x" }, { document_id: 7 }]) {
+    const bad = await get(app, "/api/documents/download", lookup("demo", "DEMO-1001", body));
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.error.code, "invalid_request");
+  }
+});
+
+test("repeated, stale and racing links stay consistent", async () => {
+  const db = openDatabase(":memory:");
+  const app = createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, db, extractor: createExtractor(db) });
+  const id: string = (await get(app, "/api/documents/upload", upload("DEMO-1001", PDF, "application/pdf"))).body.document.id;
+  const items = (await get(app, "/api/analysis/checklist", lookup("demo", "DEMO-1001"))).body.items as { id: string; status: string }[];
+  const gap = items.find((i) => CONFIRMABLE.includes(i.status as never))!.id;
+  const filled = items.find((i) => !CONFIRMABLE.includes(i.status as never))!.id;
+  const link = (item_id: string, linked: boolean) => get(app, "/api/documents/link", lookup("demo", "DEMO-1001", { document_id: id, item_id, linked }));
+  const count = (sql: string) => (db.prepare(sql).get() as { n: number }).n;
+
+  // Repeated: each real change is audited once; no duplicate rows.
+  for (let i = 0; i < 5; i++) {
+    assert.equal((await link(gap, true)).status, 200);
+    assert.equal((await link(gap, true)).status, 200);
+    assert.equal((await link(gap, false)).status, 200);
+  }
+  assert.equal(count("SELECT COUNT(*) AS n FROM audit_log WHERE event = 'document_linked'"), 5);
+  assert.equal(count("SELECT COUNT(*) AS n FROM audit_log WHERE event = 'document_unlinked'"), 5);
+  assert.equal(count("SELECT COUNT(*) AS n FROM document_links"), 0);
+
+  // Stale: a link left on an item that is no longer a gap is listed on the document (so it can be removed), never
+  // shown on the checklist, and unlinking it works.
+  db.prepare("INSERT INTO document_links (document_id, item_id, linked_at) VALUES (?, ?, 0)").run(id, filled);
+  assert.deepEqual((await get(app, "/api/documents", lookup("demo", "DEMO-1001"))).body.documents[0].linked_items, [filled]);
+  assert.deepEqual((await get(app, "/api/analysis/checklist", lookup("demo", "DEMO-1001"))).body.attachments, []);
+  const removed = await link(filled, false);
+  assert.equal(removed.status, 200);
+  assert.deepEqual(removed.body.documents[0].linked_items, []);
+
+  // Racing a link with a delete: whichever runs second sees the other's result; no link outlives its document.
+  const [linked, deleted] = await Promise.all([link(gap, true), get(app, "/api/documents/delete", lookup("demo", "DEMO-1001", { document_id: id }))]);
+  assert.equal(deleted.status, 200);
+  assert.ok([200, 404].includes(linked.status), `link answered ${linked.status}`);
+  assert.equal(count("SELECT COUNT(*) AS n FROM document_links"), 0);
+  assert.equal(count("SELECT COUNT(*) AS n FROM documents"), 0);
 });
 
 test("PDFs left unread by an earlier run are read when the server starts", async () => {

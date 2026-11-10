@@ -44,7 +44,8 @@ POST /api/documents/pages ─▶ getDocumentPages: owner merchant or admin, whil
 **The worker (`extract-worker.ts`)** runs in its own child process, one per PDF, and uses the pdfjs legacy build. A process rather than a worker thread: the memory pdfjs uses to decompress a file sits outside the JavaScript heap limit, so a file that inflates to gigabytes must be able to crash only its own process (audit finding F1, section 10).
 - **Options:** `disableFontFace`, no system fonts, no XFA, no streaming or auto-fetch, `stopAtErrors`, no offscreen canvas or image decoder, `verbosity: 0`.
 - **Limits:** more than 20 pages is refused before any page is read. More than 200,000 characters on a page, or 1,000,000 in the document, fails the document.
-- **Cleaning (`cleanText` in `extract.ts`):** text is normalised to NFC. Control characters and the bidi embeddings, overrides and isolates (U+202A–202E, U+2066–2069) are removed; line breaks and tabs are kept. Joiners (ZWJ, ZWNJ), direction marks (LRM, RLM, ALM) and soft hyphens are kept, because Indic, Persian and Arabic text and emoji need them (audit finding F2).
+- **Cleaning (`cleanText` in `extract.ts`):** text is normalised to NFC. Control characters and the bidi embeddings, overrides and isolates (U+202A–202E, U+2066–2069) are removed; line breaks and tabs are kept. `cleanText` itself keeps joiners (ZWJ, ZWNJ), direction marks (LRM, RLM, ALM) and soft hyphens, because Indic, Persian and Arabic text and emoji need them (audit finding F2).
+- **What PDF.js changes first:** before `cleanText` runs, pdfjs-dist skips any glyph whose text is a format character on its own (ZWJ, ZWNJ, LRM, RLM, ALM, soft hyphen, bidi controls; `pdf.worker.mjs` around lines 22903 and 41795), applies NFKC to ligatures and special spaces (`ﬁ` becomes `fi`, a no-break space becomes a space; around line 6182) and reorders right-to-left runs. So most standalone joiners and marks are already gone from extracted PDF text. A joiner inside one glyph's text (a conjunct with a virama, an emoji sequence) survives. (Corrected after the Stage 3.4 audit, finding L7.)
 - **Not byte-exact:** pdfjs itself applies NFKC to ligatures and Arabic presentation forms, and puts right-to-left text in reading order.
 - **Encrypted PDFs** report `encrypted`; anything else unreadable reports `unreadable`.
 
@@ -139,7 +140,7 @@ The real database's main file and its `-wal` file kept their timestamps. Only th
 | Too many pages | 20 allowed, 21 refused |
 | Timeout | Real worker, 1 ms limit gives `timeout` |
 | Decompression bomb | About 64 KB inflating to 64 MB: parsed, and the server grows by less than 40 MB |
-| Multilingual text | `cleanText` keeps Gujarati, Hindi, joined conjuncts, Persian ZWNJ, emoji sequences, Hebrew and Arabic marks, Tamil and ligatures; removes bidi overrides, isolates and control characters |
+| Multilingual text | `cleanText` keeps Gujarati, Hindi, joined conjuncts, Persian ZWNJ, emoji sequences, Hebrew and Arabic marks, Tamil and ligatures; removes bidi overrides, isolates and control characters. Tested on strings only: PDF.js removes most standalone joiners and marks, and expands ligatures, before this step (§ cleaning above). |
 | Worker failure | A crash, `process.exit` and running out of memory each give `worker_failed`. A rejected runner marks only its own document failed, and the queue goes on. |
 | Unauthorized merchant | `extract.test.ts` and `app.test.ts`: 404, identical to a missing document |
 | Buyer denied | `app.test.ts` and the role table: 403 |

@@ -123,6 +123,9 @@ const AI_STATUS: Partial<Record<AiError["code"], number>> = { ai_rate_limited: 4
 // accounts and now are for tests; the server uses the demo accounts and the real clock.
 // extractor reads uploaded PDFs (extract.ts); tests pass their own to wait for it or fake the worker.
 // The demo accounts and disputes are copied into db on every start (seedDemo).
+// RFC 8187 value characters: encodeURIComponent leaves ' ( ) * as they are, which a header value must not carry.
+export const encodeFilename = (name: string) => encodeURIComponent(name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+
 export function createApp(
   paypal: PayPalClient | null,
   ai: GeminiClient | null = null,
@@ -710,8 +713,8 @@ export function createApp(
     const extension = { "application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg" }[file.media_type];
     res.set({
       "Content-Type": file.media_type,
-      // An ASCII fallback name, and the cleaned name percent-encoded (RFC 6266): no quote or header injection.
-      "Content-Disposition": `attachment; filename="document.${extension}"; filename*=UTF-8''${encodeURIComponent(file.display_name)}`,
+      // An ASCII fallback name, and the cleaned name percent-encoded (RFC 6266 and 8187): no quote or header injection.
+      "Content-Disposition": `attachment; filename="document.${extension}"; filename*=UTF-8''${encodeFilename(file.display_name)}`,
       "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; sandbox",
       "Cache-Control": "no-store",
     });

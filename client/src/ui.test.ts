@@ -12,8 +12,8 @@ import { buildChecklist } from "../../server/src/checklist.ts";
 import { analyzeDispute } from "../../server/src/evidence.ts";
 import { VALIDATION_EXAMPLE_MODEL, validationExampleAnswer } from "../../server/src/assist.ts";
 import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
-import { ATTACHED_NOTE, AiResult, AiSectionView, AnalysisView, CONFIRMED_NOTE, CONFIRM_LIMIT, CheckResult, ChecklistView, ClaimAndRecords, DISCARD_EDITS, DraftEditor, ReadinessSummary, ValidationExampleView } from "./AnalysisPanel.tsx";
-import { readiness } from "./analysis.ts";
+import { ATTACHED_NOTE, checklistGate, AiResult, AiSectionView, AnalysisView, CONFIRMED_NOTE, CONFIRM_LIMIT, CheckResult, ChecklistView, ClaimAndRecords, DISCARD_EDITS, DraftEditor, ReadinessSummary, ValidationExampleView } from "./AnalysisPanel.tsx";
+import { deleteDocument, linkDocument, readiness } from "./analysis.ts";
 import type { AiState, ConfirmState, ExampleState } from "./AnalysisPanel.tsx";
 import { AccountView } from "./Account.tsx";
 import { AdminAccounts, AdminAudit, AdminOverview, AdminSettings, AdminSystem, ownerNames } from "./Admin.tsx";
@@ -31,7 +31,7 @@ import { SIGNED_OUT_EVENT, serverError } from "./sandbox.ts";
 import accountsFile from "../../demo-accounts.json" with { type: "json" };
 import extraDemos from "../../demo-disputes.json" with { type: "json" };
 import sample from "../../sample-dispute.json" with { type: "json" };
-import type { AccountInfo, AiAssist, BuyerDispute, Dispute, DisputeDocument } from "../../shared/types.ts";
+import type { AccountInfo, AiAssist, BuyerDispute, Dispute, DisputeDocument, EvidenceChecklist } from "../../shared/types.ts";
 import { DOCUMENT_ADMIN_NOTICE, DOCUMENT_LINK_NOTICE, DOCUMENT_NOTICE, DOCUMENT_TEXT_NOTICE, DocumentsView, documentStatusLine, fileProblem, formatSize } from "./Documents.tsx";
 import type { DocumentActions } from "./Documents.tsx";
 
@@ -1202,6 +1202,7 @@ const docActions = (extra: Partial<DocumentActions> = {}): DocumentActions => ({
   itemLabels: {},
   linkable: [],
   onLink: noop,
+  downloading: null,
   onDownload: noop,
   ...extra,
 });
@@ -1281,6 +1282,51 @@ test("a merchant links a document to checklist gaps with checkboxes and can down
   assert.ok(text(admin).includes("Linked to: Proof of delivery"));
   assert.doesNotMatch(admin, /type="checkbox"|Download/);
   assert.deepEqual(calls, [], "rendering links nothing");
+});
+
+test("before the checklist loads, a document never claims the dispute has no gaps, and a download can't be clicked twice", () => {
+  const linked = docFixture(1, { linked_items: ["proof_of_delivery", "old_item"] });
+  const waiting = text(html(createElement(DocumentsView, { load: { status: "ready", documents: [linked] }, onRetry: noop, actions: docActions({ linkable: null }) })));
+  assert.doesNotMatch(waiting, /no checklist gaps/);
+  assert.match(waiting, /The checklist gaps show here once the checklist has loaded\./);
+  assert.ok(waiting.includes("Linked to 2 checklist items (not verified)"), "no raw item IDs");
+  assert.doesNotMatch(waiting, /proof_of_delivery|old_item/);
+  // While one file downloads, every Download button is disabled and that one says so.
+  const docs = [docFixture(1), docFixture(2)];
+  const busy = html(createElement(DocumentsView, { load: { status: "ready", documents: docs }, onRetry: noop, actions: docActions({ downloading: docs[0].id }) }));
+  assert.equal(busy.match(/aria-label="Download [^"]+" disabled=""/g)?.length, 2);
+  assert.match(busy, /aria-busy="true"[^>]*>Downloading…</);
+});
+
+test("checklist answers are shown in request order: an older answer never overwrites a newer one", () => {
+  const shown: string[] = [];
+  let reloads = 0;
+  const begin = checklistGate(() => "DEMO-1001", (c) => shown.push(c.reason), () => reloads++);
+  const answer = (reason: string, dispute_id = "DEMO-1001") => ({ dispute_id, reason }) as unknown as EvidenceChecklist;
+  const confirm = begin();
+  const link = begin();
+  link(answer("newer"));
+  confirm(answer("older"));
+  assert.deepEqual(shown, ["newer"], "the confirm answer arrived late and is dropped");
+  begin()(answer("other", "DEMO-1002"));
+  assert.deepEqual(shown, ["newer"], "an answer for another dispute is ignored");
+  begin()(null);
+  assert.equal(reloads, 1, "an unusable checklist loads it again");
+});
+
+test("a delete or link that saved, with an unusable checklist in the answer, is not reported as failed", async () => {
+  const original = globalThis.fetch;
+  const reply = (body: unknown) => (async () => new Response(JSON.stringify(body), { status: 200 })) as unknown as typeof fetch;
+  try {
+    globalThis.fetch = reply({ documents: [], checklist: { dispute_id: "DEMO-9999" } });
+    assert.deepEqual(await deleteDocument(demo, "x"), { documents: [], checklist: null });
+    globalThis.fetch = reply({ documents: [] });
+    assert.deepEqual(await linkDocument(demo, "x", "proof_of_delivery", true), { documents: [], checklist: null });
+    globalThis.fetch = reply({ checklist: null });
+    await assert.rejects(deleteDocument(demo, "x"), /unexpected document list/);
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test("admin reads the documents list without upload or delete; a full dispute disables the upload field", () => {

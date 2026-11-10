@@ -309,29 +309,56 @@ export const CONFIRMED_NOTE = "DisputeDesk has not seen the record. Your confirm
 export const ATTACHED_NOTE = "DisputeDesk has not checked it, and it does not change the evidence status.";
 export const CONFIRM_LIMIT ="Your confirmation is recorded as yours. It does not change the evidence status, and DisputeDesk has not seen the record.";
 
+// Requests from the checklist and documents sections can overlap. Each takes a ticket when sent (begin()); its answer
+// is shown only if no later request's answer has been, so an older answer never overwrites a newer one. An answer
+// for another dispute is ignored; a null answer (the server's checklist was unusable) loads the checklist again.
+export function checklistGate(currentId: () => string, show: (checklist: EvidenceChecklist) => void, reload: () => void) {
+  let issued = 0;
+  let shown = 0;
+  return () => {
+    const ticket = ++issued;
+    return (checklist: EvidenceChecklist | null) => {
+      if (ticket < shown || (checklist && checklist.dispute_id !== currentId())) return;
+      shown = ticket;
+      if (checklist) show(checklist);
+      else reload();
+    };
+  };
+}
+
 // The checklist is loaded once per dispute and shared: the documents section updates it after a link or a delete.
 function useChecklist(dispute: Dispute) {
   const [load, setLoad] = useState<ChecklistLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
+  const current = useRef(dispute.dispute_id);
+  current.current = dispute.dispute_id;
+  const gate = useRef<ReturnType<typeof checklistGate> | null>(null);
+  gate.current ??= checklistGate(
+    () => current.current,
+    (checklist) => setLoad({ status: "ready", checklist }),
+    () => setAttempt((n) => n + 1),
+  );
+  const begin = gate.current;
   useEffect(() => {
     const controller = new AbortController();
     setLoad({ status: "loading" });
+    const show = begin();
     fetchChecklist(dispute, controller.signal)
-      .then((checklist) => setLoad({ status: "ready", checklist }))
+      .then(show)
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         setLoad({ status: "error", message: error instanceof Error ? error.message : String(error) });
       });
     return () => controller.abort();
   }, [dispute, attempt]);
-  return { load, setLoad, retry: () => setAttempt((n) => n + 1) };
+  return { load, begin, retry: () => setAttempt((n) => n + 1) };
 }
 
 function ChecklistSection({
   dispute,
   refsById,
   canConfirm,
-  state: { load, setLoad, retry },
+  state: { load, begin, retry },
 }: {
   dispute: Dispute;
   refsById: Map<string, EvidenceRef>;
@@ -347,9 +374,10 @@ function ChecklistSection({
     setError(null);
     setAnnounce("");
     // The screen redraws from the server's answer, never from a guess.
+    const show = begin();
     fetchConfirm(dispute, itemId, confirmed)
       .then((checklist) => {
-        setLoad({ status: "ready", checklist });
+        show(checklist);
         setAnnounce(confirmed ? "Confirmation recorded." : "Confirmation withdrawn.");
       })
       .catch((e: unknown) => setError(`Couldn't save that. ${e instanceof Error ? e.message : String(e)}`))
@@ -532,7 +560,7 @@ export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: 
           dispute={dispute}
           canEdit={canDraft}
           checklist={checklist.load.status === "ready" ? checklist.load.checklist : null}
-          onChecklist={(c) => checklist.setLoad({ status: "ready", checklist: c })}
+          beginChecklist={checklist.begin}
         />
       )}
 

@@ -60,9 +60,12 @@ export interface DocumentActions {
   texts: Record<string, PagesLoad>;
   onToggleText: (doc: DisputeDocument) => void;
   // Checklist labels by item ID, and the items that are gaps now (the only ones a document can be linked to).
+  // linkable is null while the checklist is loading or couldn't load: the gaps aren't known yet.
   itemLabels: Record<string, string>;
-  linkable: string[];
+  linkable: string[] | null;
   onLink: (doc: DisputeDocument, itemId: string, linked: boolean) => void;
+  // The document being downloaded, if any.
+  downloading: string | null;
   onDownload: (doc: DisputeDocument) => void;
 }
 const READ_ONLY: DocumentActions = {
@@ -75,8 +78,9 @@ const READ_ONLY: DocumentActions = {
   texts: {},
   onToggleText: () => {},
   itemLabels: {},
-  linkable: [],
+  linkable: null,
   onLink: () => {},
+  downloading: null,
   onDownload: () => {},
 };
 
@@ -84,24 +88,26 @@ const READ_ONLY: DocumentActions = {
 const POLL_MS = 2000;
 const MAX_POLLS = 15;
 
-// checklist is the one the checklist section shows (null until it loads); onChecklist hands it the updated one after
-// a link or a delete, so both sections redraw from the same server answer.
+// checklist is the one the checklist section shows (null until it loads). beginChecklist is called as a request is
+// sent and returns where to hand the server's updated checklist, so both sections redraw from the same answer and an
+// older answer never overwrites a newer one.
 export function DocumentsSection({
   dispute,
   canEdit,
   checklist = null,
-  onChecklist = () => {},
+  beginChecklist = () => () => {},
 }: {
   dispute: Dispute;
   canEdit: boolean;
   checklist?: EvidenceChecklist | null;
-  onChecklist?: (checklist: EvidenceChecklist) => void;
+  beginChecklist?: () => (checklist: EvidenceChecklist | null) => void;
 }) {
   const [load, setLoad] = useState<DocumentsLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [pending, setPending] = useState<string | null>(null);
   const [announce, setAnnounce] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
   const [texts, setTexts] = useState<Record<string, PagesLoad>>({});
   const busy = useRef(false);
   const polls = useRef(0);
@@ -142,13 +148,14 @@ export function DocumentsSection({
     setPending(key);
     setError(null);
     setAnnounce("");
+    const showChecklist = beginChecklist();
     action()
       .then((answer) => {
         polls.current = 0;
         if (Array.isArray(answer)) setLoad({ status: "ready", documents: answer });
         else {
           setLoad({ status: "ready", documents: answer.documents });
-          onChecklist(answer.checklist);
+          showChecklist(answer.checklist);
         }
         setAnnounce(done);
         // A deleted row takes its button with it: keep keyboard focus in the section.
@@ -178,16 +185,24 @@ export function DocumentsSection({
     run(doc.id, () => deleteDocument(dispute, doc.id), `${doc.display_name} deleted.`, true);
   };
   const itemLabels = Object.fromEntries((checklist?.items ?? []).map((i) => [i.id, i.label]));
-  const linkable = (checklist?.items ?? []).filter((i) => CONFIRMABLE.includes(i.status)).map((i) => i.id);
+  const linkable = checklist ? checklist.items.filter((i) => CONFIRMABLE.includes(i.status)).map((i) => i.id) : null;
   const onLink = (doc: DisputeDocument, itemId: string, linked: boolean) => {
     const label = itemLabels[itemId] ?? itemId;
     run(`${doc.id}:${itemId}`, () => linkDocument(dispute, doc.id, itemId, linked), linked ? `${doc.display_name} linked to ${label}.` : `${doc.display_name} unlinked from ${label}.`);
   };
+  // One download at a time: a second click while the file is coming would fetch (and audit) it again.
   const onDownload = (doc: DisputeDocument) => {
+    if (downloading) return;
+    setDownloading(doc.id);
     setError(null);
+    setAnnounce(`Preparing ${doc.display_name}…`);
     downloadDocument(dispute, doc)
-      .then(() => setAnnounce(`Downloading ${doc.display_name}.`))
-      .catch((e: unknown) => setError(`Couldn't download that. ${e instanceof Error ? e.message : String(e)}`));
+      .then(() => setAnnounce(`${doc.display_name} handed to your browser's downloads.`))
+      .catch((e: unknown) => {
+        setAnnounce("");
+        setError(`Couldn't download that. ${e instanceof Error ? e.message : String(e)}`);
+      })
+      .finally(() => setDownloading(null));
   };
   const onToggleText = (doc: DisputeDocument) => {
     if (texts[doc.id]) {
@@ -199,7 +214,7 @@ export function DocumentsSection({
       .then((pages) => setTexts((t) => (t[doc.id] ? { ...t, [doc.id]: { status: "ready", pages } } : t)))
       .catch((e: unknown) => setTexts((t) => (t[doc.id] ? { ...t, [doc.id]: { status: "error", message: e instanceof Error ? e.message : String(e) } } : t)));
   };
-  const actions: DocumentActions = { canEdit, pending, announce, error, onUpload, onDelete, texts, onToggleText, itemLabels, linkable, onLink, onDownload };
+  const actions: DocumentActions = { canEdit, pending, announce, error, onUpload, onDelete, texts, onToggleText, itemLabels, linkable, onLink, downloading, onDownload };
   return <DocumentsView load={load} onRetry={() => setAttempt((n) => n + 1)} actions={actions} />;
 }
 
@@ -225,12 +240,15 @@ function DocumentText({ id, text }: { id: string; text: PagesLoad }) {
 // The checklist gaps this document can be the record for, as checkboxes: checked means linked. A link on an item
 // that is no longer a gap is still listed, so it can be removed.
 function DocumentLinks({ doc, actions }: { doc: DisputeDocument; actions: DocumentActions }) {
-  const items = [...actions.linkable, ...doc.linked_items.filter((id) => !actions.linkable.includes(id))];
+  const linkable = actions.linkable ?? [];
+  const items = [...linkable, ...doc.linked_items.filter((id) => !linkable.includes(id))];
   return (
     <details className="document-links">
       <summary>Link to checklist gaps{doc.linked_items.length > 0 ? ` (${doc.linked_items.length})` : ""}</summary>
       <p className="muted">{DOCUMENT_LINK_NOTICE}</p>
-      {items.length === 0 ? (
+      {actions.linkable === null ? (
+        <p className="muted">The checklist gaps show here once the checklist has loaded. If it couldn't load, retry it in the checklist above.</p>
+      ) : items.length === 0 ? (
         <p className="muted">This dispute has no checklist gaps to link a file to.</p>
       ) : (
         <fieldset>
@@ -293,7 +311,11 @@ export function DocumentsView({ load, onRetry, actions = READ_ONLY }: { load: Do
                 </p>
                 <p>{documentStatusLine(doc)}</p>
                 {doc.linked_items.length > 0 && (
-                  <p className="muted">Linked to: {doc.linked_items.map((id) => actions.itemLabels[id] ?? id).join(", ")} (not verified)</p>
+                  <p className="muted">
+                    {actions.linkable === null
+                      ? `Linked to ${doc.linked_items.length} checklist ${doc.linked_items.length === 1 ? "item" : "items"} (not verified)`
+                      : `Linked to: ${doc.linked_items.map((id) => actions.itemLabels[id] ?? id).join(", ")} (not verified)`}
+                  </p>
                 )}
                 {(doc.status === "extracted" || actions.canEdit) && (
                   <div className="document-actions">
@@ -310,8 +332,15 @@ export function DocumentsView({ load, onRetry, actions = READ_ONLY }: { load: Do
                       </button>
                     )}
                     {actions.canEdit && (
-                      <button type="button" className="button button-secondary" aria-label={`Download ${doc.display_name}`} onClick={() => actions.onDownload(doc)}>
-                        Download
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        aria-label={`Download ${doc.display_name}`}
+                        disabled={actions.downloading !== null}
+                        aria-busy={actions.downloading === doc.id || undefined}
+                        onClick={() => actions.onDownload(doc)}
+                      >
+                        {actions.downloading === doc.id ? "Downloading…" : "Download"}
                       </button>
                     )}
                     {actions.canEdit && (

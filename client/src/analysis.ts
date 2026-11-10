@@ -149,19 +149,18 @@ export async function fetchDocumentPages(dispute: Pick<Dispute, "source" | "disp
   return pages as DocumentPage[];
 }
 
-// Deleting or (un)linking a document also changes the checklist's attachments, so the server sends both.
+// Deleting or (un)linking a document also changes the checklist's attachments, so the server sends both. The
+// change is saved once the document list is good; an unusable checklist is null, and the caller loads it again.
 export interface DocumentsAndChecklist {
   documents: DisputeDocument[];
-  checklist: EvidenceChecklist;
+  checklist: EvidenceChecklist | null;
 }
 async function documentsAndChecklist(response: Response, dispute: Pick<Dispute, "dispute_id">): Promise<DocumentsAndChecklist> {
   const body: unknown = await response.clone().json().catch(() => null);
   const documents = await documentList(response);
   const checklist = (body as { checklist?: EvidenceChecklist } | null)?.checklist;
-  if (checklist?.dispute_id !== dispute.dispute_id || !Array.isArray(checklist.items) || !Array.isArray(checklist.attachments)) {
-    throw new Error("The DisputeDesk server sent an unexpected checklist.");
-  }
-  return { documents, checklist };
+  const usable = checklist?.dispute_id === dispute.dispute_id && Array.isArray(checklist.items) && Array.isArray(checklist.attachments);
+  return { documents, checklist: usable ? checklist : null };
 }
 
 export async function deleteDocument(dispute: Pick<Dispute, "source" | "dispute_id">, documentId: string, signal?: AbortSignal): Promise<DocumentsAndChecklist> {
