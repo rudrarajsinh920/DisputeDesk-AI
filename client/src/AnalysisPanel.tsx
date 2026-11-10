@@ -13,6 +13,7 @@ import type {
   DraftCheck,
   DraftLine,
   EvidenceChecklist,
+  DocumentAttachment,
   GapConfirmation,
   EvidenceRef,
   EvidenceStatus,
@@ -305,14 +306,13 @@ const READ_ONLY: ConfirmState = { canConfirm: false, pending: null, announce: ""
 
 // Shown in the row itself, under the tag, so the merchant reads it without opening the guidance.
 export const CONFIRMED_NOTE = "DisputeDesk has not seen the record. Your confirmation does not change its evidence status.";
+export const ATTACHED_NOTE = "DisputeDesk has not checked it, and it does not change the evidence status.";
 export const CONFIRM_LIMIT ="Your confirmation is recorded as yours. It does not change the evidence status, and DisputeDesk has not seen the record.";
 
-function ChecklistSection({ dispute, refsById, canConfirm }: { dispute: Dispute; refsById: Map<string, EvidenceRef>; canConfirm: boolean }) {
+// The checklist is loaded once per dispute and shared: the documents section updates it after a link or a delete.
+function useChecklist(dispute: Dispute) {
   const [load, setLoad] = useState<ChecklistLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
-  const [pending, setPending] = useState<string | null>(null);
-  const [announce, setAnnounce] = useState("");
-  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     setLoad({ status: "loading" });
@@ -324,6 +324,23 @@ function ChecklistSection({ dispute, refsById, canConfirm }: { dispute: Dispute;
       });
     return () => controller.abort();
   }, [dispute, attempt]);
+  return { load, setLoad, retry: () => setAttempt((n) => n + 1) };
+}
+
+function ChecklistSection({
+  dispute,
+  refsById,
+  canConfirm,
+  state: { load, setLoad, retry },
+}: {
+  dispute: Dispute;
+  refsById: Map<string, EvidenceRef>;
+  canConfirm: boolean;
+  state: ReturnType<typeof useChecklist>;
+}) {
+  const [pending, setPending] = useState<string | null>(null);
+  const [announce, setAnnounce] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const onConfirm = (itemId: string, confirmed: boolean) => {
     if (pending) return;
     setPending(itemId);
@@ -339,7 +356,7 @@ function ChecklistSection({ dispute, refsById, canConfirm }: { dispute: Dispute;
       .finally(() => setPending(null));
   };
   const confirm: ConfirmState = { canConfirm: canConfirm && dispute.source === "demo", pending, announce, error, onConfirm };
-  return <ChecklistView load={load} refsById={refsById} onRetry={() => setAttempt((n) => n + 1)} confirm={confirm} />;
+  return <ChecklistView load={load} refsById={refsById} onRetry={retry} confirm={confirm} />;
 }
 
 export function ChecklistView({
@@ -379,12 +396,16 @@ function ChecklistItems({ checklist, refsById, confirm }: { checklist: EvidenceC
   const byItem = new Map<string, GapConfirmation[]>();
   for (const c of checklist.confirmations ?? []) byItem.set(c.item_id, [...(byItem.get(c.item_id) ?? []), c]);
   const isConfirmed = (i: ChecklistItem) => CONFIRMABLE.includes(i.status) && byItem.has(i.id);
+  const docsByItem = new Map<string, DocumentAttachment[]>();
+  for (const a of checklist.attachments ?? []) docsByItem.set(a.item_id, [...(docsByItem.get(a.item_id) ?? []), a]);
   const gaps = applicable.filter((i) => CONFIRMABLE.includes(i.status));
+  const withDocument = gaps.filter((i) => docsByItem.has(i.id)).length;
   const count = (...s: ChecklistStatus[]) => applicable.filter((i) => s.includes(i.status)).length;
   // Counts only: never a score, a share or a word like "complete". A confirmed gap still needs attention (DisputeDesk
-  // has not seen the record), so confirming never lowers that count; the confirmed ones are shown inside it, never as a record.
+  // has not seen the record), so confirming never lowers that count; the confirmed ones are shown inside it, never as
+  // a record. A linked document is the same: counted inside Needs attention, never as a record.
   const counts = [
-    `Needs attention: ${gaps.length} (${gaps.filter(isConfirmed).length} merchant-confirmed)`,
+    `Needs attention: ${gaps.length} (${gaps.filter(isConfirmed).length} merchant-confirmed${withDocument > 0 ? `, ${withDocument} with a document attached` : ""})`,
     `Record available: ${count("available")}`,
     `Conflicting: ${count("conflicting")}`,
   ];
@@ -405,6 +426,7 @@ function ChecklistItems({ checklist, refsById, confirm }: { checklist: EvidenceC
         {applicable.map((item) => {
           const refs = item.refs.flatMap((id) => refsById.get(id) ?? []);
           const confirmations = isConfirmed(item) ? byItem.get(item.id)! : [];
+          const attached = CONFIRMABLE.includes(item.status) ? (docsByItem.get(item.id) ?? []) : [];
           return (
             <li key={item.id} className="finding">
               <div className="finding-head">
@@ -413,7 +435,14 @@ function ChecklistItems({ checklist, refsById, confirm }: { checklist: EvidenceC
                 <span className={TIERS[item.tier].className}>{TIERS[item.tier].label}</span>
                 <span className={CHECKLIST_STATUS[item.status].className}>{CHECKLIST_STATUS[item.status].label}</span>
                 {confirmations.length > 0 && <span className="tag tag-confirmed">Merchant-confirmed</span>}
+                {attached.length > 0 && <span className="tag tag-confirmed">Document attached, not verified</span>}
               </div>
+              {attached.length > 0 && (
+                <p className="muted">
+                  {attached.length === 1 ? "Document" : "Documents"}: {attached.map((a) => (confirm.canConfirm ? a.display_name : `${a.display_name} (${a.account_id})`)).join(", ")}.{" "}
+                  {ATTACHED_NOTE}
+                </p>
+              )}
               {confirm.canConfirm && confirmations.length > 0 && <p className="confirm-note">{CONFIRMED_NOTE}</p>}
               <p className="muted">Why it may matter: {item.why}</p>
               {!confirm.canConfirm &&
@@ -491,13 +520,21 @@ function ChecklistItems({ checklist, refsById, confirm }: { checklist: EvidenceC
 export function AnalysisView({ dispute, analysis, canDraft = true }: { dispute: Dispute; analysis: Analysis; canDraft?: boolean }) {
   const provenance = analysis.provenance;
   const refsById = new Map(provenance?.refs.map((r) => [r.ref, r]));
+  const checklist = useChecklist(dispute);
   return (
     <>
       <ReadinessSummary analysis={analysis} />
       <ClaimAndRecords dispute={dispute} analysis={analysis} />
-      <ChecklistSection dispute={dispute} refsById={refsById} canConfirm={canDraft} />
+      <ChecklistSection dispute={dispute} refsById={refsById} canConfirm={canDraft} state={checklist} />
       {/* Documents are kept for demo disputes only; PayPal sandbox disputes are never stored. */}
-      {dispute.source === "demo" && <DocumentsSection dispute={dispute} canEdit={canDraft} />}
+      {dispute.source === "demo" && (
+        <DocumentsSection
+          dispute={dispute}
+          canEdit={canDraft}
+          checklist={checklist.load.status === "ready" ? checklist.load.checklist : null}
+          onChecklist={(c) => checklist.setLoad({ status: "ready", checklist: c })}
+        />
+      )}
 
       <section className="detail-section" id="case-evidence">
         <h3>Evidence analysis</h3>

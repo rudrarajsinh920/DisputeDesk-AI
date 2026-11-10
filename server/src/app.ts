@@ -58,7 +58,10 @@ import {
   deleteDocument,
   findAccountByEmail,
   getAccount,
+  downloadDocument,
   getDocumentPages,
+  listAttachments,
+  setDocumentLink,
   listAccounts,
   listAudit,
   listConfirmations,
@@ -477,11 +480,12 @@ export function createApp(
   const checklistFor = (dispute: Dispute, account: Account): EvidenceChecklist => {
     const checklist = buildChecklist(dispute, analyzeDispute(dispute));
     const gaps = new Set(checklist.items.filter((i) => CONFIRMABLE.includes(i.status)).map((i) => i.id));
-    const confirmations =
-      dispute.source === "demo"
-        ? listConfirmations(db, dispute.dispute_id, account.role === "admin" ? null : account.id).filter((c) => gaps.has(c.item_id))
-        : [];
-    return { ...checklist, confirmations };
+    const onlyAccount = account.role === "admin" ? null : account.id;
+    if (dispute.source !== "demo") return { ...checklist, confirmations: [], attachments: [] };
+    // Linked documents follow the same rule: shown only on items that are still gaps, never as a record.
+    const confirmations = listConfirmations(db, dispute.dispute_id, onlyAccount).filter((c) => gaps.has(c.item_id));
+    const attachments = listAttachments(db, dispute.dispute_id, onlyAccount).filter((a) => gaps.has(a.item_id));
+    return { ...checklist, confirmations, attachments };
   };
 
   // Evidence checklist for the dispute's reason, derived from the same analysis. Reading it is not audited.
@@ -648,7 +652,70 @@ export function createApp(
       sendError(res, 404, "document_not_found", "No document with this ID is attached to this dispute.");
       return;
     }
-    res.json({ documents: documentsFor(dispute.dispute_id, account) });
+    // The checklist too: the document's links went with it.
+    res.json({ documents: documentsFor(dispute.dispute_id, account), checklist: checklistFor(dispute, account) });
+  });
+
+  // Links the merchant's own document to a checklist gap, or removes that link (Stage 3.4). A merchant statement: it
+  // changes no evidence status, count, draft or AI input, and DisputeDesk has not checked the document. Merchants
+  // only (admin is read-only), demo disputes only. Answers with the document list and the checklist.
+  app.post("/api/documents/link", requireRole("merchant"), express.json({ limit: "1kb" }), async (req, res) => {
+    const body = req.body as { source?: unknown; document_id?: unknown; item_id?: unknown; linked?: unknown } | undefined;
+    if (
+      typeof body?.document_id !== "string" ||
+      !UUID.test(body.document_id) ||
+      typeof body.item_id !== "string" ||
+      !/^[a-z_]{1,40}$/.test(body.item_id) ||
+      typeof body.linked !== "boolean"
+    ) {
+      sendError(res, 400, "invalid_request", "document_id must be a document ID, item_id a checklist item ID and linked true or false.");
+      return;
+    }
+    if (body.source === "paypal_sandbox") return notForSandbox(res);
+    const dispute = await findDispute(req, res);
+    if (!dispute) return;
+    const account = signedIn(res);
+    if (body.linked) {
+      const item = buildChecklist(dispute, analyzeDispute(dispute)).items.find((i) => i.id === body.item_id);
+      if (!item || !CONFIRMABLE.includes(item.status)) {
+        sendError(res, 409, "not_linkable", "A document can be linked only to a missing item or one not shown by the records.");
+        return;
+      }
+    }
+    // Unlinking is always allowed, so a link on an item that has since changed can still be removed.
+    if (setDocumentLink(db, now(), account.id, dispute.dispute_id, body.document_id, body.item_id, body.linked) === null) {
+      sendError(res, 404, "document_not_found", "No document with this ID is attached to this dispute.");
+      return;
+    }
+    res.json({ documents: documentsFor(dispute.dispute_id, account), checklist: checklistFor(dispute, account) });
+  });
+
+  // The merchant's own original file, as a download (Stage 3.4). Never shown inline: a fixed type from the allowlist,
+  // an attachment disposition, nosniff and a sandboxing CSP, so the browser can't render or run it. Admin can't
+  // download originals (it reads metadata and text only); another account's file answers 404 like a missing one.
+  app.post("/api/documents/download", requireRole("merchant"), express.json({ limit: "1kb" }), async (req, res) => {
+    const body = req.body as { source?: unknown; document_id?: unknown } | undefined;
+    if (typeof body?.document_id !== "string" || !UUID.test(body.document_id)) {
+      sendError(res, 400, "invalid_request", "document_id must be a document ID.");
+      return;
+    }
+    if (body.source === "paypal_sandbox") return notForSandbox(res);
+    const dispute = await findDispute(req, res);
+    if (!dispute) return;
+    const file = downloadDocument(db, now(), signedIn(res).id, dispute.dispute_id, body.document_id);
+    if (!file) {
+      sendError(res, 404, "document_not_found", "No document with this ID is attached to this dispute.");
+      return;
+    }
+    const extension = { "application/pdf": "pdf", "image/png": "png", "image/jpeg": "jpg" }[file.media_type];
+    res.set({
+      "Content-Type": file.media_type,
+      // An ASCII fallback name, and the cleaned name percent-encoded (RFC 6266): no quote or header injection.
+      "Content-Disposition": `attachment; filename="document.${extension}"; filename*=UTF-8''${encodeURIComponent(file.display_name)}`,
+      "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; sandbox",
+      "Cache-Control": "no-store",
+    });
+    res.send(Buffer.from(file.bytes));
   });
 
   // On demand only. The rules run first; Gemini words their findings; assist.ts checks every line it returns.

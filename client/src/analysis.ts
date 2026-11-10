@@ -149,10 +149,57 @@ export async function fetchDocumentPages(dispute: Pick<Dispute, "source" | "disp
   return pages as DocumentPage[];
 }
 
-export async function deleteDocument(dispute: Pick<Dispute, "source" | "dispute_id">, documentId: string, signal?: AbortSignal): Promise<DisputeDocument[]> {
-  return documentList(
+// Deleting or (un)linking a document also changes the checklist's attachments, so the server sends both.
+export interface DocumentsAndChecklist {
+  documents: DisputeDocument[];
+  checklist: EvidenceChecklist;
+}
+async function documentsAndChecklist(response: Response, dispute: Pick<Dispute, "dispute_id">): Promise<DocumentsAndChecklist> {
+  const body: unknown = await response.clone().json().catch(() => null);
+  const documents = await documentList(response);
+  const checklist = (body as { checklist?: EvidenceChecklist } | null)?.checklist;
+  if (checklist?.dispute_id !== dispute.dispute_id || !Array.isArray(checklist.items) || !Array.isArray(checklist.attachments)) {
+    throw new Error("The DisputeDesk server sent an unexpected checklist.");
+  }
+  return { documents, checklist };
+}
+
+export async function deleteDocument(dispute: Pick<Dispute, "source" | "dispute_id">, documentId: string, signal?: AbortSignal): Promise<DocumentsAndChecklist> {
+  return documentsAndChecklist(
     await fetch("/api/documents/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: lookupBody(dispute, { document_id: documentId }), signal }),
+    dispute,
   );
+}
+
+// Links the merchant's own document to a checklist gap, or removes the link. A statement: no status changes.
+export async function linkDocument(
+  dispute: Pick<Dispute, "source" | "dispute_id">,
+  documentId: string,
+  itemId: string,
+  linked: boolean,
+  signal?: AbortSignal,
+): Promise<DocumentsAndChecklist> {
+  return documentsAndChecklist(
+    await fetch("/api/documents/link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: lookupBody(dispute, { document_id: documentId, item_id: itemId, linked }),
+      signal,
+    }),
+    dispute,
+  );
+}
+
+// Saves the merchant's own original file. It comes back as an attachment and is handed to the browser's download,
+// never opened or shown by DisputeDesk.
+export async function downloadDocument(dispute: Pick<Dispute, "source" | "dispute_id">, doc: Pick<DisputeDocument, "id" | "display_name">): Promise<void> {
+  const response = await fetch("/api/documents/download", { method: "POST", headers: { "Content-Type": "application/json" }, body: lookupBody(dispute, { document_id: doc.id }) });
+  if (!response.ok) throw serverError(response, await response.json().catch(() => null));
+  const url = URL.createObjectURL(await response.blob());
+  const link = Object.assign(document.createElement("a"), { href: url, download: doc.display_name });
+  link.click();
+  // Released once the browser has taken the file.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 export { MAX_CHECK_TEXT, countMarkers, readiness } from "../../shared/readiness.ts";

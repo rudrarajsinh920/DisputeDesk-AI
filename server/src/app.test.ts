@@ -4,6 +4,7 @@ import http from "node:http";
 import { gzipSync } from "node:zlib";
 import type { AddressInfo } from "node:net";
 import type { Dispute } from "../../shared/types.ts";
+import { CONFIRMABLE } from "../../shared/types.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { AI_MAX_CALLS, DEMO_ACCOUNTS, DEMO_DISPUTES, HSTS, PERMISSIONS_POLICY, createApp } from "./app.ts";
@@ -87,7 +88,9 @@ async function get(app: App, path: string, init: RequestInit = {}, as: string | 
     if (as) headers.set("Cookie", await signIn(app, base, as));
     const res = await fetch(`${base}${path}`, { ...init, headers });
     const text = await res.text();
-    return { status: res.status, headers: res.headers, text, body: text ? JSON.parse(text) : null };
+    // A download is not JSON; its bytes are in text.
+    const json = text && !res.headers.get("content-disposition")?.startsWith("attachment");
+    return { status: res.status, headers: res.headers, text, body: json ? JSON.parse(text) : null };
   } finally {
     server.close();
   }
@@ -845,6 +848,8 @@ const PROTECTED: [string, string][] = [
   ["POST", "/api/documents/upload"],
   ["POST", "/api/documents/delete"],
   ["POST", "/api/documents/pages"],
+  ["POST", "/api/documents/link"],
+  ["POST", "/api/documents/download"],
   ["GET", "/api/health"],
   ["GET", "/api/intelligence"],
   ["POST", "/api/intelligence/explain"],
@@ -922,6 +927,8 @@ test("each route allows exactly the intended roles", async () => {
     ["document upload to DEMO-1001 (admin is read-only)", "/api/documents/upload", upload("DEMO-1001", PDF, "application/pdf"), [403, 201, 404, 403, 403]],
     ["document delete on DEMO-1001 (admin is read-only)", "/api/documents/delete", lookup("demo", "DEMO-1001", { document_id: "00000000-0000-4000-8000-000000000000" }), [403, 404, 404, 403, 403]],
     ["document text on DEMO-1001", "/api/documents/pages", lookup("demo", "DEMO-1001", { document_id: "00000000-0000-4000-8000-000000000000" }), [404, 404, 404, 403, 403]],
+    ["document link on DEMO-1001 (admin is read-only)", "/api/documents/link", lookup("demo", "DEMO-1001", { document_id: "00000000-0000-4000-8000-000000000000", item_id: "shipping_tracking", linked: false }), [403, 404, 404, 403, 403]],
+    ["document download on DEMO-1001 (admin can't download)", "/api/documents/download", lookup("demo", "DEMO-1001", { document_id: "00000000-0000-4000-8000-000000000000" }), [403, 404, 404, 403, 403]],
     ["health", "/api/health", undefined, [200, 200, 200, 403, 403]],
     ["insights", "/api/intelligence", undefined, [200, 200, 200, 403, 403]],
     ["insights explanation (admin is read-only)", "/api/intelligence/explain", { method: "POST" }, [403, 200, 200, 403, 403]],
@@ -1785,8 +1792,8 @@ test("the checklist route returns the checklist built from the rules for every d
   for (const d of DEMO_DISPUTES) {
     const res = await get(app, "/api/analysis/checklist", lookup("demo", d.dispute_id), "admin");
     assert.equal(res.status, 200, d.dispute_id);
-    // The 2.1 checklist is unchanged; 2.2b only adds the confirmations key (none here).
-    assert.deepEqual(res.body, { ...buildChecklist(d, analyzeDispute(d)), confirmations: [] }, d.dispute_id);
+    // The 2.1 checklist is unchanged; 2.2b adds the confirmations key and 3.4 the attachments key (none here).
+    assert.deepEqual(res.body, { ...buildChecklist(d, analyzeDispute(d)), confirmations: [], attachments: [] }, d.dispute_id);
   }
   const rows = db.prepare("SELECT event FROM audit_log").all() as { event: string }[];
   assert.ok(!rows.some((r) => r.event.includes("checklist")), "the checklist is not audited");
@@ -1960,7 +1967,7 @@ test("a merchant uploads a PDF, PNG and JPEG to their demo dispute and lists met
   for (const [bytes, type, name] of files) {
     const res = await get(app, "/api/documents/upload", upload("DEMO-1001", bytes, type, name));
     assert.equal(res.status, 201, type);
-    assert.deepEqual(Object.keys(res.body.document).sort(), ["account_id", "byte_size", "display_name", "id", "media_type", "page_count", "status", "uploaded_at"]);
+    assert.deepEqual(Object.keys(res.body.document).sort(), ["account_id", "byte_size", "display_name", "id", "linked_items", "media_type", "page_count", "status", "uploaded_at"]);
     assert.match(res.body.document.id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.equal(res.body.document.display_name, name);
     assert.equal(res.body.document.media_type, type);
@@ -2163,9 +2170,11 @@ test("documents change no evidence status, readiness, checklist, draft, Insights
     const res = await get(app, path, init, as);
     return { status: res.status, body: res.body, sent: ai.calls.slice(from).map((c) => c.body) };
   };
+  // The checklist without its attachments key: links are expected to show there, and nothing else may change.
+  const withoutAttachments = ({ attachments: _a, ...rest }: Record<string, unknown>) => rest;
   const snapshot = async (id: string) => ({
     analysis: (await get(app, "/api/analysis", lookup("demo", id))).body,
-    checklist: (await get(app, "/api/analysis/checklist", lookup("demo", id))).body,
+    checklist: withoutAttachments((await get(app, "/api/analysis/checklist", lookup("demo", id))).body),
     list: (await get(app, "/api/disputes", {})).body,
     draft: await viaGemini("/api/analysis/ai", lookup("demo", id), "merchant-a"),
     insights: (await get(app, "/api/intelligence", {})).body,
@@ -2186,6 +2195,13 @@ test("documents change no evidence status, readiness, checklist, draft, Insights
     await extractor.idle();
     const read = await get(app, "/api/documents", lookup("demo", id));
     assert.deepEqual(read.body.documents.map((d: { status: string }) => d.status).sort(), ["extracted", "failed", "no_text", "no_text"]);
+    // Every document linked to every gap (Stage 3.4): still a statement only.
+    const gaps = (before.checklist.items as { id: string; status: string }[]).filter((i) => CONFIRMABLE.includes(i.status as never)).map((i) => i.id);
+    if (id === "DEMO-1001") assert.ok(gaps.length > 0, "DEMO-1001 has gaps, so links are really made");
+    for (const doc of read.body.documents as { id: string }[])
+      for (const item_id of gaps) assert.equal((await get(app, "/api/documents/link", lookup("demo", id, { document_id: doc.id, item_id, linked: true }))).status, 200);
+    const linked = await get(app, "/api/analysis/checklist", lookup("demo", id));
+    assert.equal(linked.body.attachments.length, gaps.length * 4);
     const after = await snapshot(id);
     assert.deepEqual(after, before, id);
     assert.ok(!JSON.stringify(after.draft.sent).includes("1Z999"), "no document text reaches Gemini");
@@ -2235,6 +2251,74 @@ test("an uploaded PDF's text is read in the background and shown page by page to
   assert.equal((await get(app, "/api/documents/delete", lookup("demo", "DEMO-1001", { document_id: id }))).status, 200);
   assert.equal(countRows(db, "SELECT COUNT(*) AS n FROM document_pages"), 0);
   assert.equal((await get(app, "/api/documents/pages", lookup("demo", "DEMO-1001", { document_id: id }))).status, 404);
+});
+
+test("a merchant links their own document to a checklist gap, unlinks it, and downloads the original as an attachment", async () => {
+  const db = openDatabase(":memory:");
+  const app = createApp(null, null, undefined, { accounts: TEST_ACCOUNTS, db, extractor: createExtractor(db) });
+  const added = await get(app, "/api/documents/upload", upload("DEMO-1001", PDF, "application/pdf", "Label \"1\" é.pdf"));
+  assert.equal(added.status, 201);
+  const id: string = added.body.document.id;
+  assert.deepEqual(added.body.document.linked_items, []);
+  const items = (await get(app, "/api/analysis/checklist", lookup("demo", "DEMO-1001"))).body.items as { id: string; status: string }[];
+  const gap = items.find((i) => CONFIRMABLE.includes(i.status as never))!.id;
+  const filled = items.find((i) => i.status === "available" || i.status === "conflicting")!.id;
+  const link = (item_id: unknown, linked: unknown, as = "merchant-a", dispute = "DEMO-1001", document_id: unknown = id) =>
+    get(app, "/api/documents/link", lookup("demo", dispute, { document_id, item_id, linked }), as);
+
+  // Linking: shown on the document and, for a gap, on the checklist. Linking twice changes nothing.
+  const linked = await link(gap, true);
+  assert.equal(linked.status, 200);
+  assert.deepEqual(linked.body.documents[0].linked_items, [gap]);
+  assert.deepEqual(linked.body.checklist.attachments, [{ item_id: gap, document_id: id, display_name: 'Label "1" é.pdf', account_id: "merchant-a" }]);
+  assert.equal((await link(gap, true)).status, 200);
+  // Only a gap can be linked; a filled or unknown item, bad input and the sandbox are refused.
+  assert.equal((await link(filled, true)).body.error.code, "not_linkable");
+  assert.equal((await link("no_such_item", true)).body.error.code, "not_linkable");
+  for (const bad of [link("Bad-ID", true), link(gap, "yes"), link(gap, true, "merchant-a", "DEMO-1001", "x")]) assert.equal((await bad).status, 400);
+  assert.equal((await get(app, "/api/documents/link", lookup("paypal_sandbox", "PP-D-1", { document_id: id, item_id: gap, linked: true }))).status, 409);
+  // Admin reads the link and can't change it; another merchant gets a plain 404, by any dispute; buyers 403.
+  assert.equal((await get(app, "/api/analysis/checklist", lookup("demo", "DEMO-1001"), "admin")).body.attachments.length, 1);
+  assert.deepEqual((await get(app, "/api/documents", lookup("demo", "DEMO-1001"), "admin")).body.documents[0].linked_items, [gap]);
+  assert.equal((await link(gap, false, "admin")).status, 403);
+  const sideways = await link(gap, false, "merchant-b", "DEMO-1003");
+  const missing = await link(gap, false, "merchant-b", "DEMO-1003", "00000000-0000-4000-8000-000000000000");
+  assert.equal(sideways.status, 404);
+  assert.deepEqual(sideways.body, missing.body);
+  assert.equal((await link(gap, false, "buyer-a")).status, 403);
+
+  // Download: the original bytes, as an attachment that the browser can't render or run.
+  const file = await get(app, "/api/documents/download", lookup("demo", "DEMO-1001", { document_id: id }));
+  assert.equal(file.status, 200);
+  assert.equal(file.text, PDF.toString());
+  assert.equal(file.headers.get("content-type"), "application/pdf");
+  assert.equal(file.headers.get("content-disposition"), `attachment; filename="document.pdf"; filename*=UTF-8''${encodeURIComponent('Label "1" é.pdf')}`);
+  assert.equal(file.headers.get("x-content-type-options"), "nosniff");
+  assert.ok(file.headers.get("content-security-policy")!.split("; ").includes("sandbox"));
+  assert.equal(file.headers.get("cache-control"), "no-store");
+  for (const as of ["admin", "buyer-a"]) assert.equal((await get(app, "/api/documents/download", lookup("demo", "DEMO-1001", { document_id: id }), as)).status, 403);
+  const theirs = await get(app, "/api/documents/download", lookup("demo", "DEMO-1003", { document_id: id }), "merchant-b");
+  const none = await get(app, "/api/documents/download", lookup("demo", "DEMO-1003", { document_id: "00000000-0000-4000-8000-000000000000" }), "merchant-b");
+  assert.equal(theirs.status, 404);
+  assert.deepEqual(theirs.body, none.body);
+
+  // Unlinking removes it; unlinking again changes nothing. The audit holds IDs only.
+  const unlinked = await link(gap, false);
+  assert.deepEqual(unlinked.body.documents[0].linked_items, []);
+  assert.deepEqual(unlinked.body.checklist.attachments, []);
+  assert.equal((await link(gap, false)).status, 200);
+  const events = (db.prepare("SELECT event, detail FROM audit_log WHERE event IN ('document_linked', 'document_unlinked', 'document_downloaded') ORDER BY id").all() as { event: string; detail: string }[]).map(
+    (r) => `${r.event} ${r.detail}`,
+  );
+  assert.deepEqual(events, [`document_linked ${id} ${gap}`, `document_downloaded ${id}`, `document_unlinked ${id} ${gap}`]);
+
+  // Deleting the document takes its links with it, and the answer carries the updated checklist.
+  assert.equal((await link(gap, true)).status, 200);
+  const deleted = await get(app, "/api/documents/delete", lookup("demo", "DEMO-1001", { document_id: id }));
+  assert.equal(deleted.status, 200);
+  assert.deepEqual(deleted.body.checklist.attachments, []);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM document_links").get() as { n: number }).n, 0);
+  assert.equal((await get(app, "/api/documents/download", lookup("demo", "DEMO-1001", { document_id: id }))).status, 404);
 });
 
 test("PDFs left unread by an earlier run are read when the server starts", async () => {

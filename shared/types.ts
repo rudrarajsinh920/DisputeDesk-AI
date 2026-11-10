@@ -188,6 +188,8 @@ export interface EvidenceChecklist {
   // Added by the server route, not by buildChecklist. A merchant sees only their own; admin sees every account's.
   // A confirmation never changes an item's status or any count: DisputeDesk has not seen the record it refers to.
   confirmations?: GapConfirmation[];
+  // Added by the server route, like confirmations: documents linked to items that are still gaps. Never a status.
+  attachments?: DocumentAttachment[];
 }
 
 // A merchant's statement that they hold a record for a gap (Stage 2.2b). IDs and a time only, never free text.
@@ -213,6 +215,16 @@ export interface DisputeDocument {
   status: DocumentStatus;
   // ISO 8601, UTC.
   uploaded_at: string;
+  // Checklist item IDs the merchant linked this document to (Stage 3.4). A merchant statement, never a status.
+  linked_items: string[];
+}
+// The merchant's statement that one of their documents is the record for a checklist gap (Stage 3.4). DisputeDesk
+// has not checked the document: a link never changes an evidence status, a count, the draft or the AI input.
+export interface DocumentAttachment {
+  item_id: string;
+  document_id: string;
+  display_name: string;
+  account_id: string;
 }
 // One page of text read from a PDF's text layer (Stage 3.3): exactly as written in the file, untrusted, not checked
 // against the records. Pages are numbered from 1; a page with no text has an empty string.

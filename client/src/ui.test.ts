@@ -12,7 +12,7 @@ import { buildChecklist } from "../../server/src/checklist.ts";
 import { analyzeDispute } from "../../server/src/evidence.ts";
 import { VALIDATION_EXAMPLE_MODEL, validationExampleAnswer } from "../../server/src/assist.ts";
 import { AI_OFF_BAD_MODEL } from "../../server/src/config.ts";
-import { AiResult, AiSectionView, AnalysisView, CONFIRMED_NOTE, CONFIRM_LIMIT, CheckResult, ChecklistView, ClaimAndRecords, DISCARD_EDITS, DraftEditor, ReadinessSummary, ValidationExampleView } from "./AnalysisPanel.tsx";
+import { ATTACHED_NOTE, AiResult, AiSectionView, AnalysisView, CONFIRMED_NOTE, CONFIRM_LIMIT, CheckResult, ChecklistView, ClaimAndRecords, DISCARD_EDITS, DraftEditor, ReadinessSummary, ValidationExampleView } from "./AnalysisPanel.tsx";
 import { readiness } from "./analysis.ts";
 import type { AiState, ConfirmState, ExampleState } from "./AnalysisPanel.tsx";
 import { AccountView } from "./Account.tsx";
@@ -32,7 +32,7 @@ import accountsFile from "../../demo-accounts.json" with { type: "json" };
 import extraDemos from "../../demo-disputes.json" with { type: "json" };
 import sample from "../../sample-dispute.json" with { type: "json" };
 import type { AccountInfo, AiAssist, BuyerDispute, Dispute, DisputeDocument } from "../../shared/types.ts";
-import { DOCUMENT_ADMIN_NOTICE, DOCUMENT_NOTICE, DOCUMENT_TEXT_NOTICE, DocumentsView, documentStatusLine, fileProblem, formatSize } from "./Documents.tsx";
+import { DOCUMENT_ADMIN_NOTICE, DOCUMENT_LINK_NOTICE, DOCUMENT_NOTICE, DOCUMENT_TEXT_NOTICE, DocumentsView, documentStatusLine, fileProblem, formatSize } from "./Documents.tsx";
 import type { DocumentActions } from "./Documents.tsx";
 
 // Test fixture: the synthetic records the server serves. The page itself no longer bundles them.
@@ -727,8 +727,8 @@ test("the client calls only DisputeDesk's own read and analysis endpoints", () =
     .map((f) => readFileSync(new URL(f, dir), "utf8"))
     .join("\n");
   const urls = [...new Set([...sources.matchAll(/"(\/api\/[^"]*)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(urls, ["/api/admin/accounts", "/api/admin/audit", "/api/admin/settings", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/analysis/check", "/api/analysis/checklist", "/api/analysis/checklist/confirm", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/documents", "/api/documents/delete", "/api/documents/pages", "/api/documents/upload", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
-  assert.equal((sources.match(/fetch\(/g) ?? []).length, 21, "each fetch call uses one of the endpoints above");
+  assert.deepEqual(urls, ["/api/admin/accounts", "/api/admin/audit", "/api/admin/settings", "/api/analysis", "/api/analysis/ai", "/api/analysis/ai/example", "/api/analysis/check", "/api/analysis/checklist", "/api/analysis/checklist/confirm", "/api/auth/login", "/api/auth/logout", "/api/auth/me", "/api/buyer/disputes", "/api/buyer/explain", "/api/disputes", "/api/documents", "/api/documents/delete", "/api/documents/download", "/api/documents/link", "/api/documents/pages", "/api/documents/upload", "/api/health", "/api/intelligence", "/api/intelligence/explain", "/api/sandbox/disputes"]);
+  assert.equal((sources.match(/fetch\(/g) ?? []).length, 23, "each fetch call uses one of the endpoints above");
   assert.doesNotMatch(sources, /paypal\.com|generativelanguage|method:\s*"(PUT|PATCH|DELETE)"/i);
 });
 
@@ -1187,6 +1187,7 @@ const docFixture = (n: number, extra: Partial<DisputeDocument> = {}): DisputeDoc
   page_count: null,
   status: "pending",
   uploaded_at: "2026-11-09T10:00:00.000Z",
+  linked_items: [],
   ...extra,
 });
 const docActions = (extra: Partial<DocumentActions> = {}): DocumentActions => ({
@@ -1198,6 +1199,10 @@ const docActions = (extra: Partial<DocumentActions> = {}): DocumentActions => ({
   onDelete: noop,
   texts: {},
   onToggleText: noop,
+  itemLabels: {},
+  linkable: [],
+  onLink: noop,
+  onDownload: noop,
   ...extra,
 });
 
@@ -1222,6 +1227,60 @@ test("a filename is shown as text, never as markup", () => {
   const markup = html(createElement(DocumentsView, { load: { status: "ready", documents: [evil] }, onRetry: noop, actions: docActions() }));
   assert.ok(!markup.includes("<img"));
   assert.ok(markup.includes("&lt;img src=x onerror=alert(1)&gt;.pdf"));
+});
+
+test("a linked document shows on its checklist gap as attached and not verified, and never lowers Needs attention", () => {
+  const { checklist, refsById } = checklistOf(gapDispute);
+  const gaps = checklist.items.filter((i) => i.status === "missing" || i.status === "needs_confirmation");
+  const filled = checklist.items.find((i) => i.status === "available" || i.status === "conflicting")!;
+  const attachments = [
+    { item_id: gaps[0].id, document_id: "d1", display_name: "<b>label</b>.pdf", account_id: "merchant-a" },
+    // A link on an item that is no longer a gap is not shown (the server filters these too).
+    { item_id: filled.id, document_id: "d1", display_name: "<b>label</b>.pdf", account_id: "merchant-a" },
+  ];
+  const view = (canConfirm: boolean) =>
+    html(
+      createElement(ChecklistView, {
+        load: { status: "ready", checklist: { ...checklist, confirmations: [], attachments } },
+        refsById,
+        onRetry: noop,
+        confirm: { canConfirm, pending: null, announce: "", error: null, onConfirm: noop },
+      }),
+    );
+  const merchant = view(true);
+  const out = text(merchant);
+  assert.equal(out.match(/Document attached, not verified/g)?.length, 1);
+  assert.ok(out.includes(`Needs attention: ${gaps.length} (0 merchant-confirmed, 1 with a document attached) ·`), "linking never lowers Needs attention");
+  assert.ok(out.includes(`Document: &lt;b&gt;label&lt;/b&gt;.pdf. ${ATTACHED_NOTE}`));
+  assert.doesNotMatch(merchant, /<b>label/, "a filename is text, never markup");
+  // Statuses stay as the engine set them.
+  assert.equal(merchant.match(/Document attached/g)?.length, 1);
+  assert.ok(text(view(false)).includes("&lt;b&gt;label&lt;/b&gt;.pdf (merchant-a)"), "admin sees whose document it is");
+});
+
+test("a merchant links a document to checklist gaps with checkboxes and can download it; admin sees links only", () => {
+  const linked = docFixture(1, { status: "extracted", page_count: 1, linked_items: ["proof_of_delivery", "old_item"] });
+  const labels = { proof_of_delivery: "Proof of delivery", shipping_tracking: "Shipping tracking", old_item: "An item that is now filled" };
+  const calls: [string, string, boolean][] = [];
+  const actions = docActions({ itemLabels: labels, linkable: ["proof_of_delivery", "shipping_tracking"], onLink: (d, id, on) => calls.push([d.id, id, on]) });
+  const markup = html(createElement(DocumentsView, { load: { status: "ready", documents: [linked] }, onRetry: noop, actions }));
+  const out = text(markup);
+  assert.ok(out.includes("Linked to: Proof of delivery, An item that is now filled (not verified)"));
+  assert.ok(out.includes(DOCUMENT_LINK_NOTICE));
+  assert.match(out, /Link to checklist gaps \(2\)/);
+  // One checkbox per gap, plus the old link so it can be removed; checked means linked.
+  assert.equal(markup.match(/type="checkbox"/g)?.length, 3);
+  assert.equal(markup.match(/type="checkbox" checked=""/g)?.length, 2);
+  assert.match(markup, /aria-label="Download synthetic-1\.pdf"/);
+  assert.doesNotMatch(out.replace(/not verified|Not verified/g, ""), /verified/i, "nothing calls a document verified");
+  // No gaps: says so instead of an empty list.
+  const none = text(html(createElement(DocumentsView, { load: { status: "ready", documents: [docFixture(2)] }, onRetry: noop, actions: docActions() })));
+  assert.match(none, /no checklist gaps to link a file to/);
+  // Admin: the links as text, no checkbox, no download.
+  const admin = html(createElement(DocumentsView, { load: { status: "ready", documents: [linked] }, onRetry: noop, actions: docActions({ canEdit: false, itemLabels: labels }) }));
+  assert.ok(text(admin).includes("Linked to: Proof of delivery"));
+  assert.doesNotMatch(admin, /type="checkbox"|Download/);
+  assert.deepEqual(calls, [], "rendering links nothing");
 });
 
 test("admin reads the documents list without upload or delete; a full dispute disables the upload field", () => {

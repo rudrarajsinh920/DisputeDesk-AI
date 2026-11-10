@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { formatDate } from "../../shared/disputes.ts";
 import { DOCUMENT_LIMITS, DOCUMENT_MEDIA_TYPES } from "../../shared/types.ts";
-import type { Dispute, DisputeDocument, DocumentMediaType, DocumentPage } from "../../shared/types.ts";
-import { deleteDocument, fetchDocumentPages, fetchDocuments, uploadDocument } from "./analysis.ts";
+import { CONFIRMABLE } from "../../shared/types.ts";
+import type { Dispute, DisputeDocument, DocumentMediaType, DocumentPage, EvidenceChecklist } from "../../shared/types.ts";
+import { deleteDocument, downloadDocument, fetchDocumentPages, fetchDocuments, linkDocument, uploadDocument } from "./analysis.ts";
+import type { DocumentsAndChecklist } from "./analysis.ts";
 
 // Merchant documents (Stage 3). Demo disputes only. DisputeDesk stores a file and reads the text layer of a PDF;
 // it has not checked what the file says or whether it is genuine, and nothing here changes an evidence status,
@@ -13,6 +15,8 @@ export const DOCUMENT_NOTICE =
   "Upload only synthetic test files. DisputeDesk stores the file and reads the text of a PDF, but has not checked it: it does not change any evidence status, and files are not scanned for viruses.";
 export const DOCUMENT_ADMIN_NOTICE = "Files merchants attached to this dispute. DisputeDesk has not checked them. Read-only.";
 export const DOCUMENT_TEXT_NOTICE = "Text as written in the file. DisputeDesk has not checked it against your records.";
+export const DOCUMENT_LINK_NOTICE =
+  "Linking says this file is your record for that item. DisputeDesk has not checked the file, and the item's evidence status does not change.";
 
 const KIND: Record<DocumentMediaType, string> = { "application/pdf": "PDF", "image/png": "PNG image", "image/jpeg": "JPEG image" };
 
@@ -55,14 +59,44 @@ export interface DocumentActions {
   // Open text views, by document ID.
   texts: Record<string, PagesLoad>;
   onToggleText: (doc: DisputeDocument) => void;
+  // Checklist labels by item ID, and the items that are gaps now (the only ones a document can be linked to).
+  itemLabels: Record<string, string>;
+  linkable: string[];
+  onLink: (doc: DisputeDocument, itemId: string, linked: boolean) => void;
+  onDownload: (doc: DisputeDocument) => void;
 }
-const READ_ONLY: DocumentActions = { canEdit: false, pending: null, announce: "", error: null, onUpload: () => {}, onDelete: () => {}, texts: {}, onToggleText: () => {} };
+const READ_ONLY: DocumentActions = {
+  canEdit: false,
+  pending: null,
+  announce: "",
+  error: null,
+  onUpload: () => {},
+  onDelete: () => {},
+  texts: {},
+  onToggleText: () => {},
+  itemLabels: {},
+  linkable: [],
+  onLink: () => {},
+  onDownload: () => {},
+};
 
 // While a PDF is being read, the list is asked again every few seconds, a limited number of times.
 const POLL_MS = 2000;
 const MAX_POLLS = 15;
 
-export function DocumentsSection({ dispute, canEdit }: { dispute: Dispute; canEdit: boolean }) {
+// checklist is the one the checklist section shows (null until it loads); onChecklist hands it the updated one after
+// a link or a delete, so both sections redraw from the same server answer.
+export function DocumentsSection({
+  dispute,
+  canEdit,
+  checklist = null,
+  onChecklist = () => {},
+}: {
+  dispute: Dispute;
+  canEdit: boolean;
+  checklist?: EvidenceChecklist | null;
+  onChecklist?: (checklist: EvidenceChecklist) => void;
+}) {
   const [load, setLoad] = useState<DocumentsLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [pending, setPending] = useState<string | null>(null);
@@ -102,19 +136,23 @@ export function DocumentsSection({ dispute, canEdit }: { dispute: Dispute; canEd
   }, [dispute, load, reading]);
 
   // The list redraws from the server's answer, never from a guess.
-  const run = (key: string, action: () => Promise<DisputeDocument[]>, done: string) => {
+  const run = (key: string, action: () => Promise<DisputeDocument[] | DocumentsAndChecklist>, done: string, refocus = false) => {
     if (busy.current) return;
     busy.current = true;
     setPending(key);
     setError(null);
     setAnnounce("");
     action()
-      .then((documents) => {
+      .then((answer) => {
         polls.current = 0;
-        setLoad({ status: "ready", documents });
+        if (Array.isArray(answer)) setLoad({ status: "ready", documents: answer });
+        else {
+          setLoad({ status: "ready", documents: answer.documents });
+          onChecklist(answer.checklist);
+        }
         setAnnounce(done);
         // A deleted row takes its button with it: keep keyboard focus in the section.
-        if (key !== "upload") document.getElementById("documents-title")?.focus();
+        if (refocus) document.getElementById("documents-title")?.focus();
       })
       .catch((e: unknown) => setError(`Couldn't save that. ${e instanceof Error ? e.message : String(e)}`))
       .finally(() => {
@@ -137,7 +175,19 @@ export function DocumentsSection({ dispute, canEdit }: { dispute: Dispute; canEd
   };
   const onDelete = (doc: DisputeDocument) => {
     if (!window.confirm(`Delete ${doc.display_name}? This can't be undone.`)) return;
-    run(doc.id, () => deleteDocument(dispute, doc.id), `${doc.display_name} deleted.`);
+    run(doc.id, () => deleteDocument(dispute, doc.id), `${doc.display_name} deleted.`, true);
+  };
+  const itemLabels = Object.fromEntries((checklist?.items ?? []).map((i) => [i.id, i.label]));
+  const linkable = (checklist?.items ?? []).filter((i) => CONFIRMABLE.includes(i.status)).map((i) => i.id);
+  const onLink = (doc: DisputeDocument, itemId: string, linked: boolean) => {
+    const label = itemLabels[itemId] ?? itemId;
+    run(`${doc.id}:${itemId}`, () => linkDocument(dispute, doc.id, itemId, linked), linked ? `${doc.display_name} linked to ${label}.` : `${doc.display_name} unlinked from ${label}.`);
+  };
+  const onDownload = (doc: DisputeDocument) => {
+    setError(null);
+    downloadDocument(dispute, doc)
+      .then(() => setAnnounce(`Downloading ${doc.display_name}.`))
+      .catch((e: unknown) => setError(`Couldn't download that. ${e instanceof Error ? e.message : String(e)}`));
   };
   const onToggleText = (doc: DisputeDocument) => {
     if (texts[doc.id]) {
@@ -149,7 +199,7 @@ export function DocumentsSection({ dispute, canEdit }: { dispute: Dispute; canEd
       .then((pages) => setTexts((t) => (t[doc.id] ? { ...t, [doc.id]: { status: "ready", pages } } : t)))
       .catch((e: unknown) => setTexts((t) => (t[doc.id] ? { ...t, [doc.id]: { status: "error", message: e instanceof Error ? e.message : String(e) } } : t)));
   };
-  const actions: DocumentActions = { canEdit, pending, announce, error, onUpload, onDelete, texts, onToggleText };
+  const actions: DocumentActions = { canEdit, pending, announce, error, onUpload, onDelete, texts, onToggleText, itemLabels, linkable, onLink, onDownload };
   return <DocumentsView load={load} onRetry={() => setAttempt((n) => n + 1)} actions={actions} />;
 }
 
@@ -169,6 +219,40 @@ function DocumentText({ id, text }: { id: string; text: PagesLoad }) {
         ))}
       </ol>
     </div>
+  );
+}
+
+// The checklist gaps this document can be the record for, as checkboxes: checked means linked. A link on an item
+// that is no longer a gap is still listed, so it can be removed.
+function DocumentLinks({ doc, actions }: { doc: DisputeDocument; actions: DocumentActions }) {
+  const items = [...actions.linkable, ...doc.linked_items.filter((id) => !actions.linkable.includes(id))];
+  return (
+    <details className="document-links">
+      <summary>Link to checklist gaps{doc.linked_items.length > 0 ? ` (${doc.linked_items.length})` : ""}</summary>
+      <p className="muted">{DOCUMENT_LINK_NOTICE}</p>
+      {items.length === 0 ? (
+        <p className="muted">This dispute has no checklist gaps to link a file to.</p>
+      ) : (
+        <fieldset>
+          <legend className="sr-only">Checklist gaps {doc.display_name} is your record for</legend>
+          {items.map((id) => {
+            const key = `${doc.id}:${id}`;
+            return (
+              <label key={id} className="document-link">
+                <input
+                  type="checkbox"
+                  checked={doc.linked_items.includes(id)}
+                  disabled={actions.pending !== null && actions.pending !== key}
+                  aria-busy={actions.pending === key || undefined}
+                  onChange={(e) => actions.onLink(doc, id, e.currentTarget.checked)}
+                />
+                {actions.itemLabels[id] ?? id}
+              </label>
+            );
+          })}
+        </fieldset>
+      )}
+    </details>
   );
 }
 
@@ -208,6 +292,9 @@ export function DocumentsView({ load, onRetry, actions = READ_ONLY }: { load: Do
                   {!actions.canEdit && ` · ${doc.account_id}`}
                 </p>
                 <p>{documentStatusLine(doc)}</p>
+                {doc.linked_items.length > 0 && (
+                  <p className="muted">Linked to: {doc.linked_items.map((id) => actions.itemLabels[id] ?? id).join(", ")} (not verified)</p>
+                )}
                 {(doc.status === "extracted" || actions.canEdit) && (
                   <div className="document-actions">
                     {doc.status === "extracted" && (
@@ -223,6 +310,11 @@ export function DocumentsView({ load, onRetry, actions = READ_ONLY }: { load: Do
                       </button>
                     )}
                     {actions.canEdit && (
+                      <button type="button" className="button button-secondary" aria-label={`Download ${doc.display_name}`} onClick={() => actions.onDownload(doc)}>
+                        Download
+                      </button>
+                    )}
+                    {actions.canEdit && (
                       <button
                         type="button"
                         className="button button-secondary"
@@ -235,6 +327,7 @@ export function DocumentsView({ load, onRetry, actions = READ_ONLY }: { load: Do
                     )}
                   </div>
                 )}
+                {actions.canEdit && <DocumentLinks doc={doc} actions={actions} />}
                 {text && <DocumentText id={textId} text={text} />}
               </li>
             );

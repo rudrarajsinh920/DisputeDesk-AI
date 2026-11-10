@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { DisputeDocument, Dispute, DocumentMediaType, DocumentPage, DocumentStatus, GapConfirmation } from "../../shared/types.ts";
+import type { DisputeDocument, Dispute, DocumentAttachment, DocumentMediaType, DocumentPage, DocumentStatus, GapConfirmation } from "../../shared/types.ts";
 import { DOCUMENT_LIMITS } from "../../shared/types.ts";
 import type { Account } from "./auth.ts";
 import { transaction } from "./db.ts";
@@ -197,7 +197,7 @@ export function withdrawGap(db: DatabaseSync, at: number, accountId: string, dis
 
 // ---- Merchant documents (migration v5). The bytes stay in document_blobs and are never listed. ----
 
-const toDocument = (r: Row): DisputeDocument => ({
+const toDocument = (r: Row, linked_items: string[] = []): DisputeDocument => ({
   id: r.id as string,
   account_id: r.account_id as string,
   display_name: r.display_name as string,
@@ -206,7 +206,18 @@ const toDocument = (r: Row): DisputeDocument => ({
   page_count: r.page_count as number | null,
   status: r.status as DocumentStatus,
   uploaded_at: new Date(r.uploaded_at as number).toISOString(),
+  linked_items,
 });
+
+// The checklist item IDs each of a dispute's documents is linked to, by document ID.
+function linksByDocument(db: DatabaseSync, disputeId: string): Map<string, string[]> {
+  const rows = db
+    .prepare("SELECT l.document_id, l.item_id FROM document_links l JOIN documents d ON d.id = l.document_id WHERE d.dispute_id = ? ORDER BY l.item_id")
+    .all(disputeId) as Row[];
+  const links = new Map<string, string[]>();
+  for (const r of rows) links.set(r.document_id as string, [...(links.get(r.document_id as string) ?? []), r.item_id as string]);
+  return links;
+}
 
 // One dispute's documents from accounts that still have access to it. onlyAccount limits them to one account
 // (a merchant sees only their own); null returns every account's (admin, read-only).
@@ -219,7 +230,8 @@ export function listDocuments(db: DatabaseSync, disputeId: string, onlyAccount: 
        ORDER BY d.uploaded_at, d.id`,
     )
     .all(disputeId, onlyAccount, onlyAccount) as Row[];
-  return rows.map(toDocument);
+  const links = linksByDocument(db, disputeId);
+  return rows.map((r) => toDocument(r, links.get(r.id as string)));
 }
 
 export type AddDocumentResult = { ok: true; document: DisputeDocument } | { ok: false; reason: "too_many" | "account_full" | "duplicate" };
@@ -319,7 +331,77 @@ export function getDocumentPages(
   const pages = (db.prepare("SELECT page, text, text_sha256 FROM document_pages WHERE document_id = ? ORDER BY page").all(documentId) as Row[]).map(
     (p): DocumentPage => ({ page: p.page as number, text: p.text as string, text_sha256: p.text_sha256 as string }),
   );
-  return { document: toDocument(row), pages };
+  return { document: toDocument(row, linksByDocument(db, disputeId).get(documentId)), pages };
+}
+
+// ---- Document links and downloads (Stage 3.4). A link is the merchant's statement, never an evidence status. ----
+
+// The account's own document on that dispute, while the account still has access to it, or undefined.
+const ownDocument = (db: DatabaseSync, accountId: string, disputeId: string, documentId: string) =>
+  db
+    .prepare(
+      `SELECT d.id, d.display_name, d.media_type FROM documents d JOIN dispute_access x ON x.account_id = d.account_id AND x.dispute_id = d.dispute_id
+       WHERE d.id = ? AND d.dispute_id = ? AND d.account_id = ?`,
+    )
+    .get(documentId, disputeId, accountId) as Row | undefined;
+
+// Links or unlinks the account's own document and a checklist item, with its audit entry (IDs only). The caller
+// checks that the item is a gap before linking. Null when the document isn't the account's; otherwise whether
+// anything changed (linking twice, or unlinking what isn't linked, changes nothing and is not audited).
+export function setDocumentLink(
+  db: DatabaseSync,
+  at: number,
+  accountId: string,
+  disputeId: string,
+  documentId: string,
+  itemId: string,
+  linked: boolean,
+): boolean | null {
+  return transaction(db, () => {
+    if (!ownDocument(db, accountId, disputeId, documentId)) return null;
+    const { changes } = linked
+      ? db.prepare("INSERT INTO document_links (document_id, item_id, linked_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING").run(documentId, itemId, at)
+      : db.prepare("DELETE FROM document_links WHERE document_id = ? AND item_id = ?").run(documentId, itemId);
+    if (changes > 0) audit(db, at, linked ? "document_linked" : "document_unlinked", { account_id: accountId, dispute_id: disputeId, detail: `${documentId} ${itemId}` });
+    return changes > 0;
+  });
+}
+
+// A dispute's links with each document's name, from accounts that still have access to it. onlyAccount limits them
+// to one account (a merchant sees only their own); null returns every account's (admin, read-only).
+export function listAttachments(db: DatabaseSync, disputeId: string, onlyAccount: string | null): DocumentAttachment[] {
+  const rows = db
+    .prepare(
+      `SELECT l.item_id, l.document_id, d.display_name, d.account_id FROM document_links l
+       JOIN documents d ON d.id = l.document_id
+       JOIN dispute_access x ON x.account_id = d.account_id AND x.dispute_id = d.dispute_id
+       WHERE d.dispute_id = ? AND (? IS NULL OR d.account_id = ?)
+       ORDER BY l.linked_at, l.item_id, l.document_id`,
+    )
+    .all(disputeId, onlyAccount, onlyAccount) as Row[];
+  return rows.map((r) => ({
+    item_id: r.item_id as string,
+    document_id: r.document_id as string,
+    display_name: r.display_name as string,
+    account_id: r.account_id as string,
+  }));
+}
+
+// The account's own file, for download, with its audit entry (the ID only). Null for anyone else's, like a missing one.
+export function downloadDocument(
+  db: DatabaseSync,
+  at: number,
+  accountId: string,
+  disputeId: string,
+  documentId: string,
+): { bytes: Uint8Array; media_type: DocumentMediaType; display_name: string } | null {
+  return transaction(db, () => {
+    const doc = ownDocument(db, accountId, disputeId, documentId);
+    if (!doc) return null;
+    const { bytes } = db.prepare("SELECT bytes FROM document_blobs WHERE document_id = ?").get(documentId) as { bytes: Uint8Array };
+    audit(db, at, "document_downloaded", { account_id: accountId, dispute_id: disputeId, detail: documentId });
+    return { bytes, media_type: doc.media_type as DocumentMediaType, display_name: doc.display_name as string };
+  });
 }
 
 export type AuditEntry ={ id: number; at: number; event: AuditEvent; account_id: string | null; dispute_id: string | null; detail: string | null };

@@ -1284,6 +1284,36 @@ details summary {
   gap: 8px;
 }
 
+/* Stage 3.4: linking a file to checklist gaps. Folded until asked for; one checkbox per gap. */
+.document-links summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.document-links fieldset {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.document-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  overflow-wrap: anywhere;
+}
+
+.document-link input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
 /* Text read from a file: untrusted, so it wraps anywhere and scrolls inside its own box instead of
    stretching the page. Line breaks from the file are kept. */
 .document-text {
