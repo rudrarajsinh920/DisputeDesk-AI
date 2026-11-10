@@ -1,9 +1,8 @@
-// Runs in its own worker thread (see extract.ts), which has a memory limit and is stopped after a time limit.
+// Runs in its own child process (see extract.ts), which has a memory limit and is killed after a time limit.
 // Reads the text layer of a PDF, page by page. No OCR, no rendering, no fonts loaded, no scripts run, no network.
 // The text is untrusted: it is returned as plain strings and never interpreted.
 import { registerHooks } from "node:module";
-import { parentPort, workerData } from "node:worker_threads";
-import { EXTRACTION_LIMITS, type WorkerResult } from "./extract.ts";
+import { cleanText, EXTRACTION_LIMITS, type WorkerResult } from "./extract.ts";
 
 // pdfjs loads the native @napi-rs/canvas package when it is installed (an optional dependency, for rendering).
 // Text needs no rendering, so this worker refuses to load it even if a later `npm install` puts it on disk.
@@ -14,15 +13,6 @@ registerHooks({
   },
 });
 const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
-// Removes control and invisible formatting characters (bidi overrides, zero-width), keeping line breaks and tabs.
-const clean = (text: string) =>
-  text
-    .normalize("NFC")
-    .replace(/\r\n?/g, "\n")
-    .replace(/[^\P{Cc}\n\t]|\p{Cf}/gu, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
 
 async function extract(bytes: Uint8Array): Promise<WorkerResult> {
   const task = getDocument({
@@ -45,7 +35,7 @@ async function extract(bytes: Uint8Array): Promise<WorkerResult> {
     let total = 0;
     for (let page = 1; page <= pdf.numPages; page++) {
       const content = await (await pdf.getPage(page)).getTextContent();
-      const text = clean(content.items.map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : "") : "")).join(""));
+      const text = cleanText(content.items.map((item) => ("str" in item ? item.str + (item.hasEOL ? "\n" : "") : "")).join(""));
       total += text.length;
       if (text.length > EXTRACTION_LIMITS.maxPageChars || total > EXTRACTION_LIMITS.maxDocumentChars) return { ok: false, code: "too_much_text" };
       pages.push({ page, text });
@@ -58,4 +48,7 @@ async function extract(bytes: Uint8Array): Promise<WorkerResult> {
   }
 }
 
-parentPort!.postMessage(await extract(workerData as Uint8Array));
+// One PDF per process: the bytes arrive once, the result goes back, and the parent then kills this process.
+process.once("message", async (bytes) => {
+  process.send!(await extract(bytes as Uint8Array));
+});

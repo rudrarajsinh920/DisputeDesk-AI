@@ -1,12 +1,12 @@
-// Stage 3.3: the PDF text extractor, in a real worker thread, on synthetic PDFs built in test-pdfs.ts.
+// Stage 3.3: the PDF text extractor, in a real child process, on synthetic PDFs built in test-pdfs.ts.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { openDatabase } from "./db.ts";
-import { createExtractor, EXTRACTION_LIMITS, extractPdf, type WorkerResult } from "./extract.ts";
+import { cleanText, createExtractor, EXTRACTION_LIMITS, extractPdf, type WorkerResult } from "./extract.ts";
 import { addDocument, getDocumentPages, listAudit, seedDemo } from "./store.ts";
 import { DEMO_ACCOUNTS, DEMO_DISPUTES } from "./app.ts";
-import { denseTextPdf, emptyPdf, encryptedPdf, imageOnlyPdf, malformedPdf, textPdf } from "./test-pdfs.ts";
+import { bombPdf, denseTextPdf, emptyPdf, encryptedPdf, imageOnlyPdf, malformedPdf, textPdf } from "./test-pdfs.ts";
 
 test("a text-based PDF gives each page's text, in order", async () => {
   const result = await extractPdf(textPdf([["Synthetic invoice INV-0001", "Total 42.00 USD"], ["Page two line"]]));
@@ -54,9 +54,9 @@ test("the time limit stops the worker", async () => {
 
 test("a worker that crashes, exits or runs out of memory gives worker_failed", async () => {
   const pdf = textPdf([["Synthetic"]]);
-  const crash = new URL("data:text/javascript,throw new Error('synthetic crash')");
-  const exit = new URL("data:text/javascript,process.exit(3)");
-  const hog = new URL("data:text/javascript,const a=[];for(;;)a.push(new Array(1e6).fill(1))");
+  const crash = ["-e", "throw new Error('synthetic crash')"];
+  const exit = ["-e", "process.exit(3)"];
+  const hog = ["-e", "const a=[];for(;;)a.push(new Array(1e6).fill(1))"];
   for (const worker of [crash, exit, hog]) {
     assert.deepEqual(await extractPdf(pdf, { worker, timeoutMs: 20_000 }), { ok: false, code: "worker_failed" });
   }
@@ -65,13 +65,43 @@ test("a worker that crashes, exits or runs out of memory gives worker_failed", a
 test("the worker gets no environment variables", async () => {
   process.env.DISPUTEDESK_TEST_SECRET = "synthetic-secret";
   try {
-    const leak = new URL(
-      "data:text/javascript,import{parentPort}from'node:worker_threads';parentPort.postMessage({ok:true,pages:[{page:1,text:String(process.env.DISPUTEDESK_TEST_SECRET)}]})",
-    );
+    const leak = ["-e", "process.send({ok:true,pages:[{page:1,text:String(process.env.DISPUTEDESK_TEST_SECRET)}]})"];
     assert.deepEqual(await extractPdf(textPdf([["x"]]), { worker: leak }), { ok: true, pages: [{ page: 1, text: "undefined" }] });
   } finally {
     delete process.env.DISPUTEDESK_TEST_SECRET;
   }
+});
+
+test("a decompression bomb is parsed outside the server process, so the server's memory stays flat", async () => {
+  // About 64 KB on disk, 64 MB once inflated. In a worker thread, a 256 MB one grew the server by about 570 MB.
+  const pdf = bombPdf(64);
+  assert.ok(pdf.length < 200_000);
+  const before = process.memoryUsage().rss;
+  let peak = before;
+  const sample = setInterval(() => (peak = Math.max(peak, process.memoryUsage().rss)), 10);
+  try {
+    const result = await extractPdf(pdf);
+    assert.ok(result.ok || result.code === "timeout");
+  } finally {
+    clearInterval(sample);
+  }
+  assert.ok(peak - before < 40 * 2 ** 20, `server grew by ${Math.round((peak - before) / 2 ** 20)} MB`);
+});
+
+test("cleaning keeps the letters, joiners and direction marks of every script, and removes bidi overrides", () => {
+  const kept = [
+    "ગુજરાતી ઓર્ડર", // Gujarati
+    "हिन्दी शिपिंग", // Hindi
+    "क्‍ष ક્‍ષ", // conjuncts with a zero-width joiner
+    "می‌خواهم", // Persian with a zero-width non-joiner
+    "👨‍👩‍👧", // an emoji sequence
+    "מספר‏ 123 ؜عربي", // Hebrew right-to-left mark, Arabic letter mark
+    "தமிழ் ﬁle", // Tamil, a ligature
+  ];
+  for (const text of kept) assert.equal(cleanText(text), text);
+  assert.equal(cleanText("é"), "é"); // composed (NFC)
+  assert.equal(cleanText("abc‮dcba‬ ⁦x⁩"), "abcdcba x"); // overrides and isolates
+  assert.equal(cleanText("a\u0000b\u0007c\r\nd\te  \nf"), "abc\nd\te\nf"); // control characters, line endings
 });
 
 // ---- The queue and what it saves ----

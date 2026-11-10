@@ -1,5 +1,6 @@
 // Synthetic PDFs for the extraction tests, built in code so no binary fixture sits in the repository.
 // Every file is made up for testing; none comes from a real merchant or order.
+import { deflateSync } from "node:zlib";
 
 const latin1 = (s: string) => Uint8Array.from(s, (c) => c.charCodeAt(0) & 0xff);
 
@@ -69,6 +70,15 @@ export const imageOnlyPdf = (pageCount = 1) =>
 
 // Starts like a PDF, then stops: no page tree, no cross-reference table.
 export const malformedPdf = () => latin1("%PDF-1.7\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R\n");
+
+// A decompression bomb: a small file whose one page's content inflates to `megabytes` MB of spaces.
+export const bombPdf = (megabytes: number) =>
+  assemble([
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>",
+    stream(deflateSync(Buffer.alloc(megabytes * 2 ** 20, 0x20), { level: 9 }).toString("latin1"), " /Filter /FlateDecode"),
+  ]);
 
 // A PDF with a password-protection dictionary whose check never passes, so it can't be opened.
 export const encryptedPdf = () => {
