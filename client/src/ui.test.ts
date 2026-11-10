@@ -1284,6 +1284,12 @@ test("a merchant links a document to checklist gaps with checkboxes and can down
   assert.deepEqual(calls, [], "rendering links nothing");
 });
 
+test("the link list's toggle and checkbox rows are tap-sized (44 px), not just their 21 px text", () => {
+  const css = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+  assert.match(css, /\.document-links summary \{[^}]*padding: 12px 0;/, "21 px of text plus 12 px above and below");
+  assert.match(css, /\.document-link \{[^}]*min-height: 44px;/);
+});
+
 test("before the checklist loads, a document never claims the dispute has no gaps, and a download can't be clicked twice", () => {
   const linked = docFixture(1, { linked_items: ["proof_of_delivery", "old_item"] });
   const waiting = text(html(createElement(DocumentsView, { load: { status: "ready", documents: [linked] }, onRetry: noop, actions: docActions({ linkable: null }) })));

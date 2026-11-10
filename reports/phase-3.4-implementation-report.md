@@ -1,8 +1,9 @@
 # DisputeDesk AI: Stage 3.4 Document Links and Downloads
 
 **Date:** 2026-11-10
-**Base:** `master` at `791fc4d` (Stage 3.3 closed), 6 commits ahead of `origin/master`.
-**Status:** uncommitted, waiting for review.
+**Base:** `master` at `791fc4d` (Stage 3.3 closed).
+**Status:** committed as `f31d059` (feature) and `d3db9f7` (audit fixes), not pushed. Independent audit: PASS WITH
+CONDITIONS, no critical or high findings; the one medium and all seven low findings are fixed (§10).
 - The real database was not migrated.
 - PayPal and Gemini were not called.
 - No dependency was added.
@@ -60,8 +61,8 @@ POST /api/documents/delete: now also returns the checklist (the document's links
 | `server/src/app.ts` | Attachments on the checklist, the link and download routes, the checklist in the delete answer. |
 | `server/src/app.test.ts` | Role table rows for both routes, an end-to-end link/unlink/download test, and the no-change test now links every document to every gap. The test helper doesn't parse downloads as JSON. |
 | `client/src/analysis.ts` | `linkDocument`, `downloadDocument`; `deleteDocument` returns the checklist too. |
-| `client/src/Documents.tsx` | "Linked to" line, "Link to checklist gaps" checkboxes, Download button, `DOCUMENT_LINK_NOTICE`. |
-| `client/src/AnalysisPanel.tsx` | Shared checklist state, "Document attached, not verified" tag and line, the count line. |
+| `client/src/Documents.tsx` | "Linked to" line, "Link to checklist gaps" checkboxes, Download button, `DOCUMENT_LINK_NOTICE`. Audit fixes: a "checklist not loaded" state, one download at a time. |
+| `client/src/AnalysisPanel.tsx` | Shared checklist state, "Document attached, not verified" tag and line, the count line. Audit fix: `checklistGate` applies answers in request order. |
 | `client/src/styles.css` | `.document-links`, `.document-link` (44 px rows, wraps long names). |
 | `client/src/ui.test.ts` | Fixtures, the endpoint allowlist (23 fetch calls), two new tests. |
 
@@ -76,7 +77,7 @@ POST /api/documents/delete: now also returns the checklist (the document's links
 | Linking someone else's document | The store checks owner, dispute and current access in the same transaction as the write. Another account gets 404, identical to a missing document (tested). |
 | A link treated as evidence | Gaps only; the tag says "not verified"; Needs attention is never lowered; the no-change test links every document to every gap and compares analysis, checklist (without the attachments key), list, draft, Insights, admin and buyer views and the exact Gemini requests. |
 | Downloaded file run or rendered | Attachment only, fixed type from the allowlist, `nosniff`, a `sandbox` CSP, `no-store`. The client hands the blob to the browser's download and never opens it. |
-| Header injection by file name | The ASCII fallback name is fixed (`document.pdf`); the real name is percent-encoded in `filename*`. Names were already cleaned at upload. |
+| Header injection by file name | The ASCII fallback name is fixed (`document.pdf`); the real name is percent-encoded in `filename*` with `encodeFilename` (RFC 8187 characters only, so `' ( ) *` are encoded too). Names were already cleaned at upload. Tested with quotes, CR/LF, `Set-Cookie`, an RTL override and a long Devanagari name. |
 | Cross-site requests | Both routes are `POST` with JSON, so the existing Origin and Sec-Fetch-Site checks apply. |
 | Admin writes | Link and download are merchant-only; admin gets 403 (role table). |
 | Audit privacy | IDs only: `<document_id> <item_id>` or `<document_id>`. |
@@ -85,9 +86,9 @@ POST /api/documents/delete: now also returns the checklist (the document's links
 
 | Check | Result |
 |-------|--------|
-| Server tests | 280 run, 280 passed (279 before, plus 1; the no-change test now also links) |
+| Server tests | 282 run, 282 passed (279 before Stage 3.4, plus 1 with the feature and 2 with the audit fixes) |
 | Server typecheck | No errors |
-| Client tests | 112 run, 112 passed (110 before, plus 2) |
+| Client tests | 115 run, 115 passed (110 before Stage 3.4, plus 2 with the feature and 3 with the audit fixes) |
 | Client typecheck | No errors |
 | Client production build | Built. Existing chunk-size warning only. |
 
@@ -102,18 +103,37 @@ POST /api/documents/delete: now also returns the checklist (the document's links
 ## 8. Known limitations
 
 - **Nothing is compared:** a link says nothing about what the file contains. Matching document text to records is Stage 4.
-- **Item labels in the documents section** come from the shared checklist, so until the checklist loads, the documents section shows item IDs.
+- **Item labels in the documents section** come from the shared checklist. Until it loads, a document says the gaps will show once it has, and its links are given as a count.
 - **Links on items that later stop being gaps** are kept but not shown on the checklist (same as confirmations).
-- **Download in the UI** was not clicked in the browser check; its headers and bytes were checked through the same request.
-- **Carried over from Stage 3.3:** a hostile PDF can still use a lot of machine memory for up to 10 s (no OS memory limit), and pdfjs drops joiners and direction marks.
+- **Download in the UI** was not clicked in a browser, so no file was saved by one. Headers and exact bytes (SHA-256, PDF, PNG, JPEG and 5 MB) are checked by the server tests; the button states by the client tests. Interrupted downloads are left to the browser and are not tested.
+- **The audit fixes were not re-checked in the browser;** the client tests cover their rendering.
+- **Carried over from Stage 3.3:** a hostile PDF can still use a lot of machine memory for up to 10 s (no OS memory limit), and pdfjs skips most standalone joiners and direction marks and expands ligatures before `cleanText` runs (now stated in the Stage 3.3 report).
 
 ## 9. Git status
 
 | Item | Value |
 |------|-------|
-| Branch | `master`, HEAD `791fc4d`, 6 commits ahead of `origin/master`, not pushed |
-| Modified | `client/src/AnalysisPanel.tsx`, `client/src/Documents.tsx`, `client/src/analysis.ts`, `client/src/styles.css`, `client/src/ui.test.ts`, `server/src/app.test.ts`, `server/src/app.ts`, `server/src/store.ts`, `shared/types.ts` |
-| New | this report |
-| Not changed | `.env`, migrations, demo data, PayPal sandbox scripts, dependencies, the real database and both backups (hashes match) |
+| Branch | `master`, not pushed |
+| Commits | `f31d059` Add Stage 3.4 document links to checklist gaps and owner downloads (10 files); `d3db9f7` Fix Stage 3.4 audit findings for document links and downloads (7 files) |
+| Not changed | `.env`, migrations, demo data, PayPal sandbox scripts, dependencies, the real database and both backups (SHA-256 identical before and after every test run) |
 
-Nothing is committed. Stage 3.5 (regression and privacy audit, README and Devpost copy, release audit) has not been started.
+Stage 3.5 (regression and privacy audit, README and Devpost copy, release audit) has not been started.
+
+## 10. Independent audit and fixes
+
+A read-only audit of `f31d059` gave **PASS WITH CONDITIONS**: no critical or high findings. Confirmed sound: input
+validation, merchant-only routes, ownership checked inside the write transaction, another merchant's document answering
+404 exactly like a missing one, gap-only linking, cascade on delete, ID-only audit entries, the download headers, and no
+link ever reaching evidence statuses, readiness, drafts, Insights, buyer views or Gemini. All findings are fixed in
+`d3db9f7`:
+
+| # | Severity | Finding | Fix |
+|---|----------|---------|-----|
+| M1 | Medium | While the checklist was loading or had failed, each document said "This dispute has no checklist gaps to link a file to", and "Linked to" showed raw item IDs. | `linkable` is `null` until the checklist is known: the document says the gaps will show once it has loaded, and links are given as a count. |
+| L1 | Low | `filename*` used `encodeURIComponent`, which leaves `' ( ) *` unencoded (not RFC 8187). No injection was possible. | `encodeFilename` in `app.ts` encodes them too. |
+| L2 | Low | Download had no busy state: repeated clicks fetched and audited the file again. | One download at a time; buttons disabled, "Downloading…", and "Preparing …" / "… handed to your browser's downloads." announced. |
+| L3 | Low | Checklist answers from the checklist and documents sections could arrive out of order; the last to arrive won. | `checklistGate` (`AnalysisPanel.tsx`): each request takes a ticket; an older answer never overwrites a newer one; an answer for another dispute is ignored. |
+| L4 | Low | A delete or link that saved, with an unusable checklist in the answer, showed "Couldn't save that". | The document list is kept and the checklist is loaded again. |
+| L5 | Low | The download test compared text, not bytes. | The test helper returns the raw bytes; downloads are compared byte for byte and by SHA-256. |
+| L6 | Low | Missing tests. | Added: PNG, JPEG and 5 MB downloads; hostile file names; malformed download requests; repeated link and unlink (5 audits each); a stale link listed and removable but not on the checklist; a link racing a delete (no link outlives its document); checklist answer ordering; the not-loaded state; the busy download button; a saved change with an unusable checklist. |
+| L7 | Low (docs) | The Stage 3.3 report read as if joiners, direction marks and ligatures survive extraction. | The Stage 3.3 report now says pdfjs skips glyphs whose text is a lone format character, applies NFKC to ligatures and special spaces and reorders right-to-left runs, before `cleanText`; `cleanText` alone keeps them. |

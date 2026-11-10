@@ -27,9 +27,11 @@ weighted for the dispute's reason. They also flag records that contradict each o
 delivered with no proof of delivery. Each dispute opens with an evidence readiness summary (key evidence on record,
 missing or unverified items, conflicts, gaps left to fill: counts only, never a score) and a "Claim and records" view
 that puts the buyer's claim beside what the records show and what they leave out, without deciding who is right.
-Evidence statuses come from the evidence flags on each record; DisputeDesk does not open the documents themselves.
-Merchants can attach PDF, PNG or JPEG files to their own demo disputes. These are labelled "Not verified" and never
-change an evidence status, the readiness summary, the draft or what Gemini sees.
+Evidence statuses come from the evidence flags on each record, never from uploaded files.
+Merchants can attach PDF, PNG or JPEG files to their own demo disputes, read the text layer of a PDF (no OCR), link a
+file to a checklist gap as their own statement ("Document attached, not verified"), and download their original. Files
+are labelled "Not verified": DisputeDesk does not check them against the records, and no file, its text or a link ever
+changes an evidence status, the readiness summary, the checklist counts, the draft or what Gemini sees.
 DisputeDesk then writes a response draft that starts with "requires merchant
 review" and marks every gap the merchant still has to fill. Missing evidence is never treated as proof that something
 did not happen.
@@ -42,7 +44,7 @@ dropped. A built-in validation example runs a planted bad answer through the sam
 **Evidence provenance and claim checking.** Every evidence status shows the record fields it is based on, who supplied
 them, and whether the records back it ("Verified against record"), leave it unverified or missing, or contradict it
 ("Conflicting"). "Verified against record" means the supplied record backs it and nothing in the records contradicts
-it; DisputeDesk checks records, it does not inspect the documents themselves. The draft lists the records each line
+it; DisputeDesk checks records, never uploaded documents. The draft lists the records each line
 rests on. "Check my edits" then checks the merchant's own wording paragraph by paragraph, with no AI call: each
 paragraph is backed by DisputeDesk's records, not in them, or needs checking against the merchant's own records. Each
 kind of claim needs its own record, so tracking never counts as proof of delivery, a message record never proves what
@@ -86,12 +88,13 @@ DisputeDesk never submits anything to PayPal. Every draft needs a human.
 - **Google Gemini API:** words explanations, drafts, buyer explanations and Insights summaries. The server builds a
   numbered list of record facts for each prompt and validates every returned line against it.
 - **Server:** Node.js 24 and Express in TypeScript, with SQLite built into Node (`node:sqlite`) for accounts, demo
-  disputes, sessions and an append-only audit log.
+  disputes, sessions, merchant documents and an append-only audit log. PDF text is read with pdfjs-dist in a separate
+  child process with memory and time limits, so a bad file stops only that process, not the server.
 - **Client:** React 19, Vite and TypeScript, with Tailwind CSS, Radix UI and GSAP on the landing page.
 - **Security:** role-based access (merchant, buyer, read-only admin), server-side sessions, sign-in limits,
   same-site write checks, a strict Content Security Policy, and a rule that another account's dispute answers 404,
   exactly like a missing one.
-- **Tests:** 316 automated tests with synthetic data and mocked PayPal and Gemini, so they make no network calls.
+- **Tests:** 398 automated tests (282 server, 116 client) with synthetic data and mocked PayPal and Gemini, so they make no network calls.
 
 ## Challenges we ran into
 

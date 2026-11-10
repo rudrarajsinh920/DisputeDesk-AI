@@ -1,8 +1,9 @@
 # DisputeDesk
 
-**The evidence intelligence layer for payment disputes.** It checks the evidence records behind a dispute (it does not
-open or inspect the documents themselves), shows what is on record, missing or in conflict, and explains the dispute to
-both sides without deciding who is right.
+**The evidence intelligence layer for payment disputes.** It checks the evidence records behind a dispute, shows what
+is on record, missing or in conflict, and explains the dispute to both sides without deciding who is right. Evidence
+statuses come from the records only: files a merchant uploads are stored and, for PDFs, their text is read, but they are
+never checked against the records and never change a status.
 
 DisputeDesk helps a merchant prepare a response to a PayPal dispute. Rules check the evidence first. Gemini can then
 word those findings, and the server checks every line it writes. The merchant reviews the result. DisputeDesk never
@@ -21,7 +22,7 @@ real PayPal sandbox disputes), **Buyer Dispute Clarity** (a plain-language view 
 - **Every finding shows where it comes from.** Each evidence status lists the record fields behind it ("Based on"),
   who supplied them (merchant, PayPal or the buyer) and whether the records back it: "Verified against record",
   Unverified, Missing or Conflicting. "Verified against record" means the supplied record backs it and nothing in the
-  records contradicts it; DisputeDesk does not inspect the documents themselves. The generated draft lists the records
+  records contradicts it; DisputeDesk never checks uploaded documents against the records. The generated draft lists the records
   each line rests on ("Sources for the generated draft").
 - **Check my edits.** The merchant's own wording is checked paragraph by paragraph against the same records, without
   calling Gemini. Each paragraph is marked "Backed by DisputeDesk's records", "Not in DisputeDesk's records", "Check
@@ -33,6 +34,11 @@ real PayPal sandbox disputes), **Buyer Dispute Clarity** (a plain-language view 
   records"), gains a separate "Merchant-confirmed" tag, and still counts under "Needs attention". Evidence statuses,
   readiness, the draft and AI input do not change. Confirmations work on demo disputes only; PayPal sandbox disputes
   are never stored or changed.
+- **Merchant documents are stored, read and linked, never verified.** On a demo dispute, a merchant can upload a PDF,
+  PNG or JPEG, read the text layer of a PDF, link a file to a checklist gap, download their own original and delete it.
+  Every file is labelled "Not verified"; a linked gap keeps its status, gains "Document attached, not verified" and still
+  counts under "Needs attention". No document, its text or a link ever changes an evidence status, readiness, the
+  checklist status, the draft, Insights, the buyer view or anything sent to Gemini. See [Documents](#documents).
 
 ## Data sources
 
@@ -48,7 +54,8 @@ real PayPal sandbox disputes), **Buyer Dispute Clarity** (a plain-language view 
 | **PayPal REST APIs (sandbox)** | `POST /v1/oauth2/token` (client credentials) for an access token, `GET /v1/customer/disputes` for the merchant's dispute list, and `GET /v1/customer/disputes/{id}` for each dispute's full record. Calls run only on the server; the token never reaches the browser. No other PayPal call is made. |
 | **Google Gemini API** | `generativelanguage.googleapis.com`, model set by `GEMINI_MODEL`. Words evidence explanations, response drafts, buyer explanations and Insights summaries from the listed record values only. The server checks every line and drops invented facts. |
 | **Node.js 24 + Express** | The API server, run directly from TypeScript. Sessions, sign-in limits, access control and security headers. |
-| **SQLite (`node:sqlite`)** | Built into Node: accounts, demo disputes, sessions and the append-only audit log. |
+| **SQLite (`node:sqlite`)** | Built into Node: accounts, demo disputes, sessions, merchant documents and the append-only audit log. |
+| **pdfjs-dist 6.4.299 (legacy build)** | Reads the text layer of uploaded PDFs on the server, in a separate child process. No OCR, no rendering. |
 | **React 19, Vite, TypeScript** | The browser app: merchant workspace, buyer view and Insights. |
 | **Tailwind CSS, Radix UI, lucide-react, GSAP** | The landing page's styling, accessible components, icons and motion (motion respects reduced-motion settings). |
 
@@ -154,6 +161,22 @@ HTTP it doesn't. The page sends the same `Permissions-Policy`; set HSTS for the 
 a strict CSP: only the app's own scripts and styles. The dev server keeps a looser page CSP because Vite's live reload
 needs inline code. Both refuse to start on another port, so the address never changes.
 
+## Documents
+
+Merchants only, on their own demo disputes only (PayPal sandbox disputes are never stored). Use synthetic test files.
+
+| Step | What happens |
+|---|---|
+| **Upload** | PDF, PNG or JPEG, checked by its first bytes as well as its declared type. At most 5 MB per file, 10 per dispute and 50 MB per account; the same file twice on one dispute is refused. The name is cleaned (control and format characters, slashes) and capped at 120 characters. Files are stored in the database as they came. They are not scanned for viruses. |
+| **Text** | For a PDF, the server reads the text layer with pdfjs-dist in a separate child process (128 MB JavaScript heap, 10 s limit, an empty environment, so no secrets; on Windows a few basic system variables are still passed). At most 20 pages, 200,000 characters per page and 1,000,000 per file. Encrypted, unreadable, oversized or timed-out files are marked "couldn't read text"; a file with no text layer (a scan, for example) says so. There is no OCR: images and scans have no text. "Show text" displays the text as plain text, labelled "Text as written in the file. DisputeDesk has not checked it against your records." |
+| **Link** | "Link to checklist gaps" lets the merchant say a file is their record for a gap (missing, or not shown by the records). The gap keeps its status and gains "Document attached, not verified"; Needs attention is not lowered. A link on an item that is no longer a gap is not shown on the checklist but can still be removed. |
+| **Download** | The merchant's own original, byte for byte, as an attachment with a fixed type, `nosniff`, a sandboxing CSP and `no-store`. The browser saves it; DisputeDesk never opens or shows it. One download at a time. |
+| **Delete** | Removes the file, its text and its links. |
+
+**Who sees what.** A merchant sees only their own files. Another account's file answers 404, exactly like a missing
+one. Admin sees every merchant's files, text and links (with the owner's account) and can't upload, link, download or
+delete. Buyers get no document information at all. Gemini never receives a document, its text or a link.
+
 ## Database
 
 The server keeps its data in SQLite through Node's built-in `node:sqlite` (no extra package), in
@@ -174,8 +197,9 @@ gitignored: it holds password hashes and session hashes, never passwords or sess
   upgraded in place. Back up the database file before the first start of a newer server.
 - **Audit log.** Sign-in (succeeded, failed, locked out), sign-out, a refused request for another account's dispute,
   analysis, AI drafts, the validation example, buyer explanations, insights views and insights summaries, gap
-  confirmations and their withdrawal, and document uploads and deletions. Entries name the account and dispute, never a password, token, hash or
-  an unknown email. The log cannot be changed or deleted from the app, and it is
+  confirmations and their withdrawal, and documents: upload, deletion, text read or failed (with a fixed failure code),
+  link, unlink and download. Entries name the account and dispute, and for documents only the document and item IDs:
+  never a file name, file text, password, token, hash or an unknown email. The log cannot be changed or deleted from the app, and it is
   never trimmed: the server prints its entry count at start. To archive it, stop the server and copy the database
   file; to start a fresh log, then delete `server/data/disputedesk.sqlite`.
 - To start over, stop the server and delete `server/data/disputedesk.sqlite` only. Don't delete the whole folder:
@@ -206,8 +230,10 @@ Before you start: both terminals running, and the server log says `AI drafting: 
    adds a "Merchant-confirmed" tag and the line "DisputeDesk has not seen the record. Your confirmation does not change
    its evidence status." The overview still counts it under "Needs attention" ("1 merchant-confirmed"). Press the
    button again to withdraw it.
-   Optional: under **Your documents**, upload a synthetic PDF, PNG or JPEG. It is listed as "Not verified", and the
-   readiness line and checklist do not change. Delete it afterwards.
+   Optional: under **Your documents**, upload a synthetic PDF. It is listed as "Not verified"; press **Show text** to see
+   the text read from it. Open **Link to checklist gaps** and tick Shipping tracking: the checklist row keeps "Missing
+   from records" and adds "Document attached, not verified", Needs attention still counts it, and readiness does not
+   change. **Download** saves the original. Delete it afterwards.
 3. **Response draft.** The rule draft starts with the review header and has 5 markers to resolve. Type in it: the marker
    count updates. Reset restores it.
 4. **Generate AI draft.** The section names the model before you click. Result: "Checked, no issues found", the AI wording
@@ -255,11 +281,18 @@ Keep screenshots or a screen recording of a successful run as a backup.
 
 ## Limits
 
-- Evidence statuses come from flags in the records. DisputeDesk does not open or inspect the documents themselves.
-- Merchants can upload PDF, PNG and JPEG files to their own demo disputes: at most 5 MB per file, 10 per dispute and
-  50 MB per account. Files are stored in the database as they are and shown as "Not verified". DisputeDesk does not
-  read their text, scan them for viruses, or let them change evidence statuses, readiness, the checklist, drafts or
-  anything sent to Gemini. They can't be downloaded, linked to a checklist item, or added to a PayPal sandbox dispute.
+- Evidence statuses come from flags in the records. Uploaded documents are never checked against them: no document
+  verification, no OCR, no comparison of a file's text with the records.
+- Documents are demo-only and merchant-only, stored unencrypted in the SQLite file (no encryption at rest) and not
+  scanned for viruses. Only synthetic files belong in this demo.
+- PDF text is read in a child process with a 128 MB JavaScript heap and a 10 s limit. Memory pdfjs uses outside that
+  heap has no operating-system cap, so a hostile file can use a lot of machine memory for up to 10 s before it is
+  stopped; the main server keeps running. On Windows the child stops when the server does; this was not tested on
+  Linux or macOS. pdfjs drops most standalone format characters (zero-width joiners, direction marks) and expands
+  ligatures, so extracted text can differ slightly from what the file shows.
+- A link is the merchant's statement that a file is their record for a gap, like a confirmation; it is not evidence.
+- Download was checked in the desktop app's built-in browser (exact bytes) and by tests (headers, PDF, PNG, JPEG,
+  5 MB, hostile names). The saved file name in Chrome, Edge and Firefox has not been checked.
 - The AI checks are rules and patterns. They catch the listed kinds of invented detail, not every possible one, which is
   why merchant review stays mandatory. The same holds for Check my edits: its claim matching is advisory.
 - The PayPal integration only reads (an access token, the dispute list and each dispute's record). It never creates,

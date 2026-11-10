@@ -1289,6 +1289,8 @@ details summary {
   cursor: pointer;
   font-weight: 600;
   font-size: 0.875rem;
+  /* A 44 px tap target, like the checkbox rows below it (the text alone is 21 px). */
+  padding: 12px 0;
 }
 
 .document-links fieldset {
