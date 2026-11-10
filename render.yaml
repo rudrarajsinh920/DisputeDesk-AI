@@ -4,22 +4,17 @@ services:
   - type: web
     name: disputedesk-api
     runtime: node
-    # A persistent disk needs a paid plan; the free plan has none and would lose the database on every restart.
-    plan: starter
+    # Free plan: no persistent disk. The database is rebuilt from the demo files on every start, so sign-ins and
+    # uploads are lost when the service sleeps (after 15 idle minutes) or redeploys. A paid plan can add a disk.
+    plan: free
     buildCommand: npm ci --prefix server
     startCommand: npm start --prefix server
-    disk:
-      name: data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       # node:sqlite and running .ts files directly need Node 24.
       - key: NODE_VERSION
         value: 24.20.0
       - key: HOST
         value: 0.0.0.0
-      - key: DATABASE_PATH
-        value: /var/data/disputedesk.sqlite
       # Vercel's proxy, then Render's: two hops add X-Forwarded-For, so sign-in limits see the visitor's address.
       - key: TRUST_PROXY
         value: "2"

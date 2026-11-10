@@ -106,13 +106,18 @@ log line says whether PayPal and AI drafting are on, and why not.
 
 The page is a static build on Vercel (`vercel.json`). Vercel forwards `/api/*` to the Express API on Render
 (`render.yaml`), so the browser sees one site and the sign-in cookie, `SameSite=Strict` and the Origin check all work
-as they do locally. The API needs Render's persistent disk for its SQLite database (Starter plan or above); Vercel's
-serverless functions have no lasting disk.
+as they do locally. Both run on free plans (Render Free, Vercel Hobby). Vercel's serverless functions have no lasting
+disk, so the API runs on Render.
+
+On Render Free there is no persistent disk either. The SQLite database is rebuilt from the demo files on every start,
+and the service sleeps after 15 minutes without visitors; the next visit waits about a minute while it wakes. Each
+sleep or redeploy signs everyone out and clears uploads, links and confirmations. For lasting data, move to a paid
+Render plan and add a disk (mount it and set `DATABASE_PATH` to a file on it).
 
 The deployed site runs on demo data only: set no PayPal or Gemini keys on Render. The demo passwords are public in this
 README, so anyone could otherwise use your quota.
 
-1. **Render:** New → Blueprint, pick this repository. It creates `disputedesk-api` with a 1 GB disk at `/var/data`.
+1. **Render:** New → Blueprint, pick this repository. It creates the free web service `disputedesk-api`.
    After the first deploy, open the service's Environment tab and set:
    - `ALLOWED_HOSTS` = the service's own name, for example `disputedesk-api.onrender.com`
    - `PAGE_ORIGINS` = the Vercel address, for example `https://disputedesk.vercel.app`
@@ -123,14 +128,12 @@ README, so anyone could otherwise use your quota.
 | Setting (Render) | Value | Why |
 |---|---|---|
 | `HOST` | `0.0.0.0` | Listen beyond localhost (default `127.0.0.1`) |
-| `DATABASE_PATH` | `/var/data/disputedesk.sqlite` | The database lives on the disk and survives restarts and deploys |
 | `TRUST_PROXY` | `2` | Vercel and Render each add a hop, so sign-in limits see the visitor |
 | `ALLOWED_HOSTS` | the onrender.com name | The only name, besides localhost, the API answers to |
 | `PAGE_ORIGINS` | the https Vercel address | The only other page allowed to send write requests |
 | `NODE_VERSION` | `24.20.0` | `node:sqlite` and running `.ts` files directly |
 
-A fresh database is created on the disk on first start and filled from the demo files; your local database is never
-uploaded. Without `ALLOWED_HOSTS` and `PAGE_ORIGINS` the API refuses every request, as a local server would.
+A fresh database is created on each start and filled from the demo files; your local database is never uploaded. Without `ALLOWED_HOSTS` and `PAGE_ORIGINS` the API refuses every request, as a local server would.
 
 ## Demo accounts
 
