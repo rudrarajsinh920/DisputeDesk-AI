@@ -13,6 +13,33 @@ It has three parts: **Merchant Evidence Intelligence** (evidence analysis and re
 real PayPal sandbox disputes), **Buyer Dispute Clarity** (a plain-language view of a buyer's own disputes) and
 **Insights** (rule-based counts and patterns across a merchant's disputes, with practical suggestions).
 
+## For judges: a 5-minute tour of the live site
+
+Open **https://disputedesk-ai-app.vercel.app**. The free server sleeps when idle, so the first sign-in can take about a
+minute. The emails and passwords are in [Demo accounts](#demo-accounts). Everything on the live site is synthetic demo
+data; it has no PayPal or Gemini keys, so live AI and the PayPal sandbox list are off there (the
+[demo video](https://youtu.be/SNR8A_Fk3dE) shows both working, and [Setup](#setup) runs them locally).
+
+1. **Landing page.** Scroll down: what DisputeDesk checks, its safeguards ("Rules first. Words second.") and how it
+   works. Press **Sign in**.
+2. **Demo Merchant A → DEMO-1001** (item not received). In **Evidence analysis**, each kind of evidence is Available,
+   Missing or Unverified, decided by fixed rules; open **Based on** to see the record fields behind each status.
+3. **Evidence checklist.** Open **How to fill this gap**: why the item matters and where to look. Missing evidence is
+   never treated as proof that something did not happen.
+4. **Your documents.** Upload any PDF: it is labelled **Not verified**. Press **Show text**, link it to a checklist gap
+   (the gap stays Missing), then **Download** your original.
+5. **Response draft.** It starts with "DRAFT — REQUIRES MERCHANT REVIEW". Under **How the AI checks work**, press
+   **Show a validation example**: invented carriers, tracking numbers, dates and claims are caught and dropped.
+6. **DEMO-1002** (records disagree). The order says delivered but there is no proof of delivery: the conflict is listed
+   with both records. In the draft, type "We shipped it via UPS." and press **Check my edits**: it is flagged.
+7. **Sign out → Demo Buyer B.** The buyer's plain-language view: dispute stages, next steps and what is not on record.
+   No merchant records are shown.
+8. **Sign out → Demo Merchant C → Insights.** 14 disputes turned into counts and suggestions, each listing the disputes
+   behind it.
+9. **Sign out → Demo Admin.** Every demo dispute and Insights for all merchants, read-only.
+
+The full presenter script, including live AI and the PayPal sandbox, is under [Demo script](#demo-script-about-5-minutes).
+
 - **Rules decide.** Evidence statuses (Available, Missing, Unverified) and contradictions come from fixed rules in
   `server/src/evidence.ts`. Missing evidence is never treated as proof that something did not happen.
 - **AI only words.** Gemini sees only the listed record values. The server drops any line that adds a fact not on record
