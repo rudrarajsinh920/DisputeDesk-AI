@@ -1627,18 +1627,16 @@ html:has(.landing),
   .device-laptop .scr-list {
     display: block;
   }
-  /* The phone stands under the laptop instead of covering the workspace. */
+  /* The phone overlaps the laptop's lower right corner, as on desktop, shrunk by the same amount. */
   .device-phone {
-    position: relative;
-    right: auto;
-    bottom: auto;
-    width: 172px;
-    margin: 28px auto 0;
+    right: 0;
+    bottom: 0;
+    zoom: calc(var(--laptop-zoom, 0.4) * 1.6);
   }
+  /* The caption sits beside the phone, as on desktop. */
   .devices-cap {
-    max-width: none;
-    margin-top: 24px;
-    text-align: center;
+    max-width: calc(100% - 128px);
+    margin-top: 36px;
   }
 }
 /* Phones: the four role tabs share one row. */
