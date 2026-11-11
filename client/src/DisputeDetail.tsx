@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnalysisPanel } from "./AnalysisPanel.tsx";
 import { REASON_LABELS, formatDate, formatMoney, humanize, labelFor } from "../../shared/disputes.ts";
 import type { Dispute } from "../../shared/types.ts";
@@ -47,6 +47,13 @@ function useCurrentPart(): string {
 
 export function DisputeDetail({ dispute, canDraft = true }: { dispute: Dispute; canDraft?: boolean }) {
   const current = useCurrentPart();
+  const nav = useRef<HTMLElement>(null);
+  // On narrow screens the links scroll sideways: keep the current part in view.
+  useEffect(() => {
+    const bar = nav.current, link = bar?.querySelector<HTMLElement>("[aria-current]");
+    if (!bar || !link || bar.scrollWidth <= bar.clientWidth) return;
+    bar.scrollTo({ left: link.offsetLeft - (bar.clientWidth - link.offsetWidth) / 2, behavior: "smooth" });
+  }, [current]);
   return (
     <article className="detail">
       <div className="case-head">
@@ -58,7 +65,7 @@ export function DisputeDetail({ dispute, canDraft = true }: { dispute: Dispute; 
           <StatusBadge status={dispute.status} />
         </header>
         {/* In-page links, not tabs: every part stays rendered for screen readers and search. */}
-        <nav className="case-nav" aria-label="Parts of this dispute">
+        <nav ref={nav} className="case-nav" aria-label="Parts of this dispute">
           {CASE_PARTS.map(([href, label]) => (
             <a key={href} href={href} aria-current={current === href ? "location" : undefined}>
               {label}

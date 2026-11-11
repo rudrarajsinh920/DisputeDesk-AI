@@ -1592,3 +1592,44 @@ html:has(.landing),
     width: 100%;
   }
 }
+
+/* Phones: keep every landing figure inside its own box. Wider screens are unchanged. */
+@media (max-width: 767px) {
+  /* Only the readable face sets the pane's height, so the shorter side has no empty band under it. */
+  .pane-turn {
+    position: relative;
+  }
+  .pane-face[aria-hidden="true"] {
+    position: absolute;
+    inset: 0 0 auto 0;
+  }
+  /* The truck chip sat on top of the record; the single lime chip is enough on a small screen. */
+  .float-icon:nth-child(2) {
+    display: none;
+  }
+  /* The phone stands under the laptop instead of covering the workspace. */
+  .device-phone {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    width: 200px;
+    margin: 28px auto 0;
+  }
+  .devices-cap {
+    max-width: none;
+    margin-top: 24px;
+    text-align: center;
+  }
+}
+/* Phones: the four role tabs share one row. */
+@media (max-width: 639px) {
+  .role-tabs {
+    flex-wrap: nowrap;
+  }
+  .role-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: 6px;
+    font-size: 0.8125rem;
+  }
+}

@@ -725,6 +725,7 @@ code,
 }
 
 .case-nav {
+  position: relative;
   display: flex;
   gap: 4px 18px;
   overflow-x: auto;
@@ -3078,5 +3079,14 @@ blockquote {
     display: flex;
     align-items: center;
     min-height: 44px;
+  }
+}
+
+/* Phones: the part links scroll sideways, so fade the right edge to show there are more. */
+@media (max-width: 767px) {
+  .case-nav {
+    padding-right: 32px;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
   }
 }
