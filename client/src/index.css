@@ -1607,12 +1607,32 @@ html:has(.landing),
   .float-icon:nth-child(2) {
     display: none;
   }
+  /* The laptop is drawn at desktop size with all three columns, then shrunk to the screen width. */
+  .device-laptop {
+    width: 820px;
+    max-width: none;
+    margin-inline: auto;
+    zoom: var(--laptop-zoom, 0.4);
+  }
+  /* Room above the laptop for the badge, so it does not cover the screen. */
+  .devices {
+    padding-top: 34px;
+  }
+  .device-laptop .scr-body {
+    grid-template-columns: 56px minmax(0, 0.9fr) minmax(0, 1.25fr);
+    gap: 14px;
+    padding: 14px;
+    font-size: 13px;
+  }
+  .device-laptop .scr-list {
+    display: block;
+  }
   /* The phone stands under the laptop instead of covering the workspace. */
   .device-phone {
     position: relative;
     right: auto;
     bottom: auto;
-    width: 200px;
+    width: 172px;
     margin: 28px auto 0;
   }
   .devices-cap {

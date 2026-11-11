@@ -558,12 +558,25 @@ const SHOW_ROWS = [
   { reason: "Unauthorised payment", amount: "$42.50", status: "Closed", active: false },
 ];
 
+// Width the phone layout fits the laptop into: its 820px drawing plus room for the wider base.
+const LAPTOP_FIT = 880;
+
 // Two devices drawn in HTML: the merchant's workspace on a laptop, the buyer's view of the same dispute on a phone.
 function Showcase() {
+  const figure = useRef<HTMLElement>(null);
+  // Phones: the laptop keeps its desktop layout and is shrunk to fit, so it still reads as a laptop.
+  useEffect(() => {
+    const el = figure.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const fit = () => el.style.setProperty("--laptop-zoom", String(Math.min(1, el.clientWidth / LAPTOP_FIT)));
+    const watch = new ResizeObserver(fit);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
   return (
     <section id="showcase" aria-labelledby="showcase-h" className="mx-auto max-w-[90rem] px-4 pt-8 pb-20 md:px-8 md:pb-24 lg:px-12">
       <SectionHead id="showcase-h" title="Your dispute desk, on every screen." lead="Merchants work the case on a laptop. Buyers follow it on a phone. Both read the same checked record." />
-      <figure data-ui aria-label="Illustrative example of the merchant workspace on a laptop and the buyer’s view on a phone" className="devices mt-12 md:mt-16">
+      <figure data-ui aria-label="Illustrative example of the merchant workspace on a laptop and the buyer’s view on a phone" ref={figure} className="devices mt-12 md:mt-16">
         <div className="device-laptop">
           <div className="laptop-screen">
             <div className="scr-bar" aria-hidden="true">
