@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
-import { ArrowDown, Ban, Check, CircleDashed, EyeOff, FileSearch, Lock, Menu, MessageSquare, ScanLine, ShieldCheck, Sparkles, TriangleAlert, Truck, UserCheck, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Ban, Check, CircleDashed, EyeOff, FileSearch, Lock, Menu, MessageSquare, ScanLine, ShieldCheck, Sparkles, TriangleAlert, Truck, UserCheck, X } from "lucide-react";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
@@ -938,9 +938,10 @@ const FOOT_COLS: { title: string; items: (string | { href: string; label: string
 
 function Footer() {
   return (
-    <footer className="mx-auto max-w-[90rem] px-4 pt-16 pb-10 md:px-8 lg:px-12">
-      <div className="grid gap-10 border-b pb-12 md:grid-cols-12 md:gap-8">
-        <div className="md:col-span-6">
+    <footer className="mx-auto max-w-[90rem] px-4 pt-16 pb-6 md:px-8 md:pb-8 lg:px-12">
+      <div className="foot-card">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-10 md:grid-cols-12 md:gap-8">
+        <div className="col-span-2 md:col-span-6">
           <p className="flex items-center gap-2.5 text-base font-semibold tracking-tight" translate="no">
             <span aria-hidden="true" className="logo-mark">
               DD
@@ -950,7 +951,7 @@ function Footer() {
           <p className="mt-4 max-w-sm text-sm text-muted-foreground">AI-assisted dispute review for merchants and buyers. Rules decide the facts, the AI words them, a person decides.</p>
         </div>
         {FOOT_COLS.map((col) => (
-          <div key={col.title} role={col.title === "On this page" ? "navigation" : undefined} aria-label={col.title === "On this page" ? col.title : undefined} className="md:col-span-2">
+          <div key={col.title} role={col.title === "On this page" ? "navigation" : undefined} aria-label={col.title === "On this page" ? col.title : undefined} className="min-w-0 md:col-span-2">
             <p className="foot-title">{col.title}</p>
             <ul className="mt-4 space-y-2.5 text-sm">
               {col.items.map((it) =>
@@ -970,12 +971,15 @@ function Footer() {
           </div>
         ))}
       </div>
-      <p aria-hidden="true" className="foot-word" translate="no">
-        DisputeDesk
-      </p>
-      <p className="mt-6 text-sm text-muted-foreground">
-        Synthetic demo. Not affiliated with or endorsed by PayPal or Google. DisputeDesk never submits dispute responses.
-      </p>
+      <div className="mt-10 flex flex-col gap-4 border-t pt-6 sm:flex-row sm:items-center sm:justify-between">
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Synthetic demo. Not affiliated with or endorsed by PayPal or Google. DisputeDesk never submits dispute responses.
+        </p>
+        <a href="#top" className="to-top press">
+          Back to top <ArrowUp aria-hidden="true" className="size-4" />
+        </a>
+      </div>
+      </div>
     </footer>
   );
 }
@@ -1224,6 +1228,28 @@ export function Landing({ onSignIn }: { onSignIn: () => void }) {
     setHowFace(side);
     turn(howTurn.current, side);
   });
+
+  // Section links: wait until a closing menu has left the layout, then glide to the section and move focus there.
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const link = (e.target as Element).closest<HTMLAnchorElement>('a[href^="#"]');
+      const id = link?.getAttribute("href")?.slice(1);
+      const target = id ? document.getElementById(id) : null;
+      if (!target) return;
+      e.preventDefault();
+      setTimeout(() => {
+        target.scrollIntoView({ behavior: window.matchMedia(REDUCED).matches ? "auto" : "smooth", block: "start" });
+        history.replaceState(null, "", `#${id}`);
+        if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
+        target.focus({ preventScroll: true });
+      }, 0);
+    };
+    el.addEventListener("click", onClick);
+    return () => el.removeEventListener("click", onClick);
+  }, []);
 
   return (
     <div className="landing lattice" id="top" ref={root} data-intro={intro === "off" ? undefined : ""}>

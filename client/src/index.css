@@ -1564,23 +1564,52 @@ html:has(.landing),
   color: var(--muted-foreground);
 }
 
-/* Footer column titles and the oversized wordmark along the foot. */
+/* Footer: one soft card with the brand, the links and a way back up. */
+.foot-card {
+  padding: 28px 20px 20px;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  background:
+    radial-gradient(40rem 16rem at 100% 0%, color-mix(in oklab, var(--signal) 14%, transparent), transparent 70%),
+    var(--card);
+  box-shadow: var(--lift);
+}
+@media (min-width: 768px) {
+  .foot-card {
+    padding: 44px 44px 24px;
+  }
+}
+.to-top {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 150ms ease;
+}
+.to-top:hover {
+  background: var(--muted);
+}
+@media (min-width: 640px) {
+  .to-top {
+    align-self: auto;
+  }
+}
+/* A section reached from a link takes focus for screen readers, without a ring around the whole section. */
+.landing [tabindex="-1"]:focus {
+  outline: none;
+}
 .foot-title {
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--muted-foreground);
-}
-.foot-word {
-  margin-top: 24px;
-  font-size: clamp(4rem, 15.5vw, 15rem);
-  font-weight: 600;
-  line-height: 0.8;
-  letter-spacing: -0.065em;
-  white-space: nowrap;
-  color: var(--foreground);
-  opacity: 0.08;
-  user-select: none;
 }
 @media (max-width: 639px) {
   .ticker {
