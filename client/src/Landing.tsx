@@ -555,7 +555,7 @@ const STEPS: { title: string; body: string; extra?: ReactNode }[] = [
 const SHOW_ROWS = [
   { reason: "Item not received", amount: "$84.00", status: "Awaiting seller", active: true },
   { reason: "Not as described", amount: "$129.00", status: "Under review", active: false },
-  { reason: "Unauthorised payment", amount: "$42.50", status: "Closed", active: false },
+  { reason: "Unauthorized transaction", amount: "$42.50", status: "Closed", active: false },
 ];
 
 // Width the phone layout fits the laptop into: its 820px drawing plus room for the wider base.
