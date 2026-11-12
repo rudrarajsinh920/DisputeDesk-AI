@@ -34,11 +34,23 @@ export interface JsonRequest {
 
 export type GeminiClient = ReturnType<typeof createGeminiClient>;
 
+const RETRY_DELAY_MS = 800;
 const BLOCKED = new Set(["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION"]);
 
 export function createGeminiClient(config: { apiKey: string; model: string }, fetchImpl: typeof fetch = fetch) {
   // Returns the model's JSON, parsed but unchecked. Callers must validate it (see assist.ts).
+  // Google's free tier sometimes answers 5xx when busy; one quiet retry hides most of those blips.
   async function generateJson(request: JsonRequest): Promise<unknown> {
+    try {
+      return await requestOnce(request);
+    } catch (error) {
+      if (!(error instanceof AiError) || error.code !== "ai_unavailable" || (error.upstreamStatus ?? 0) < 500) throw error;
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      return requestOnce(request);
+    }
+  }
+
+  async function requestOnce(request: JsonRequest): Promise<unknown> {
     let response: Response;
     try {
       response = await fetchImpl(`${GEMINI_API_URL}/models/${encodeURIComponent(config.model)}:generateContent`, {

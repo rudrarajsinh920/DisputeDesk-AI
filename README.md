@@ -17,8 +17,9 @@ real PayPal sandbox disputes), **Buyer Dispute Clarity** (a plain-language view 
 
 Open **https://disputedesk-ai-app.vercel.app**. The free server sleeps when idle, so the first sign-in can take about a
 minute. The emails and passwords are in [Demo accounts](#demo-accounts). Everything on the live site is synthetic demo
-data; it has no PayPal or Gemini keys, so live AI and the PayPal sandbox list are off there (the
-[demo video](https://youtu.be/SNR8A_Fk3dE) shows both working, and [Setup](#setup) runs them locally).
+data. Live AI is on: Gemini words the explanations and drafts, and the server checks every line. It has no PayPal keys,
+so the PayPal sandbox list is off there (the [demo video](https://youtu.be/SNR8A_Fk3dE) shows it working, and
+[Setup](#setup) runs it locally).
 
 1. **Landing page.** Scroll down: what DisputeDesk checks, its safeguards ("Rules first. Words second.") and how it
    works. Press **Sign in**.
@@ -141,8 +142,9 @@ and the service sleeps after 15 minutes without visitors; the next visit waits a
 sleep or redeploy signs everyone out and clears uploads, links and confirmations. For lasting data, move to a paid
 Render plan and add a disk (mount it and set `DATABASE_PATH` to a file on it).
 
-The deployed site runs on demo data only: set no PayPal or Gemini keys on Render. The demo passwords are public in this
-README, so anyone could otherwise use your quota.
+The deployed site runs on demo data only, with no PayPal keys. If you set a Gemini key on Render, use a free-tier key
+with no billing: the demo passwords are public in this README, so anyone can use its quota. The server limit (20 AI
+calls per 15 minutes) and the free tier cap it.
 
 1. **Render:** New → Blueprint, pick this repository. It creates the free web service `disputedesk-api-rudra`.
    After the first deploy, open the service's Environment tab and set:

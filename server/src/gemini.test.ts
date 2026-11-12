@@ -96,3 +96,18 @@ test("blocked, cut-off and malformed answers are rejected", async () => {
     "ai_bad_response",
   );
 });
+
+test("a busy 5xx from Gemini is retried once; other errors are not", async () => {
+  let n = 0;
+  const blip = mockGemini(() => (n++ === 0 ? json(503, {}) : answer({ ok: true })));
+  assert.deepEqual(await blip.client.generateJson(REQUEST), { ok: true });
+  assert.equal(blip.calls.length, 2);
+
+  const down = mockGemini(() => json(503, {}));
+  await rejectsWith(down.client.generateJson(REQUEST), "ai_unavailable");
+  assert.equal(down.calls.length, 2);
+
+  const limited = mockGemini(() => json(429, {}));
+  await assert.rejects(limited.client.generateJson(REQUEST));
+  assert.equal(limited.calls.length, 1);
+});
