@@ -152,6 +152,11 @@ export default function App() {
     setAccount(null);
   }
 
+  // A visitor reads the landing page while the server answers (the free server can take a while to wake up).
+  // A server error waits for the sign-in form instead of replacing the page they are reading.
+  if (!signInOpen && (account === undefined || (account === null && (!notice || noticeIsError)))) {
+    return <Landing onSignIn={() => setSignInOpen(true)} />;
+  }
   if (account === undefined) {
     return (
       <Shell>
@@ -160,8 +165,7 @@ export default function App() {
     );
   }
   if (account === null) {
-    // A fresh visit gets the landing page; a sign-in click, a sign-out or a session problem gets the form.
-    if (!signInOpen && !notice) return <Landing onSignIn={() => setSignInOpen(true)} />;
+    // A sign-in click, a sign-out or an ended session gets the form.
     return (
       <Shell
         bar={

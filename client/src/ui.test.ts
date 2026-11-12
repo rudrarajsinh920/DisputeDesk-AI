@@ -127,10 +127,10 @@ test("dashboard loads with demo data, labeled as synthetic and not PayPal", () =
 
 // ---- Sign-in and roles ----
 
-test("before the server answers, the app shows only a session check", () => {
+test("before the server answers, the app shows the landing page and no account data", () => {
   const page = text(html(createElement(App)));
-  assert.match(page, /Checking your session…/);
-  assert.doesNotMatch(page, /DEMO-100|Sign out/);
+  assert.match(page, /Every dispute, checked against the record./);
+  assert.doesNotMatch(page, /Checking your session…|DEMO-100|Sign out/);
 });
 
 test("the sign-in form is labeled, says the accounts are synthetic, and holds no credentials", () => {
