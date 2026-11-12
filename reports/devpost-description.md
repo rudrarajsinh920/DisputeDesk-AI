@@ -94,7 +94,7 @@ DisputeDesk never submits anything to PayPal. Every draft needs a human.
 - **Security:** role-based access (merchant, buyer, read-only admin), server-side sessions, sign-in limits,
   same-site write checks, a strict Content Security Policy, and a rule that another account's dispute answers 404,
   exactly like a missing one.
-- **Tests:** 401 automated tests (284 server, 117 client) with synthetic data and mocked PayPal and Gemini, so they make no network calls.
+- **Tests:** 402 automated tests (285 server, 117 client) with synthetic data and mocked PayPal and Gemini, so they make no network calls.
 
 ## Challenges we ran into
 
@@ -141,5 +141,5 @@ paypal, paypal-rest-api, gemini, node.js, express, typescript, react, vite, sqli
 
 - Code: https://github.com/rudrarajsinh920/DisputeDesk-AI
 - Demo video: https://youtu.be/SNR8A_Fk3dE
-- Try it: https://disputedesk-ai-app.vercel.app (demo data only, live AI off; demo sign-ins are in the README under
+- Try it: https://disputedesk-ai-app.vercel.app (demo data with live Gemini; the PayPal sandbox list is off there and shown in the video; demo sign-ins are in the README under
   Demo accounts; the free server may take about a minute to wake up). To run it locally, see Setup and Run in the README.
