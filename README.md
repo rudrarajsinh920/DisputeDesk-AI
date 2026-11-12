@@ -16,10 +16,9 @@ real PayPal sandbox disputes), **Buyer Dispute Clarity** (a plain-language view 
 ## For judges: a 5-minute tour of the live site
 
 Open **https://disputedesk-ai-app.vercel.app**. The free server sleeps when idle, so the first sign-in can take about a
-minute. The emails and passwords are in [Demo accounts](#demo-accounts). Everything on the live site is synthetic demo
-data. Live AI is on: Gemini words the explanations and drafts, and the server checks every line. It has no PayPal keys,
-so the PayPal sandbox list is off there (the [demo video](https://youtu.be/SNR8A_Fk3dE) shows it working, and
-[Setup](#setup) runs it locally).
+minute. The emails and passwords are in [Demo accounts](#demo-accounts). Live AI is on: Gemini words the
+explanations and drafts, and the server checks every line. Demo disputes are synthetic. Sign in as Demo Merchant A and
+choose **PayPal sandbox** to see real disputes read live from PayPal's test environment, read-only.
 
 1. **Landing page.** Scroll down: what DisputeDesk checks, its safeguards ("Rules first. Words second.") and how it
    works. Press **Sign in**.
@@ -142,8 +141,9 @@ and the service sleeps after 15 minutes without visitors; the next visit waits a
 sleep or redeploy signs everyone out and clears uploads, links and confirmations. For lasting data, move to a paid
 Render plan and add a disk (mount it and set `DATABASE_PATH` to a file on it).
 
-The deployed site runs on demo data only, with no PayPal keys. If you set a Gemini key on Render, use a free-tier key
-with no billing: the demo passwords are public in this README, so anyone can use its quota. The server limit (20 AI
+If you set a Gemini key on Render, use a free-tier key with no billing: the demo passwords are public in this README,
+so anyone can use its quota. Set PayPal keys from a sandbox app only: anyone with the demo passwords can read its test
+disputes. The server limit (20 AI
 calls per 15 minutes) and the free tier cap it.
 
 1. **Render:** New → Blueprint, pick this repository. It creates the free web service `disputedesk-api-rudra`.

@@ -141,5 +141,5 @@ paypal, paypal-rest-api, gemini, node.js, express, typescript, react, vite, sqli
 
 - Code: https://github.com/rudrarajsinh920/DisputeDesk-AI
 - Demo video: https://youtu.be/SNR8A_Fk3dE
-- Try it: https://disputedesk-ai-app.vercel.app (demo data with live Gemini; the PayPal sandbox list is off there and shown in the video; demo sign-ins are in the README under
+- Try it: https://disputedesk-ai-app.vercel.app (demo data with live Gemini, plus read-only PayPal sandbox disputes for Demo Merchant A; demo sign-ins are in the README under
   Demo accounts; the free server may take about a minute to wake up). To run it locally, see Setup and Run in the README.
